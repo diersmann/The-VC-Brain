@@ -2,7 +2,16 @@
 
 ## Objective
 
-The VC Brain discovers promising founders, maintains evidence-backed profiles, and supports sourcing, screening, diligence, and investment decisions. Profiles and scores must remain time-aware, explainable, and traceable to their original evidence.
+The VC Brain discovers promising founders, maintains evidence-backed profiles, and supports sourcing, screening, diligence, and investment decisions. Profiles and scores must remain time-aware, explainable, and traceable to their original evidence. Sourcing depth is the MVP priority; the other layers remain deliberately thin where necessary to prove that strong founders can be found before they begin fundraising.
+
+## Evaluation Criteria Coverage
+
+| Criterion | Weight | Primary architecture coverage |
+|---|---:|---|
+| Data Architecture and Intelligence | 30% | Memory and Data Contracts, Source Quality, Identity and Knowledge, Cold-Start Method |
+| Intelligent Analysis and Trust | 25% | Independent Assessments, Claim-Level Trust, Multi-Agent Scoring, Memo Contracts |
+| Investment Utility and Execution | 30% | Unified Deal Lifecycle, 24-Hour SLA, Activation, Decision Contract, Observability |
+| User Experience and Design | 15% | Investor Experience, evidence drill-down, progressive disclosure, accessibility |
 
 ## Logical Systems
 
@@ -313,6 +322,8 @@ The validator checks unsupported claims, source quality, contradictions, and ide
 
 Agents receive the same immutable evidence package and assess it independently before seeing other outputs. Every run records the evidence IDs, prompt and model versions, structured output, validation result, latency, and cost. Targeted adjudication produces a concise disagreement record; it does not expose or depend on private chain-of-thought.
 
+For the Agentic Traceability stretch goal, the system deliberately substitutes step-level evidence IDs, source coordinates, structured decisions, and validator results for raw chain-of-thought logging. This provides reproducible auditability without exposing private reasoning or treating unverifiable model narration as evidence.
+
 Example output:
 
 ```json
@@ -366,7 +377,7 @@ A human investor must approve, decline, or escalate the proposal. The system rec
 
 ## Investor Experience
 
-The UX follows progressive disclosure: a non-technical investor first sees the recommendation, three independent axes, deadline, confidence, and material risks; deeper views reveal component scores, trend history, claims, source excerpts, contradictions, and model metadata.
+The design bar is Notion-level approachability at the top layer and Bloomberg-level analytical depth in drill-downs. The UX follows progressive disclosure: a non-technical investor first sees the recommendation, three independent axes, deadline, confidence, and material risks; deeper views reveal component scores, trend history, claims, source excerpts, contradictions, and model metadata.
 
 Primary views are:
 
@@ -450,6 +461,8 @@ Funded and declined outcomes update channel estimates without becoming direct fo
 ### Outcome Feedback
 
 The system records investor decisions, overrides, founder corrections, application conversion, and later observable milestones. Labels remain outcome-specific, such as `shipped_product_within_6_months`, rather than collapsing into "successful founder." Historical decisions are not treated as ground truth; they are analyzed for selection bias and missing counterfactuals.
+
+Two research questions remain explicit evaluation tracks rather than assumed capabilities. First, prediction intervals around inferred soft skills such as resilience and founder-market fit must be calibrated against observable behavior and should remain wide when evidence is indirect. Second, the predictive value of public footprints must be tested on held-out, time-separated outcome labels with subgroup analysis before any such signal becomes a merit feature; social visibility alone is never treated as founder quality.
 
 Score or model updates require:
 
