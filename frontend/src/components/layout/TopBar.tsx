@@ -1,71 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Search, Bell, CheckSquare, ChevronDown, Command, X } from "lucide-react";
+import { Search, Bell, ChevronDown, SlidersHorizontal } from "lucide-react";
 
-interface TopBarProps {
-  pendingApprovals: number;
-}
-
+interface TopBarProps { pendingApprovals: number; }
 export function TopBar({ pendingApprovals }: TopBarProps) {
-  const navigate = useNavigate();
-  const [searchValue, setSearchValue] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-
-  return (
-    <header className="sticky top-0 h-14 flex items-center gap-4 px-6 border-b border-line bg-canvas z-30">
-      {/* Global Search */}
-      <div className="relative flex-1 max-w-[480px]">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-2" />
-        <input
-          type="text"
-          value={searchValue}
-          onChange={(e) => setSearchValue(e.target.value)}
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          placeholder="Search founders, companies, signals..."
-          className={`w-full pl-9 pr-9 py-1.5 text-sm rounded-md border outline-none transition-colors placeholder:text-muted-2 bg-surface text-ink ${
-            searchFocused ? "border-accent" : "border-line"
-          }`}
-        />
-        {searchValue && (
-          <button
-            onClick={() => setSearchValue("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-2 hover:text-ink"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-
-      {/* Thesis Selector */}
-      <button className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-line text-sm text-ink bg-surface hover:border-line-2 transition-colors">
-        <div className="w-2 h-2 rounded-full bg-accent" />
-        <span className="max-w-[200px] truncate">Series A Focus — Berlin Deep Tech</span>
-        <ChevronDown className="w-3.5 h-3.5 text-muted-2 flex-shrink-0" />
-      </button>
-
-      <div className="flex-1" />
-
-      {/* Keyboard shortcut hint */}
-      <button className="flex items-center gap-1.5 px-2 py-1 rounded text-xs border border-line text-muted-2 hover:border-line-2">
-        <Command className="w-3 h-3" />
-        <span>K</span>
-      </button>
-
-      {/* Notifications */}
-      <button className="relative w-8 h-8 flex items-center justify-center rounded-md hover:bg-surface-2 transition-colors">
-        <Bell className="w-4 h-4 text-muted" />
-        <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent" />
-      </button>
-
-      {/* Pending Approvals */}
-      <button
-        onClick={() => navigate("/memos")}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-white bg-warn hover:opacity-90 transition-colors"
-      >
-        <CheckSquare className="w-3.5 h-3.5" />
-        <span>{pendingApprovals} pending approval{pendingApprovals !== 1 ? "s" : ""}</span>
-      </button>
-    </header>
-  );
+  const navigate = useNavigate(); const [search, setSearch] = useState("");
+  return <header className="sticky top-0 z-30 flex h-[76px] items-center gap-3 border-b border-line bg-white/80 px-4 backdrop-blur-xl md:px-7 lg:px-9">
+    <div className="relative max-w-[470px] flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-2" /><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search founders, companies, signals..." className="w-full rounded-md border border-line bg-surface-2 py-2.5 pl-11 pr-4 text-sm outline-none transition focus:border-accent-muted focus:bg-white" /></div>
+    <button className="hidden items-center gap-2 rounded-md border border-line bg-white px-3.5 py-2 text-xs font-medium text-ink-2 lg:flex"><span className="h-2 w-2 rounded-full bg-success" />Berlin Deep Tech <ChevronDown className="h-3.5 w-3.5 text-muted" /></button>
+    <button className="relative flex h-10 w-10 items-center justify-center rounded-md border border-line bg-white text-muted"><Bell className="h-4 w-4"/><span className="absolute right-2 top-2 h-2 w-2 rounded-full border-2 border-white bg-danger" /></button>
+    <button onClick={()=>navigate('/memos')} className="hidden items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-xs font-semibold text-white sm:flex"><SlidersHorizontal className="h-4 w-4"/>{pendingApprovals} reviews</button>
+  </header>;
 }
