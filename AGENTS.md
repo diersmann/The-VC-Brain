@@ -2,25 +2,88 @@
 
 ## Project Map
 
-- This repository defines a VC founder sourcing, profiling, and scoring platform. It is currently in the design phase and contains no application code.
+- This repository defines a VC founder sourcing, profiling, and scoring platform. It now contains a Docker-first development boilerplate.
 - `Problem_Statement.pdf`: product brief and source requirements.
 - `docs/ARCHITECTURE.md`: proposed systems, data flow, and scoring methods.
-- No generated files or directories are defined yet.
+- `compose.yaml`: Docker Compose development environment with frontend, API, worker, PostgreSQL, Redis, and MinIO.
+- `Makefile`: shortcuts for Docker Compose and tooling commands.
+- `backend/`: FastAPI modular monolith + Arq worker + Alembic migrations + pytest tests.
+- `frontend/`: Vite + React 18 + TypeScript + Tailwind CSS v4 + Vitest tests.
+- `infra/`: database initialization scripts.
 
 ## Setup and Commands
 
-No runtime, dependencies, environment variables, services, or seed data exist yet.
+### Prerequisites
+
+- Docker Desktop (or Docker Engine + Compose plugin)
+- Node.js 22+ (for local frontend work outside Docker)
+- Python 3.12+ and `uv` (for local backend work outside Docker)
+
+### Quick start
+
+```bash
+cp .env.example .env
+make up        # Build and start all services
+make logs      # Follow logs
+```
+
+### Commands
 
 | Check | Command |
 |---|---|
-| Format | Not defined; no toolchain has been selected |
-| Lint | Not defined; no toolchain has been selected |
-| Typecheck | Not defined; no application code exists |
-| Unit tests | Not defined; no application code exists |
-| Integration/e2e | Not defined; no application or services exist |
-| Build | Not defined; no application code exists |
+| Start stack | `make up` |
+| Stop stack | `make down` |
+| Restart app containers | `make restart` |
+| Follow logs | `make logs` |
+| Service status | `make ps` |
+| API shell | `make shell-api` |
+| DB shell (psql) | `make shell-db` |
+| Run migrations | `make migrate` |
+| Lint (backend + frontend) | `make lint` |
+| Type check (backend + frontend) | `make typecheck` |
+| Unit tests (backend + frontend) | `make test` |
+| Full validation | `make check` |
+| Build production images | `make build` |
+| Clean (remove data volumes) | `make clean` |
 
-Do not invent commands. When the first executable code is added, document exact install, environment, start, reset, validation, and observability commands here and in the README.
+### Manual commands
+
+```bash
+# Backend (in .venv or container)
+uv run uvicorn app.main:app --reload
+uv run pytest
+uv run ruff check .
+uv run mypy app
+
+# Frontend (in node_modules or container)
+npm run dev
+npm test -- --run
+npm run lint
+npm run typecheck
+npm run build
+```
+
+## Services and Databases
+
+### Services
+
+| Service | Port | What it does |
+|---|---|---|
+| `frontend` | 5173 | Vite dev server with HMR; proxies `/api` to the backend |
+| `api` | 8000 | FastAPI application server (modular monolith) with auto-reload |
+| `worker` | — | Arq background worker for collection, processing, and scoring jobs |
+| `postgres` | 5432 | PostgreSQL 16 with pgvector extension |
+| `redis` | 6379 | Redis 7 for job queue, caching, and rate limiting |
+| `minio` | 9000 / 9001 | S3-compatible object storage (API / Console) |
+| `minio-init` | — | One-shot bucket creation on first start |
+
+### Databases and Storage
+
+| Data store | What it stores | Architecture reference |
+|---|---|---|
+| **PostgreSQL** | Core entities: Person, Organization, Opportunity, SourceSnapshot, Observation, Claim, Relationship, ScoreSnapshot, Assessment, DecisionEvent. Also stores graph edges and vector embeddings (pgvector). | `docs/ARCHITECTURE.md:48-59` |
+| **Redis** | Arq job queue, result backends, cache for frequent queries, rate-limit counters. | `docs/ARCHITECTURE.md:498` |
+| **MinIO** | Immutable source snapshots (decks, PDFs, web captures), uploaded documents, exported reports. | `docs/ARCHITECTURE.md:53, 498` |
 
 ## Development Rules
 

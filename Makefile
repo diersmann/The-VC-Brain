@@ -1,0 +1,54 @@
+.DEFAULT_GOAL := help
+COMPOSE := docker compose
+
+.PHONY: help setup up down restart logs ps shell-api shell-db migrate lint typecheck test check build clean
+
+help: ## Show available commands
+	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+setup: ## Create local environment file
+	@test -f .env || cp .env.example .env
+
+up: setup ## Build and start the development stack
+	$(COMPOSE) up --build -d
+
+down: ## Stop the development stack
+	$(COMPOSE) down
+
+restart: ## Restart application containers
+	$(COMPOSE) restart frontend api
+
+logs: ## Follow stack logs
+	$(COMPOSE) logs -f
+
+ps: ## Show stack status
+	$(COMPOSE) ps
+
+shell-api: ## Open a shell in the API container
+	$(COMPOSE) exec api sh
+
+shell-db: ## Open psql in the database container
+	$(COMPOSE) exec postgres psql -U $${POSTGRES_USER:-vc_brain} -d $${POSTGRES_DB:-vc_brain}
+
+migrate: ## Apply backend database migrations
+	$(COMPOSE) exec api /opt/venv/bin/alembic upgrade head
+
+lint: ## Run frontend and backend linters
+	$(COMPOSE) run --rm api /opt/venv/bin/ruff check .
+	$(COMPOSE) run --rm frontend npm run lint
+
+typecheck: ## Run frontend and backend type checks
+	$(COMPOSE) run --rm api /opt/venv/bin/mypy app
+	$(COMPOSE) run --rm frontend npm run typecheck
+
+test: ## Run all unit tests
+	$(COMPOSE) run --rm api /opt/venv/bin/pytest
+	$(COMPOSE) run --rm frontend npm test -- --run
+
+check: lint typecheck test ## Run all validation
+
+build: ## Build production images
+	$(COMPOSE) build api frontend
+
+clean: ## Stop stack and remove local data volumes
+	$(COMPOSE) down --volumes --remove-orphans

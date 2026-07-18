@@ -1,0 +1,20 @@
+.DS_Store
+.env
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+htmlcov/
+.coverage
+
+# Node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
