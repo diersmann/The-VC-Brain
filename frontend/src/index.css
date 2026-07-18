@@ -1,1 +1,24 @@
 @import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/* Dark-mode design tokens                                             */
+/* ------------------------------------------------------------------ */
+@theme {
+  --color-canvas: #0F1115;
+  --color-surface: #16191F;
+  --color-surface-2: #1E222B;
+  --color-surface-3: #262A33;
+  --color-ink: #E8E9ED;
+  --color-ink-2: #D1D3D8;
+  --color-muted: #9BA1AC;
+  --color-muted-2: #6B7280;
+  --color-line: #262A33;
+  --color-line-2: #333842;
+  --color-accent: #F97316;
+  --color-accent-soft: #2A1A10;
+  --color-accent-muted: #92400E;
+  --color-success: #4ADE80;
+  --color-warn: #FBBF24;
+  --color-danger: #F87171;
+  --color-info: #60A5FA;
+}
