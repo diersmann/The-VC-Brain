@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { fetchCandidates } from "./candidates";
+import { draftCandidateOutreach, fetchCandidates, recordCandidateDecision } from "./candidates";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -45,4 +45,42 @@ test("throws on non-ok response", async () => {
   );
 
   await expect(fetchCandidates()).rejects.toThrow("Candidates request failed with status 500");
+});
+
+test("requests an agent-authored outreach draft", async () => {
+  const responseBody = {
+    subject: "Exploring Aperture AI",
+    body: "Hi Alice,",
+    recipient_email: "alice@example.com",
+    generation_mode: "agent",
+    model: "gpt-4o",
+    warning: null,
+  };
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(responseBody), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(draftCandidateOutreach("candidate-1", "request_deck", "Ask about traction")).resolves.toEqual(responseBody);
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/candidates/candidate-1/outreach-draft",
+    expect.objectContaining({ method: "POST", body: JSON.stringify({ email_type: "request_deck", brief: "Ask about traction" }) }),
+  );
+});
+
+test("persists a human decision", async () => {
+  const responseBody = {
+    event_id: "event-1",
+    prior_state: "memo_ready",
+    new_state: "hold",
+    action: "hold",
+    reason: "Verify retention",
+    created_at: "2026-07-19T10:00:00Z",
+  };
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(responseBody), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(recordCandidateDecision("candidate-1", "hold", "Verify retention")).resolves.toEqual(responseBody);
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/candidates/candidate-1/decision",
+    expect.objectContaining({ method: "POST", body: JSON.stringify({ action: "hold", reason: "Verify retention" }) }),
+  );
 });

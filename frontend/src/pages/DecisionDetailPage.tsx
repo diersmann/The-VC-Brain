@@ -7,12 +7,12 @@ import {
   CheckCircle2,
   Clock3,
   DollarSign,
+  ExternalLink,
   FileText,
   Lightbulb,
   Mail,
   MapPin,
   Minus,
-  PauseCircle,
   Scale,
   ShieldCheck,
   Sparkles,
@@ -20,11 +20,11 @@ import {
   TrendingDown,
   TrendingUp,
   Users,
-  X,
 } from "lucide-react";
 import { Link, useParams } from "react-router";
 import { useCandidate } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
+import { DecisionActionDock } from "../components/decision/DecisionActionDock";
 import { buildFounderProfile, formatPredicate } from "../data/candidateProfile";
 import type { CandidateDetail } from "../types/candidate";
 import type { FounderAssessment, FounderProfile } from "../types/profile";
@@ -50,7 +50,7 @@ type DecisionMeta = {
 
 export function DecisionDetailPage() {
   const { founderId } = useParams();
-  const { data: candidate, isLoading, error } = useCandidate(founderId);
+  const { data: candidate, isLoading, error, refetch } = useCandidate(founderId);
 
   if (isLoading) return <div className="py-20 text-center text-sm text-muted">Loading investment evidence…</div>;
   if (error || !candidate) return <div className="py-20 text-center"><div className="text-sm font-bold">Decision candidate not found</div><Link to="/decisions" className="mt-3 inline-block text-xs font-bold text-accent">Back to decision queue</Link></div>;
@@ -59,7 +59,7 @@ export function DecisionDetailPage() {
   const meta = createDecisionMeta(profile, candidate);
 
   return (
-    <div className="mx-auto max-w-[1240px] pb-12">
+    <div className="mx-auto max-w-[1240px] pb-28">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <Link
           to="/decisions"
@@ -67,7 +67,7 @@ export function DecisionDetailPage() {
         >
           <ArrowLeft className="h-4 w-4" /> Back to decision queue
         </Link>
-        <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-muted">
+        <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.1em] text-muted">
           <Clock3 className="h-3.5 w-3.5 text-amber-600" /> Decision due in {meta.deadline}
         </div>
       </div>
@@ -99,9 +99,13 @@ export function DecisionDetailPage() {
           </div>
 
           <EvidenceCard profile={profile} />
-          <DecisionActions recommendation={meta.recommendation} />
         </main>
       </div>
+      <DecisionActionDock
+        candidateId={candidate.id}
+        currentState={candidate.opportunity?.lifecycle_state ?? "No opportunity state"}
+        onSaved={() => void refetch()}
+      />
     </div>
   );
 }
@@ -124,11 +128,11 @@ function FounderSidebar({
           avatarUrl={candidate.avatar_url}
           className="-mt-9 mb-4 h-[72px] w-[72px] rounded-lg border-4 border-white bg-accent text-xl font-bold text-white shadow-sm"
         />
-        <h1 className="text-xl font-bold tracking-tight">{candidate.display_name ?? "Unknown founder"}</h1>
+        <h1 className="text-[1.35rem] font-bold leading-tight tracking-[-0.025em]">{candidate.display_name ?? "Unknown founder"}</h1>
         <p className="mt-1 text-xs font-semibold text-ink-2">{profile.role}</p>
         <p className="text-xs text-muted">{profile.company}</p>
 
-        <div className="mt-4 space-y-2.5 rounded-md bg-surface-2/75 p-3.5 text-[11px] text-muted">
+        <div className="mt-4 space-y-2.5 rounded-md bg-surface-2/75 p-3.5 text-xs leading-5 text-muted">
           <SidebarRow icon={MapPin} value={profile.location} />
           <SidebarRow icon={Building2} value={`${profile.stage} · ${profile.sector}`} />
           <SidebarRow icon={Mail} value={candidate.email ?? "Email not provided"} />
@@ -142,30 +146,45 @@ function FounderSidebar({
 
         <div className="mt-4 flex flex-wrap gap-1.5">
           {profile.tags.slice(0, 5).map((tag) => (
-            <span key={tag} className="rounded bg-surface-2 px-2 py-1 text-[9px] font-semibold text-muted">
+            <span key={tag} className="rounded bg-surface-2 px-2 py-1 text-[10px] font-semibold text-muted">
               {tag}
             </span>
           ))}
         </div>
 
+        {candidate.profile?.deck_url && (
+          <a
+            href={candidate.profile.deck_url}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-5 flex w-full items-center justify-between rounded-md bg-[#e7eef9] px-3 py-2.5 text-xs font-bold text-[#5074a8] transition-all hover:-translate-y-0.5 hover:shadow-md"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <FileText className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{candidate.profile.deck_stage ?? "Open pitch deck"}</span>
+            </span>
+            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+          </a>
+        )}
+
         <Link
           to={`/founders/${candidate.id}`}
-          className="mt-5 flex w-full items-center justify-center rounded-md bg-white/75 py-2.5 text-[11px] font-bold text-ink-2 shadow-sm transition-all hover:-translate-y-0.5 hover:text-accent hover:shadow-md"
+          className="mt-5 flex w-full items-center justify-center rounded-md bg-white/75 py-2.5 text-xs font-bold text-ink-2 shadow-sm transition-all hover:-translate-y-0.5 hover:text-accent hover:shadow-md"
         >
           Open full founder profile
         </Link>
 
         <div className="mt-5 rounded-md bg-surface-2 p-3">
-          <div className="text-[9px] font-bold uppercase tracking-wider text-muted-2">Round context</div>
-          <div className="mt-2 flex items-center justify-between text-[11px]">
+          <div className="data-label">Round context</div>
+          <div className="mt-2 flex items-center justify-between text-xs">
             <span className="text-muted">Ask</span>
             <span className="font-bold">{meta.ask}</span>
           </div>
-          <div className="mt-1.5 flex items-center justify-between text-[11px]">
+          <div className="mt-1.5 flex items-center justify-between text-xs">
             <span className="text-muted">Target ownership</span>
             <span className="font-bold">{meta.targetOwnership}</span>
           </div>
-          <div className="mt-1.5 flex items-center justify-between text-[11px]">
+          <div className="mt-1.5 flex items-center justify-between text-xs">
             <span className="text-muted">Lead status</span>
             <span className="font-bold">{meta.lead}</span>
           </div>
@@ -194,12 +213,12 @@ function AiSummary({ profile, meta }: { profile: FounderProfile; meta: DecisionM
           </div>
           <h2 className="text-xl font-bold tracking-tight">{profile.company} at a glance</h2>
         </div>
-        <span className={`rounded-md px-3 py-1.5 text-[10px] font-bold ${styles[meta.recommendation]}`}>
+        <span className={`status-pill ${styles[meta.recommendation]}`}>
           {meta.recommendation}
         </span>
       </div>
       <p className="mt-4 max-w-[900px] text-sm leading-7 text-ink-2">{meta.aiSummary}</p>
-      <div className="mt-4 flex items-center gap-2 text-[9px] font-semibold text-muted-2">
+      <div className="mt-4 flex items-center gap-2 text-[10px] font-semibold leading-4 text-muted-2">
         <ShieldCheck className="h-3.5 w-3.5 text-accent" /> Generated from available evidence; key claims still require human verification.
       </div>
       </div>
@@ -220,13 +239,13 @@ function DealMetrics({ profile, meta }: { profile: FounderProfile; meta: Decisio
       {metrics.map(({ label, value, detail, icon: Icon, color }) => (
         <div key={label} className="panel rounded-lg p-4">
           <div className="flex items-center justify-between">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-muted-2">{label}</span>
+            <span className="data-label">{label}</span>
             <span className={`flex h-7 w-7 items-center justify-center rounded-md ${color}`}>
               <Icon className="h-3.5 w-3.5" />
             </span>
           </div>
-          <div className="mt-2 text-lg font-bold">{value}</div>
-          <div className="mt-1 truncate text-[10px] text-muted">{detail}</div>
+          <div className="metric-value mt-2">{value}</div>
+          <div className="mt-1.5 truncate text-[11px] text-muted">{detail}</div>
         </div>
       ))}
     </section>
@@ -240,7 +259,7 @@ function AxisScreening({ profile }: { profile: FounderProfile }) {
         <div>
           <div className="eyebrow mb-2">Decision quality</div>
           <h2 className="text-lg font-bold">Multi-axis screening</h2>
-          <p className="mt-1 text-[11px] text-muted">Three independent scores — intentionally not averaged.</p>
+          <p className="supporting-text mt-1">Three independent scores — intentionally not averaged.</p>
         </div>
       </div>
       <div className="mt-5 grid gap-3 xl:grid-cols-3">
@@ -270,14 +289,14 @@ function AxisCard({ assessment, score, values }: { assessment: FounderAssessment
     >
       <div className="flex items-center justify-between gap-2">
         <div>
-          <div className="text-xs font-bold">{assessment.title}</div>
-          <div className="mt-1 flex items-center gap-1 text-[9px] font-bold" style={{ color: tone }}>
+          <div className="text-[13px] font-bold">{assessment.title}</div>
+          <div className="mt-1 flex items-center gap-1 text-[10px] font-bold" style={{ color: tone }}>
             <TrendIcon className="h-3 w-3" /> {assessment.rating} · {assessment.trend}
           </div>
         </div>
         <div className="text-right">
-          <div className="text-xl font-bold" style={{ color: tone }}>{score}</div>
-          <div className="text-[8px] uppercase tracking-wider text-muted-2">axis score</div>
+          <div className="numeric text-2xl font-bold leading-none" style={{ color: tone }}>{score}</div>
+          <div className="data-label mt-1">axis score</div>
         </div>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-2">
@@ -285,20 +304,20 @@ function AxisCard({ assessment, score, values }: { assessment: FounderAssessment
       </div>
       <div className="mt-3 rounded-md bg-white/60 px-3 pb-2 pt-3 shadow-inner shadow-white/80 backdrop-blur-sm">
         <div className="flex items-center justify-between">
-          <span className="text-[8px] font-bold uppercase tracking-wider text-muted-2">Trend · last 5 updates</span>
-          <span className="text-[9px] font-bold" style={{ color: tone }}>
+          <span className="data-label">Trend · last 5 updates</span>
+          <span className="numeric text-[10px] font-bold" style={{ color: tone }}>
             {change > 0 ? "+" : ""}{change} pts
           </span>
         </div>
         <AxisTrendChart values={trendData} color={tone} label={`${assessment.title} ${assessment.trend} trend`} />
-        <div className="flex justify-between text-[8px] text-muted-2">
+        <div className="flex justify-between text-[10px] text-muted-2">
           <span>Earlier evidence</span>
           <span>Latest</span>
         </div>
       </div>
-      <p className="mt-3 text-[10px] leading-5 text-muted">{assessment.body}</p>
-      <div className="mt-3 rounded bg-white/55 px-2.5 py-2 text-[9px] text-muted-2">
-        Confidence <span className="font-bold text-ink-2">{assessment.confidence}%</span>
+      <p className="mt-3 text-xs leading-5 text-muted">{assessment.body}</p>
+      <div className="mt-3 rounded bg-white/55 px-2.5 py-2 text-[10px] text-muted-2">
+        Confidence <span className="numeric font-bold text-ink-2">{assessment.confidence}%</span>
       </div>
     </article>
   );
@@ -354,7 +373,7 @@ function InvestmentMemo({ profile, meta }: { profile: FounderProfile; meta: Deci
           <div className="eyebrow mb-2 flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" /> Investment memo</div>
           <h2 className="text-lg font-bold">Detailed IC report</h2>
         </div>
-        <span className="rounded bg-surface-2 px-2.5 py-1 text-[9px] font-bold text-muted">Draft · AI assisted</span>
+        <span className="status-pill bg-surface-2 text-muted">Draft · AI assisted</span>
       </div>
 
       <div className="mt-5 grid gap-x-7 gap-y-6 xl:grid-cols-2">
@@ -367,7 +386,7 @@ function InvestmentMemo({ profile, meta }: { profile: FounderProfile; meta: Deci
           <MemoHeading icon={TrendingUp} title="Traction & KPIs" />
           <ul className="mt-3 space-y-2">
             {meta.traction.map((item) => (
-              <li key={item} className="flex gap-2 text-[11px] leading-5 text-ink-2">
+              <li key={item} className="flex gap-2 text-xs leading-5 text-ink-2">
                 <Check className="mt-1 h-3 w-3 shrink-0 text-[#347c67]" /> {item}
               </li>
             ))}
@@ -376,10 +395,10 @@ function InvestmentMemo({ profile, meta }: { profile: FounderProfile; meta: Deci
 
         <div>
           <MemoHeading icon={Users} title="Founder & team" />
-          <p className="mt-3 text-[11px] leading-6 text-ink-2">{profile.summary}</p>
+          <p className="mt-3 text-xs leading-6 text-ink-2">{profile.summary}</p>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {meta.strengths.map((item) => (
-              <span key={item} className="rounded bg-[#e4f2ed] px-2 py-1 text-[9px] font-semibold text-[#347c67]">{item}</span>
+              <span key={item} className="rounded bg-[#e4f2ed] px-2 py-1 text-[10px] font-semibold text-[#347c67]">{item}</span>
             ))}
           </div>
         </div>
@@ -392,7 +411,7 @@ function MemoSection({ icon, title, text }: { icon: React.ElementType; title: st
   return (
     <div>
       <MemoHeading icon={icon} title={title} />
-      <p className="mt-3 text-[11px] leading-6 text-ink-2">{text}</p>
+      <p className="mt-3 text-xs leading-6 text-ink-2">{text}</p>
     </div>
   );
 }
@@ -424,12 +443,12 @@ function ListCard({
     <section className="panel rounded-lg p-5">
       <div className="flex items-center gap-3">
         <span className={`flex h-9 w-9 items-center justify-center rounded-md ${colors}`}><Icon className="h-4 w-4" /></span>
-        <div><div className="text-[9px] font-bold uppercase tracking-wider text-muted-2">{eyebrow}</div><h2 className="mt-0.5 text-sm font-bold">{title}</h2></div>
+        <div><div className="data-label">{eyebrow}</div><h2 className="mt-0.5 text-[15px] font-bold">{title}</h2></div>
       </div>
       <ul className="mt-4 space-y-3">
         {items.map((item, index) => (
-          <li key={item} className="flex gap-2.5 text-[11px] leading-5 text-ink-2">
-            <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[9px] font-bold ${colors}`}>{index + 1}</span>
+          <li key={item} className="flex gap-2.5 text-xs leading-5 text-ink-2">
+            <span className={`numeric mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold ${colors}`}>{index + 1}</span>
             {item}
           </li>
         ))}
@@ -443,16 +462,16 @@ function EvidenceCard({ profile }: { profile: FounderProfile }) {
     <section className="panel rounded-lg p-5 sm:p-6">
       <div className="flex items-center justify-between gap-3">
         <div><div className="eyebrow mb-2">Evidence quality</div><h2 className="text-lg font-bold">Critical claims</h2></div>
-        <span className="text-[10px] font-bold text-muted">{profile.claims.length} claims reviewed</span>
+        <span className="numeric text-[11px] font-bold text-muted">{profile.claims.length} claims reviewed</span>
       </div>
       <div className="mt-4 space-y-2">
         {profile.claims.map((claim) => {
           const supported = claim.status === "Supported";
           return (
             <div key={claim.claim} className="grid gap-3 rounded-md bg-surface-2/75 px-4 py-3 sm:grid-cols-[1fr_100px_120px] sm:items-center">
-              <div className="text-[11px] font-semibold text-ink-2">{claim.claim}</div>
-              <div className="text-[10px] text-muted">Trust <span className="font-bold text-ink">{claim.trust}%</span></div>
-              <span className={`w-fit rounded px-2 py-1 text-[9px] font-bold ${supported ? "bg-[#e4f2ed] text-[#347c67]" : "bg-[#fff1df] text-[#a96e2d]"}`}>
+              <div className="text-xs font-semibold leading-5 text-ink-2">{claim.claim}</div>
+              <div className="text-[11px] text-muted">Trust <span className="numeric font-bold text-ink">{claim.trust}%</span></div>
+              <span className={`status-pill w-fit ${supported ? "bg-[#e4f2ed] text-[#347c67]" : "bg-[#fff1df] text-[#a96e2d]"}`}>
                 {claim.status}
               </span>
             </div>
@@ -463,30 +482,12 @@ function EvidenceCard({ profile }: { profile: FounderProfile }) {
   );
 }
 
-function DecisionActions({ recommendation }: { recommendation: DecisionMeta["recommendation"] }) {
-  return (
-    <section className="panel rounded-lg p-5">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div>
-          <div className="text-sm font-bold">Record investment decision</div>
-          <p className="mt-1 text-[10px] text-muted">AI recommendation: {recommendation}. Final approval remains with the investment team.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="inline-flex items-center gap-1.5 rounded-md bg-surface-2 px-4 py-2.5 text-[10px] font-bold text-muted shadow-sm hover:text-ink"><X className="h-3.5 w-3.5" /> Pass</button>
-          <button className="inline-flex items-center gap-1.5 rounded-md border border-[#e7cda9] bg-[#fff8ed] px-4 py-2.5 text-[10px] font-bold text-[#a96e2d]"><PauseCircle className="h-3.5 w-3.5" /> Hold</button>
-          <button className="inline-flex items-center gap-1.5 rounded-md bg-accent px-4 py-2.5 text-[10px] font-bold text-white"><CheckCircle2 className="h-3.5 w-3.5" /> Proceed to diligence</button>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function SidebarRow({ icon: Icon, value }: { icon: React.ElementType; value: string }) {
   return <div className="flex items-start gap-2"><Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-2" /><span className="break-all">{value}</span></div>;
 }
 
 function SmallMetric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-md bg-surface-2 p-3"><div className="text-base font-bold">{value}</div><div className="mt-0.5 text-[9px] text-muted">{label}</div></div>;
+  return <div className="rounded-md bg-surface-2 p-3"><div className="numeric text-lg font-bold leading-none">{value}</div><div className="mt-1 text-[10px] text-muted">{label}</div></div>;
 }
 
 function createDecisionMeta(profile: FounderProfile, candidate: CandidateDetail): DecisionMeta {

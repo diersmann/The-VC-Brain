@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, test, vi } from "vitest";
 
 import { CandidateCard } from "./CandidateCard";
 import type { Candidate } from "../../types/candidate";
@@ -16,6 +16,9 @@ const baseCandidate: Candidate = {
     novelty: 0.85,
     momentum: 0.72,
     thesis_fit: 0.91,
+    founder: 0.78,
+    market: 0.62,
+    idea_market: 0.41,
     evidence_confidence: 0.64,
   },
   latest_score_at: "2026-07-17T10:00:00Z",
@@ -36,7 +39,6 @@ describe("CandidateCard", () => {
       <CandidateCard
         candidate={baseCandidate}
         onViewFounder={() => {}}
-        onAddPipeline={() => {}}
       />,
     );
 
@@ -49,7 +51,6 @@ describe("CandidateCard", () => {
       <CandidateCard
         candidate={{ ...baseCandidate, avatar_url: "/api/v1/candidates/test-id/avatar" }}
         onViewFounder={() => {}}
-        onAddPipeline={() => {}}
       />,
     );
 
@@ -62,7 +63,6 @@ describe("CandidateCard", () => {
       <CandidateCard
         candidate={baseCandidate}
         onViewFounder={() => {}}
-        onAddPipeline={() => {}}
       />,
     );
 
@@ -76,7 +76,6 @@ describe("CandidateCard", () => {
       <CandidateCard
         candidate={outbound}
         onViewFounder={() => {}}
-        onAddPipeline={() => {}}
       />,
     );
 
@@ -89,12 +88,33 @@ describe("CandidateCard", () => {
       <CandidateCard
         candidate={nullScoresCandidate}
         onViewFounder={() => {}}
-        onAddPipeline={() => {}}
       />,
     );
 
     expect(screen.getByText("Bob Smith")).toBeDefined();
     expect(screen.getByText("No scores yet")).toBeDefined();
+  });
+
+  test("renders score-driven rings and an evidence bar", () => {
+    const { container } = render(
+      <CandidateCard
+        candidate={baseCandidate}
+        onViewFounder={() => {}}
+      />,
+    );
+
+    const card = within(container);
+    const founderScore = card.getByRole("progressbar", { name: "Founder score" });
+    const marketScore = card.getByRole("progressbar", { name: "Market score" });
+    const ideaMarketScore = card.getByRole("progressbar", { name: "Idea × Market score" });
+    const evidenceScore = card.getByRole("progressbar", { name: "Evidence confidence" });
+
+    expect(founderScore.getAttribute("aria-valuenow")).toBe("78");
+    expect(marketScore.getAttribute("aria-valuenow")).toBe("62");
+    expect(ideaMarketScore.getAttribute("aria-valuenow")).toBe("41");
+    expect(evidenceScore.getAttribute("aria-valuenow")).toBe("64");
+    expect(card.getByText("Strong")).toBeDefined();
+    expect(card.getByText("Risk")).toBeDefined();
   });
 
   test("renders fallback initial for null display_name", () => {
@@ -103,27 +123,38 @@ describe("CandidateCard", () => {
       <CandidateCard
         candidate={noName}
         onViewFounder={() => {}}
-        onAddPipeline={() => {}}
       />,
     );
 
     expect(screen.getByText("?")).toBeDefined();
   });
 
-  test("renders action buttons", () => {
+  test("renders only functional action buttons", () => {
     render(
       <CandidateCard
         candidate={baseCandidate}
         onViewFounder={() => {}}
-        onAddPipeline={() => {}}
       />,
     );
 
     const buttons = screen.getAllByRole("button");
     const buttonTexts = buttons.map((b) => b.textContent).filter(Boolean);
     expect(buttonTexts).toContain("View Founder");
-    expect(buttonTexts).toContain("Add to Pipeline");
-    expect(buttonTexts).toContain("Draft Outreach");
+    expect(buttonTexts).not.toContain("Add to Pipeline");
+    expect(buttonTexts).not.toContain("Draft Outreach");
     expect(buttonTexts).toContain("Dismiss");
+  });
+
+  test("opens the outreach workflow without opening the founder profile", () => {
+    const onOutreach = vi.fn();
+    const onViewFounder = vi.fn();
+    const { container } = render(
+      <CandidateCard candidate={baseCandidate} onViewFounder={onViewFounder} onOutreach={onOutreach} />,
+    );
+
+    fireEvent.click(within(container).getByRole("button", { name: "Outreach" }));
+
+    expect(onOutreach).toHaveBeenCalledTimes(1);
+    expect(onViewFounder).not.toHaveBeenCalled();
   });
 });

@@ -227,6 +227,8 @@ Each immutable thesis version defines:
 
 The engine applies hard eligibility constraints separately from soft preferences. It produces a thesis-alignment explanation with matched criteria, failed criteria, evidence, and unknowns. Re-evaluating an opportunity under a new thesis creates a new assessment without rewriting the historical decision context.
 
+The implemented MVP persists immutable versions in `investment_theses` and exposes the active version through `/api/v1/theses/active`. Saving a new active thesis appends a `thesis-match-v1:<thesis-version>` `ScoreSnapshot` for every canonical candidate and updates the latest linked opportunity's thesis version. Stage and explicitly excluded sectors are hard constraints; sector, geography, and requested check size are weighted preferences. Missing criteria contribute a neutral value and reduce evidence confidence instead of lowering founder quality. Each snapshot stores matched, failed, and unknown criteria plus the observation IDs used by the deterministic rubric.
+
 ### Multi-Attribute Reasoning
 
 Natural-language requests are compiled into a visible query plan containing structured filters, semantic concepts, graph constraints, and exclusions. For example, "technical founder, Berlin, AI infrastructure, enterprise traction, no prior VC backing" becomes exact filters where reliable structured data exists and embedding retrieval where meaning is fuzzy. Results show how each clause was interpreted, which evidence matched it, and which clauses remain uncertain. Investors can correct the interpretation before acting on it.

@@ -1,13 +1,17 @@
-import { AlertTriangle, ArrowRight, Clock3, Scale, ShieldCheck } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AlertTriangle, ArrowDownUp, Clock3, Scale, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useCandidates } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { formatDate, formatPredicate, percentage } from "../data/candidateProfile";
+import { sortDecisionCandidates, type DecisionSort } from "../data/decisionQueue";
 import type { Candidate } from "../types/candidate";
 
 export function DecisionQueuePage() {
   const navigate = useNavigate();
   const { data = [], isLoading, error } = useCandidates();
+  const [sortBy, setSortBy] = useState<DecisionSort>("thesis");
+  const sortedCandidates = useMemo(() => sortDecisionCandidates(data, sortBy), [data, sortBy]);
   const scored = data.filter((candidate) => decisionScore(candidate) !== null);
   const highSignal = data.filter((candidate) => (decisionScore(candidate) ?? 0) >= 45);
   const pending = data.filter((candidate) => !candidate.scores).length;
@@ -16,8 +20,8 @@ export function DecisionQueuePage() {
     <div className="mx-auto max-w-[1100px] pb-10">
       <div className="mb-7">
         <div className="eyebrow mb-2">Human approval</div>
-        <h1 className="text-3xl font-bold tracking-tight">Decision queue</h1>
-        <p className="mt-2 text-sm text-muted">Live candidates ordered by available database evidence.</p>
+        <h1 className="page-title">Decision queue</h1>
+        <p className="page-description">Live candidates ordered by available database evidence.</p>
       </div>
 
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
@@ -35,8 +39,25 @@ export function DecisionQueuePage() {
         </div>
       )}
 
+      {!isLoading && !error && data.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white/60 px-4 py-3 shadow-[0_8px_24px_rgba(70,91,120,.06)] backdrop-blur-xl">
+          <span className="text-[11px] font-semibold text-muted"><span className="numeric">{sortedCandidates.length}</span> candidates · missing values appear last</span>
+          <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+            <ArrowDownUp className="h-3.5 w-3.5 text-accent" /> Sort by
+            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as DecisionSort)} className="rounded-md bg-white px-3 py-2 text-xs font-semibold normal-case tracking-normal text-ink shadow-sm outline-none focus:ring-2 focus:ring-accent/20">
+              <option value="thesis">Thesis match · high to low</option>
+              <option value="founder">Founder score · high to low</option>
+              <option value="market">Market score · high to low</option>
+              <option value="idea-market">Idea × Market · high to low</option>
+              <option value="newest">Newest added</option>
+              <option value="name">Founder name · A–Z</option>
+            </select>
+          </label>
+        </div>
+      )}
+
       <div className="space-y-3">
-        {data.map((candidate) => {
+        {sortedCandidates.map((candidate) => {
           const score = decisionScore(candidate);
           const source = Object.keys(candidate.handles ?? {})[0] ?? candidate.origin ?? "database";
           return (
@@ -49,7 +70,7 @@ export function DecisionQueuePage() {
                 <div className="flex min-w-[220px] items-center gap-3">
                   <CandidateAvatar name={candidate.display_name} avatarUrl={candidate.avatar_url} className="h-11 w-11 rounded-lg bg-accent-soft font-bold text-accent" />
                   <div>
-                    <h2 className="text-sm font-bold">{candidate.display_name ?? candidate.stable_id}</h2>
+                    <h2 className="text-[15px] font-bold leading-tight">{candidate.display_name ?? candidate.stable_id}</h2>
                     <p className="text-[11px] text-muted">{formatPredicate(source)} · Added {formatDate(candidate.created_at)}</p>
                   </div>
                 </div>
@@ -59,7 +80,6 @@ export function DecisionQueuePage() {
                   <Datum label="Evidence" value={candidate.scores?.evidence_confidence == null ? "Collecting" : `${percentage(candidate.scores.evidence_confidence)}%`} icon={AlertTriangle} />
                   <Datum label="Discovery signal" value={score == null ? "Pending" : `${score}%`} icon={Clock3} />
                 </div>
-                <button type="button" className="flex items-center justify-center gap-1 rounded-md bg-accent px-4 py-2.5 text-xs font-bold text-white">Review <ArrowRight className="h-3.5 w-3.5" /></button>
               </div>
             </article>
           );
@@ -84,9 +104,9 @@ function recommendation(candidate: Candidate): string {
 
 function QueueMetric({ icon: Icon, label, value, tone }: { icon: React.ElementType; label: string; value: string; tone: "blue" | "amber" | "green" }) {
   const tones = { blue: "bg-[#e7eef9] text-[#5074a8]", amber: "bg-[#fff1df] text-[#a96e2d]", green: "bg-[#e4f2ed] text-[#347c67]" };
-  return <div className="panel flex items-center gap-3 rounded-lg p-4"><span className={`flex h-10 w-10 items-center justify-center rounded-md ${tones[tone]}`}><Icon className="h-4 w-4" /></span><div><div className="text-lg font-bold">{value}</div><div className="text-[10px] text-muted">{label}</div></div></div>;
+  return <div className="panel flex items-center gap-3 rounded-lg p-4"><span className={`flex h-10 w-10 items-center justify-center rounded-md ${tones[tone]}`}><Icon className="h-4 w-4" /></span><div><div className="metric-value">{value}</div><div className="mt-1 text-[11px] text-muted">{label}</div></div></div>;
 }
 
 function Datum({ label, value, icon: Icon }: { label: string; value: string; icon: React.ElementType }) {
-  return <div><div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-muted-2"><Icon className="h-3 w-3" />{label}</div><div className="mt-1 truncate text-[11px] font-semibold text-ink-2">{value}</div></div>;
+  return <div className="rounded-md bg-white/55 px-3 py-2.5"><div className="data-label flex items-center gap-1"><Icon className="h-3 w-3" />{label}</div><div className="data-value numeric truncate">{value}</div></div>;
 }

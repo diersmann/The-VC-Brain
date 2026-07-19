@@ -10,7 +10,7 @@ const navItems = [
 
 export function LeftNav() {
   return (
-    <aside className="hidden w-[218px] shrink-0 flex-col bg-white/60 shadow-[12px_0_40px_rgba(70,91,120,.06)] backdrop-blur-2xl md:flex">
+    <aside className="sticky top-0 hidden h-screen w-[218px] shrink-0 flex-col overflow-y-auto bg-white/60 shadow-[12px_0_40px_rgba(70,91,120,.06)] backdrop-blur-2xl md:flex">
       <div className="flex items-center gap-3 px-6 py-7">
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-white shadow-lg shadow-slate-300"><Sparkles className="h-5 w-5" /></div>
         <div><div className="font-bold tracking-tight">The VC Brain</div><div className="text-[10px] font-semibold uppercase tracking-[.16em] text-muted-2">Founder intelligence</div></div>
@@ -28,7 +28,7 @@ export function LeftNav() {
         <div className="rounded-lg bg-white/60 p-3.5 shadow-[0_10px_28px_rgba(70,91,120,.07)] backdrop-blur-xl">
           <div className="mb-3 flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#dce5f1] text-xs font-bold text-accent">SW</div><div><div className="text-xs font-semibold">Sophie Werner</div><div className="text-[11px] text-muted">Investment Partner</div></div></div>
           <div className="h-1.5 rounded-full bg-surface-3"><div className="h-full w-[72%] rounded-full bg-accent-muted" /></div>
-          <div className="mt-2 text-[10px] text-muted">12 of 18 candidates reviewed</div>
+          <div className="numeric mt-2 text-[11px] text-muted">12 of 18 candidates reviewed</div>
         </div>
       </div>
     </aside>

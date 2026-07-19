@@ -2,13 +2,19 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   ArrowLeft,
+  AlertTriangle,
+  AtSign,
   BrainCircuit,
   Building2,
   CheckCircle2,
   CircleGauge,
+  CircleHelp,
   ExternalLink,
+  FileText,
+  Github,
   Globe2,
   Lightbulb,
+  Linkedin,
   MapPin,
   RefreshCw,
   Sparkles,
@@ -19,6 +25,7 @@ import {
 import { researchCandidate, useCandidate } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { buildFounderProfile } from "../data/candidateProfile";
+import { candidateExternalLinks, type CandidateLinkKind } from "../data/candidateLinks";
 import type { FounderAssessment, FounderProfile } from "../types/profile";
 
 const axisDetails = {
@@ -55,6 +62,7 @@ export function FounderProfilePage() {
   if (error || !founder) return <div className="py-20 text-center"><div className="text-sm font-bold">Founder not found</div><button onClick={() => navigate("/sourcing")} className="mt-3 text-xs font-bold text-accent">Back to discover</button></div>;
 
   const profile = buildFounderProfile(founder);
+  const externalLinks = candidateExternalLinks(founder);
   const runResearch = async () => {
     setResearchState("queued");
     try {
@@ -81,27 +89,52 @@ export function FounderProfilePage() {
             />
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold tracking-tight">{founder.display_name}</h1>
+                <h1 className="text-[1.75rem] font-bold leading-tight tracking-[-0.03em]">{founder.display_name}</h1>
                 <CheckCircle2 className="h-4 w-4 text-success" />
               </div>
               <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-ink-2">
                 <Building2 className="h-3.5 w-3.5 text-accent-muted" /> {profile.role} · {profile.company}
               </div>
-              <div className="mt-1.5 flex flex-wrap gap-3 text-[11px] text-muted">
+              <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted">
                 <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{profile.location}</span>
                 <span>{profile.stage}</span><span>{profile.sector}</span>
               </div>
+              {externalLinks.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {externalLinks.map((link) => {
+                    const Icon = candidateLinkIcons[link.kind];
+                    return <a key={link.kind} href={link.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md bg-white/75 px-2.5 py-1.5 text-[11px] font-bold text-ink-2 shadow-sm transition hover:-translate-y-0.5 hover:text-accent hover:shadow-md"><Icon className="h-3.5 w-3.5" />{link.label}<ExternalLink className="h-3 w-3 text-muted-2" /></a>;
+                  })}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button onClick={runResearch} disabled={researchState === "queued"} className="inline-flex items-center gap-2 rounded-md bg-[#eee8f8] px-4 py-3 text-[10px] font-bold text-[#7656a5] disabled:opacity-60"><Sparkles className="h-3.5 w-3.5" />{researchState === "queued" ? "Tavily research queued" : researchState === "error" ? "Research failed · retry" : "Research with Tavily"}</button>
+            <button onClick={runResearch} disabled={researchState === "queued"} className="inline-flex items-center gap-2 rounded-md bg-[#eee8f8] px-4 py-3 text-[11px] font-bold text-[#7656a5] disabled:opacity-60"><Sparkles className="h-3.5 w-3.5" />{researchState === "queued" ? "Tavily research queued" : researchState === "error" ? "Research failed · retry" : "Research with Tavily"}</button>
             <div className="rounded-md bg-accent-soft px-4 py-3 text-right">
-              <div className="text-[9px] font-bold uppercase tracking-wider text-accent-muted">Thesis match</div>
-              <div className="mt-1 text-xl font-bold text-accent">{profile.thesisFit ? `${profile.thesisFit}%` : "Pending"}</div>
+              <div className="data-label text-accent-muted">Thesis match</div>
+              <div className="numeric mt-1 text-2xl font-bold leading-none text-accent">{profile.thesisFit != null ? `${profile.thesisFit}%` : "Pending"}</div>
             </div>
           </div>
         </div>
       </header>
+
+      {founder.thesis_match && (
+        <section className="panel mb-6 rounded-lg p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="eyebrow mb-2">Thesis alignment</div>
+              <h2 className="text-base font-bold">Why this opportunity received {Math.round(founder.thesis_match.score * 100)}%</h2>
+              <p className="supporting-text mt-1"><span className="numeric">{founder.thesis_match.version} · {Math.round(founder.thesis_match.confidence * 100)}%</span> evidence confidence · {founder.thesis_match.hard_eligible ? "Hard constraints passed" : "Hard constraint failed"}</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <ThesisReasons icon={CheckCircle2} label="Matched" values={founder.thesis_match.matched} tone="green" />
+            <ThesisReasons icon={AlertTriangle} label="Outside thesis" values={founder.thesis_match.failed} tone="amber" />
+            <ThesisReasons icon={CircleHelp} label="Unknown" values={founder.thesis_match.unknown} tone="blue" />
+          </div>
+        </section>
+      )}
 
       <div className="mb-5">
         <div className="eyebrow mb-2">Independent assessment</div>
@@ -117,19 +150,36 @@ export function FounderProfilePage() {
 
       <section className="panel mt-5 rounded-lg p-5">
         <div className="flex items-end justify-between gap-3">
-          <div><div className="eyebrow mb-2">Source-backed research</div><h2 className="text-base font-bold">Tavily evidence & claims</h2><p className="mt-1 text-[11px] text-muted">Public sources used by the three independent assessments.</p></div>
-          <span className="rounded-md bg-accent-soft px-2.5 py-1 text-[9px] font-bold text-accent">{profile.claims.length} records</span>
+          <div><div className="eyebrow mb-2">Source-backed research</div><h2 className="section-title">Tavily evidence & claims</h2><p className="supporting-text mt-1">Public sources used by the three independent assessments.</p></div>
+          <span className="status-pill numeric bg-accent-soft text-accent">{profile.claims.length} records</span>
         </div>
-        {profile.claims.length === 0 ? <div className="mt-4 rounded-md bg-surface-2 p-4 text-[11px] text-muted">No research claims stored yet. Run Tavily research to populate this section.</div> : <div className="mt-4 grid gap-2 lg:grid-cols-2">{profile.claims.map((claim, index) => <div key={`${claim.claim}-${index}`} className="rounded-md bg-surface-2/80 p-3.5"><div className="flex items-start justify-between gap-3"><p className="text-[10px] font-semibold leading-5 text-ink-2">{claim.claim}</p><span className="shrink-0 rounded bg-white px-2 py-1 text-[8px] font-bold text-muted">{claim.trust}% trust</span></div><div className="mt-2 flex items-center justify-between gap-2 text-[9px] text-muted"><span>{claim.status}</span>{claim.source.startsWith("http") ? <a href={claim.source} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-accent">Open source <ExternalLink className="h-3 w-3" /></a> : <span>{claim.source}</span>}</div></div>)}</div>}
+        {profile.claims.length === 0 ? <div className="mt-4 rounded-md bg-surface-2 p-4 text-xs text-muted">No research claims stored yet. Run Tavily research to populate this section.</div> : <div className="mt-4 grid gap-2 lg:grid-cols-2">{profile.claims.map((claim, index) => <div key={`${claim.claim}-${index}`} className="rounded-md bg-surface-2/80 p-3.5"><div className="flex items-start justify-between gap-3"><p className="text-xs font-semibold leading-5 text-ink-2">{claim.claim}</p><span className="numeric shrink-0 rounded bg-white px-2 py-1 text-[10px] font-bold text-muted">{claim.trust}% trust</span></div><div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted"><span>{claim.status}</span>{claim.source.startsWith("http") ? <a href={claim.source} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-accent">Open source <ExternalLink className="h-3 w-3" /></a> : <span>{claim.source}</span>}</div></div>)}</div>}
       </section>
 
       <div className="mt-5 flex items-start gap-3 rounded-lg bg-white/70 px-5 py-4 shadow-[0_12px_34px_rgba(70,91,120,.08)] backdrop-blur-xl">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#eef0f8] text-[#6676a2]"><BrainCircuit className="h-4 w-4" /></span>
-        <div><div className="text-xs font-bold">Feedback to Memory</div><p className="mt-1 text-[11px] leading-5 text-muted">Each assessment, trend change and investor correction is stored as a new version. Future screening improves without rewriting the historical decision context.</p></div>
+        <div><div className="text-[13px] font-bold">Feedback to Memory</div><p className="mt-1 text-xs leading-5 text-muted">Each assessment, trend change and investor correction is stored as a new version. Future screening improves without rewriting the historical decision context.</p></div>
         <RefreshCw className="ml-auto mt-1 h-4 w-4 shrink-0 text-muted-2" />
       </div>
     </div>
   );
+}
+
+const candidateLinkIcons: Record<CandidateLinkKind, React.ElementType> = {
+  linkedin: Linkedin,
+  github: Github,
+  website: Globe2,
+  deck: FileText,
+  x: AtSign,
+};
+
+function ThesisReasons({ icon: Icon, label, values, tone }: { icon: React.ElementType; label: string; values: string[]; tone: "green" | "amber" | "blue" }) {
+  const colors = {
+    green: "bg-[#e4f2ed] text-[#347c67]",
+    amber: "bg-[#fff1df] text-[#a96e2d]",
+    blue: "bg-[#e7eef9] text-[#5074a8]",
+  };
+  return <div className={`rounded-md p-3.5 ${colors[tone]}`}><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider"><Icon className="h-3.5 w-3.5" />{label}</div><div className="mt-2 text-xs font-semibold">{values.length ? values.join(" · ") : "None"}</div></div>;
 }
 
 function AxisCard({ assessment, profile, history }: { assessment: FounderAssessment; profile: FounderProfile; history: number[] }) {
@@ -152,11 +202,11 @@ function AxisCard({ assessment, profile, history }: { assessment: FounderAssessm
           <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${ratingStyle}`}>{assessment.rating}</span>
         </div>
         <h3 className="mt-4 text-base font-bold">{assessment.title}</h3>
-        <p className="mt-1 text-[11px] leading-5 text-muted">{details.description}</p>
+        <p className="mt-1 text-xs leading-5 text-muted">{details.description}</p>
 
         <div className="mt-4 rounded-md bg-surface-2/80 p-3 shadow-inner shadow-white/80">
-          <div className="text-[9px] font-bold uppercase tracking-wider text-muted-2">Why this rating</div>
-          <p className="mt-1.5 text-[11px] font-medium leading-5 text-ink-2">{assessment.body}</p>
+          <div className="data-label">Why this rating</div>
+          <p className="mt-1.5 text-xs font-medium leading-5 text-ink-2">{assessment.body}</p>
         </div>
 
         <div className="mt-4 space-y-3 rounded-md bg-white/55 p-3">
@@ -168,15 +218,15 @@ function AxisCard({ assessment, profile, history }: { assessment: FounderAssessm
 
       <div className="bg-gradient-to-br from-surface-2 to-[#edf4f4] px-5 pb-4 pt-4">
         <div className="mb-2 flex items-center justify-between">
-          <div><div className="text-[9px] font-bold uppercase tracking-wider text-muted-2">Trend · last 5 updates</div><div className="mt-1 flex items-center gap-1.5 text-xs font-bold" style={{ color: details.color }}><TrendIcon className="h-3.5 w-3.5" />{assessment.trend}</div></div>
-          <div className="text-right"><div className="text-lg font-bold">{values.at(-1) || "—"}</div><div className="text-[9px] text-muted">Current signal</div></div>
+          <div><div className="data-label">Trend · last 5 updates</div><div className="mt-1 flex items-center gap-1.5 text-xs font-bold" style={{ color: details.color }}><TrendIcon className="h-3.5 w-3.5" />{assessment.trend}</div></div>
+          <div className="text-right"><div className="numeric text-xl font-bold leading-none">{values.at(-1) || "—"}</div><div className="mt-1 text-[10px] text-muted">Current signal</div></div>
         </div>
         <TrendChart values={values} color={details.color} />
-        <div className="mt-1 flex justify-between text-[8px] text-muted-2"><span>Earlier evidence</span><span>Latest</span></div>
+        <div className="mt-1 flex justify-between text-[10px] text-muted-2"><span>Earlier evidence</span><span>Latest</span></div>
         <div className="mt-3 rounded-md bg-white/55 p-3">
-          <div className="mb-1.5 flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-muted-2"><span>Assessment confidence</span><span>{assessment.confidence}%</span></div>
+          <div className="data-label mb-1.5 flex items-center justify-between"><span>Assessment confidence</span><span className="numeric">{assessment.confidence}%</span></div>
           <div className="h-1.5 bg-surface-3"><div className="h-full" style={{ width: `${assessment.confidence}%`, backgroundColor: details.color }} /></div>
-          <p className="mt-2 text-[9px] leading-4 text-muted">Each point is a versioned Memory update based on new evidence or an investor correction.</p>
+          <p className="mt-2 text-[10px] leading-4 text-muted">Each point is a versioned Memory update based on new evidence or an investor correction.</p>
         </div>
       </div>
     </article>
@@ -189,7 +239,7 @@ function InsightRow({ kind, label, text, meta }: { kind: "support" | "risk" | "u
     : kind === "risk"
       ? { dot: "bg-danger", label: "text-danger" }
       : { dot: "bg-warn", label: "text-warn" };
-  return <div className="flex gap-2.5"><span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${styles.dot}`} /><div><div className={`text-[9px] font-bold uppercase tracking-wider ${styles.label}`}>{label}</div><p className="mt-0.5 text-[10px] leading-4 text-ink-2">{text}</p>{meta && <div className="mt-1 text-[9px] text-muted">{meta}</div>}</div></div>;
+  return <div className="flex gap-2.5"><span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${styles.dot}`} /><div><div className={`text-[10px] font-bold uppercase tracking-wider ${styles.label}`}>{label}</div><p className="mt-1 text-[11px] leading-[1.55] text-ink-2">{text}</p>{meta && <div className="numeric mt-1 text-[10px] text-muted">{meta}</div>}</div></div>;
 }
 
 function axisExplanation(axis: FounderAssessment["title"], profile: FounderProfile) {

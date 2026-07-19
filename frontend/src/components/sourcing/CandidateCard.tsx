@@ -1,12 +1,12 @@
 import { useState } from "react";
 import {
   ArrowUpRight,
-  Bookmark,
   Building2,
   CheckCircle2,
   ExternalLink,
   Lightbulb,
   MapPin,
+  Send,
   ShieldCheck,
   Sparkles,
   Store,
@@ -21,13 +21,13 @@ import { CandidateAvatar } from "../common/CandidateAvatar";
 interface Props {
   candidate: Candidate;
   onViewFounder: () => void;
-  onAddPipeline: () => void;
+  onOutreach?: () => void;
 }
 
 const percentage = (value: number | null | undefined) =>
-  value == null ? "—" : `${Math.round(value * 100)}%`;
+  value == null ? "—" : `${toPercent(value)}%`;
 
-export function CandidateCard({ candidate, onViewFounder, onAddPipeline }: Props) {
+export function CandidateCard({ candidate, onViewFounder, onOutreach }: Props) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
 
@@ -54,9 +54,9 @@ export function CandidateCard({ candidate, onViewFounder, onAddPipeline }: Props
         />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate font-bold">{candidate.display_name ?? candidate.stable_id}</h3>
+            <h3 className="truncate text-[15px] font-bold leading-tight">{candidate.display_name ?? candidate.stable_id}</h3>
             {candidate.consent_state === "granted" && <CheckCircle2 className="h-3.5 w-3.5 text-success" />}
-            <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${originTone}`}>
+            <span className={`status-pill ${originTone}`}>
               {candidate.origin === "inbound" ? "Inbound" : candidate.origin === "outbound" ? "Outbound" : "Discovered"}
             </span>
           </div>
@@ -91,8 +91,8 @@ export function CandidateCard({ candidate, onViewFounder, onAddPipeline }: Props
         <div className="flex gap-2">
           <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-muted">Evidence summary</div>
-            <p className="mt-1 line-clamp-3 text-xs leading-5 text-ink-2">
+            <div className="data-label">Evidence summary</div>
+            <p className="mt-1.5 line-clamp-3 text-[13px] leading-5 text-ink-2">
               {profile?.summary || `Public activity was collected from ${formatPredicate(source)}, but a verified founder summary is still pending.`}
             </p>
           </div>
@@ -101,15 +101,14 @@ export function CandidateCard({ candidate, onViewFounder, onAddPipeline }: Props
 
       {!candidate.scores && <div className="mb-2 text-[11px] font-semibold text-warn">No scores yet</div>}
       <div className="grid grid-cols-3 gap-2">
-        <Metric icon={UserRound} label="Founder" value={percentage(candidate.scores?.founder ?? candidate.scores?.raw?.founder)} tone="blue" />
-        <Metric icon={Store} label="Market" value={percentage(candidate.scores?.market ?? candidate.scores?.raw?.market)} tone="green" />
-        <Metric icon={Lightbulb} label="Idea × Market" value={percentage(candidate.scores?.idea_market ?? candidate.scores?.raw?.idea_market)} tone="purple" />
+        <Metric icon={UserRound} label="Founder" value={candidate.scores?.founder ?? candidate.scores?.raw?.founder} />
+        <Metric icon={Store} label="Market" value={candidate.scores?.market ?? candidate.scores?.raw?.market} />
+        <Metric icon={Lightbulb} label="Idea × Market" value={candidate.scores?.idea_market ?? candidate.scores?.raw?.idea_market} />
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-[9px] font-semibold text-muted">
-        <span className="inline-flex items-center gap-1 rounded-full bg-[#fff1de] px-2.5 py-1 text-[#986329]">
-          <ShieldCheck className="h-3 w-3" /> Evidence {percentage(evidence)}
-        </span>
+      <EvidenceBar value={evidence} />
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-semibold text-muted">
         <span className="rounded-full bg-white/80 px-2.5 py-1">
           {profile?.observation_count ?? 0} observations
         </span>
@@ -141,18 +140,17 @@ export function CandidateCard({ candidate, onViewFounder, onAddPipeline }: Props
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md bg-surface-2/70 px-3 py-2.5">
-        <button
-          onClick={(event) => {
-            event.stopPropagation();
-            onAddPipeline();
-          }}
-          className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-accent"
-        >
-          <Bookmark className="h-3.5 w-3.5" />{"Add to Pipeline"}
-        </button>
-        <button onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-muted hover:text-accent">
-          {"Draft Outreach"}
-        </button>
+        {onOutreach && (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onOutreach();
+            }}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-accent"
+          >
+            <Send className="h-3.5 w-3.5" /> Outreach
+          </button>
+        )}
         <button
           onClick={(event) => {
             event.stopPropagation();
@@ -174,27 +172,95 @@ function Metric({
   icon: Icon,
   label,
   value,
-  tone,
 }: {
   icon: React.ElementType;
   label: string;
-  value: string;
-  tone: "blue" | "purple" | "green";
+  value: number | null | undefined;
 }) {
-  const colors = {
-    blue: "bg-[#e7eef9] text-[#5074a8]",
-    purple: "bg-[#eee9f8] text-[#785ba2]",
-    green: "bg-[#e5f3ed] text-[#38806b]",
-  };
+  const visual = scoreVisual(value);
+  const circumference = 2 * Math.PI * 26;
+  const offset = circumference * (1 - (visual.percent ?? 0) / 100);
+
   return (
-    <div className="rounded-md bg-white/70 p-2.5 shadow-[0_6px_18px_rgba(70,91,120,.06)]">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[10px] text-muted">
-        <span className={`flex h-5 w-5 items-center justify-center rounded ${colors[tone]}`}>
+    <div className="flex min-w-0 flex-col items-center rounded-md bg-white/70 px-2 py-3 text-center shadow-[0_6px_18px_rgba(70,91,120,.06)]">
+      <div
+        role="progressbar"
+        aria-label={`${label} score`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={visual.percent ?? undefined}
+        aria-valuetext={visual.percent == null ? "No score" : `${visual.percent}% · ${visual.status}`}
+        className="relative h-[72px] w-[72px]"
+      >
+        <svg viewBox="0 0 72 72" className="h-full w-full -rotate-90" aria-hidden="true">
+          <circle cx="36" cy="36" r="26" fill="none" stroke="#e7edf4" strokeWidth="7" />
+          <circle
+            cx="36"
+            cy="36"
+            r="26"
+            fill="none"
+            stroke={visual.color}
+            strokeWidth="7"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            className="transition-[stroke-dashoffset] duration-500"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="numeric text-[15px] font-bold" style={{ color: visual.color }}>
+            {visual.percent == null ? "—" : `${visual.percent}%`}
+          </span>
+        </div>
+      </div>
+      <div className="mt-2 flex min-w-0 items-center justify-center gap-1.5 text-[11px] font-bold text-ink-2">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded" style={{ backgroundColor: visual.soft, color: visual.color }}>
           <Icon className="h-3 w-3" />
         </span>
-        {label}
+        <span className="truncate">{label}</span>
       </div>
-      <div className="text-sm font-bold text-ink">{value}</div>
+      <span className="mt-1 text-[9px] font-bold uppercase tracking-wider" style={{ color: visual.color }}>{visual.status}</span>
     </div>
   );
+}
+
+function EvidenceBar({ value }: { value: number | null | undefined }) {
+  const visual = scoreVisual(value);
+  return (
+    <div className="mt-3 rounded-md bg-white/60 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 text-[10px] font-bold text-ink-2">
+          <ShieldCheck className="h-3.5 w-3.5" style={{ color: visual.color }} /> Evidence confidence
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: visual.color }}>{visual.status}</span>
+          <span className="numeric text-xs font-bold" style={{ color: visual.color }}>{percentage(value)}</span>
+        </div>
+      </div>
+      <div
+        role="progressbar"
+        aria-label="Evidence confidence"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={visual.percent ?? undefined}
+        aria-valuetext={visual.percent == null ? "No score" : `${visual.percent}% · ${visual.status}`}
+        className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3"
+      >
+        <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${visual.percent ?? 0}%`, backgroundColor: visual.color }} />
+      </div>
+    </div>
+  );
+}
+
+function scoreVisual(value: number | null | undefined) {
+  if (value == null) return { percent: null, status: "No score", color: "#9aa8ba", soft: "#edf1f5" };
+  const percent = toPercent(value);
+  if (percent >= 70) return { percent, status: "Strong", color: "#2f8b72", soft: "#e4f2ed" };
+  if (percent >= 45) return { percent, status: "Watch", color: "#c6893f", soft: "#fff1df" };
+  return { percent, status: "Risk", color: "#c35f65", soft: "#fbe8e9" };
+}
+
+function toPercent(value: number): number {
+  const normalized = value <= 1 ? value * 100 : value;
+  return Math.max(0, Math.min(100, Math.round(normalized)));
 }

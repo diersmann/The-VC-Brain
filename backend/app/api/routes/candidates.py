@@ -16,17 +16,20 @@ import asyncio
 import uuid
 from collections import defaultdict
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.outreach import OutreachEmailType, draft_outreach_email
+from app.config import get_settings
 from app.db import get_session
 from app.db.models import (
     Assessment,
     Claim,
+    DecisionEvent,
     Observation,
     Opportunity,
     OpportunityFounder,
@@ -72,9 +75,26 @@ class CandidateProfileSummary(BaseModel):
     location: str | None = None
     summary: str | None = None
     website: str | None = None
+    deck_url: str | None = None
+    deck_title: str | None = None
+    deck_stage: str | None = None
+    inbound_label: str | None = None
     source_types: list[str] = Field(default_factory=list)
     observation_count: int = 0
     completeness: float = 0.0
+
+
+class CandidateThesisMatch(BaseModel):
+    """Latest explainable alignment against a versioned investment thesis."""
+
+    version: str
+    score: float
+    confidence: float
+    hard_eligible: bool
+    matched: list[str] = Field(default_factory=list)
+    failed: list[str] = Field(default_factory=list)
+    unknown: list[str] = Field(default_factory=list)
+    criteria: dict[str, dict[str, object]] = Field(default_factory=dict)
 
 
 class CandidateResponse(BaseModel):
@@ -90,6 +110,7 @@ class CandidateResponse(BaseModel):
     consent_state: str
     origin: str | None = None
     scores: CandidateScores | None = None
+    thesis_match: CandidateThesisMatch | None = None
     profile: CandidateProfileSummary | None = None
     avatar_url: str | None = None
     avatar_source: str | None = None
@@ -155,6 +176,37 @@ class CandidateDetailResponse(CandidateResponse):
     relationships: list[CandidateRelationshipResponse]
 
 
+class OutreachDraftRequest(BaseModel):
+    email_type: OutreachEmailType = "founder_intro"
+    brief: str = Field(default="", max_length=600)
+
+
+class OutreachDraftResponse(BaseModel):
+    subject: str
+    body: str
+    recipient_email: str | None = None
+    generation_mode: Literal["agent", "template", "template_fallback"]
+    model: str | None = None
+    warning: str | None = None
+
+
+DecisionAction = Literal["proceed", "hold", "decline"]
+
+
+class CandidateDecisionRequest(BaseModel):
+    action: DecisionAction
+    reason: str = Field(min_length=3, max_length=2000)
+
+
+class CandidateDecisionResponse(BaseModel):
+    event_id: uuid.UUID
+    prior_state: str
+    new_state: str
+    action: DecisionAction
+    reason: str
+    created_at: datetime
+
+
 # ---------------------------------------------------------------------------
 # Pure mapper (testable without a DB)
 # ---------------------------------------------------------------------------
@@ -204,6 +256,35 @@ def map_person_to_candidate(
         )
         latest_score_at = snapshots[0].created_at if snapshots else None
 
+    thesis_match: CandidateThesisMatch | None = None
+    thesis_snapshot = next(
+        (item for item in snapshots if item.rubric_version.startswith("thesis-match-")), None
+    )
+    if thesis_snapshot is not None:
+        thesis_components = thesis_snapshot.components or {}
+        thesis_score = thesis_components.get("thesis_fit")
+        thesis_confidence = thesis_components.get("thesis_confidence")
+        thesis_version = thesis_components.get("thesis_version")
+        if (
+            isinstance(thesis_score, (int, float))
+            and isinstance(thesis_confidence, (int, float))
+            and isinstance(thesis_version, str)
+        ):
+            criteria = thesis_components.get("criteria")
+            matched = thesis_components.get("matched")
+            failed = thesis_components.get("failed")
+            unknown = thesis_components.get("unknown")
+            thesis_match = CandidateThesisMatch(
+                version=thesis_version,
+                score=float(thesis_score),
+                confidence=float(thesis_confidence),
+                hard_eligible=bool(thesis_components.get("hard_eligible", True)),
+                matched=[str(item) for item in matched] if isinstance(matched, list) else [],
+                failed=[str(item) for item in failed] if isinstance(failed, list) else [],
+                unknown=[str(item) for item in unknown] if isinstance(unknown, list) else [],
+                criteria=criteria if isinstance(criteria, dict) else {},
+            )
+
     if profile is not None:
         complete_fields = [
             person.display_name,
@@ -230,6 +311,7 @@ def map_person_to_candidate(
         consent_state=person.consent_state,
         origin=origin,
         scores=scores,
+        thesis_match=thesis_match,
         profile=profile,
         avatar_url=f"/api/v1/candidates/{person.id}/avatar" if person.avatar_data else None,
         avatar_source=person.avatar_source_type,
@@ -244,7 +326,7 @@ def map_person_to_candidate(
 
 # Heuristic: founder-score rubrics start with "founder" or "person".
 # TODO: Replace with a proper subject_type column on ScoreSnapshot.
-_CANDIDATE_RUBRIC_PATTERNS = ("founder%", "person%", "signal%")
+_CANDIDATE_RUBRIC_PATTERNS = ("founder%", "person%", "signal%", "thesis%")
 
 
 def _candidate_rubric_filter() -> Any:
@@ -306,8 +388,16 @@ async def _fetch_candidate_profiles(
             company=values.get("company") or values.get("company_name"),
             role=values.get("role") or values.get("title") or values.get("headline"),
             location=values.get("location"),
-            summary=values.get("research_founder_summary") or values.get("bio"),
+            summary=(
+                values.get("research_founder_summary")
+                or values.get("inbound_summary")
+                or values.get("bio")
+            ),
             website=values.get("blog_url") or values.get("website"),
+            deck_url=values.get("pitch_deck_url"),
+            deck_title=values.get("pitch_deck_title"),
+            deck_stage=values.get("pitch_deck_stage"),
+            inbound_label=values.get("inbound_label"),
             source_types=sorted(source_types),
             observation_count=len(items),
         )
@@ -561,6 +651,108 @@ async def get_candidate(
         assessments=assessments,
         score_history=score_history,
         relationships=relationships,
+    )
+
+
+def decision_state_for_action(action: DecisionAction) -> str:
+    """Map an explicit human decision to its auditable lifecycle state."""
+    return {"proceed": "approved", "hold": "hold", "decline": "closed"}[action]
+
+
+@router.post("/{candidate_id}/decision", response_model=CandidateDecisionResponse)
+async def record_candidate_decision(
+    candidate_id: uuid.UUID,
+    payload: CandidateDecisionRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CandidateDecisionResponse:
+    """Persist a human VC decision and update the latest opportunity state."""
+    person = await session.get(Person, candidate_id)
+    if person is None or not person.canonical:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    opportunity_result = await session.execute(
+        select(Opportunity)
+        .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
+        .where(OpportunityFounder.person_id == person.id)
+        .order_by(Opportunity.created_at.desc())
+        .limit(1)
+    )
+    opportunity = opportunity_result.scalar_one_or_none()
+    if opportunity is None:
+        raise HTTPException(status_code=409, detail="Candidate has no opportunity to decide")
+
+    prior_state = opportunity.lifecycle_state
+    new_state = decision_state_for_action(payload.action)
+    reason = payload.reason.strip()
+    event = DecisionEvent(
+        opportunity_id=opportunity.id,
+        prior_state=prior_state,
+        new_state=new_state,
+        actor="vc-ui:sophie-werner",
+        reason=reason,
+        sla_metadata={"action": payload.action, "source": "decision-floating-dock"},
+    )
+    opportunity.lifecycle_state = new_state
+    session.add(event)
+    await session.commit()
+    await session.refresh(event)
+
+    return CandidateDecisionResponse(
+        event_id=event.id,
+        prior_state=prior_state,
+        new_state=new_state,
+        action=payload.action,
+        reason=reason,
+        created_at=event.created_at,
+    )
+
+
+@router.post("/{candidate_id}/outreach-draft", response_model=OutreachDraftResponse)
+async def create_outreach_draft(
+    candidate_id: uuid.UUID,
+    payload: OutreachDraftRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> OutreachDraftResponse:
+    """Create a human-reviewable outreach email from stored candidate evidence."""
+    person = await session.get(Person, candidate_id)
+    if person is None or not person.canonical:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    profiles = await _fetch_candidate_profiles(session, [person.id])
+    score_snapshots = await _fetch_score_snapshots(session, [person.id])
+    profile = profiles.get(person.id)
+    candidate = map_person_to_candidate(
+        person,
+        score_snapshots=score_snapshots.get(person.id),
+        profile=profile,
+    )
+    company = profile.company if profile and profile.company else "the company"
+    evidence_parts = [
+        f"Role: {profile.role}" if profile and profile.role else "",
+        f"Location: {profile.location}" if profile and profile.location else "",
+        f"Summary: {profile.summary}" if profile and profile.summary else "",
+        f"Website: {profile.website}" if profile and profile.website else "",
+        (
+            "Independent scores: "
+            f"Founder={candidate.scores.founder}, Market={candidate.scores.market}, "
+            f"Idea-Market={candidate.scores.idea_market}"
+            if candidate.scores
+            else ""
+        ),
+    ]
+    settings = get_settings()
+    draft = await draft_outreach_email(
+        founder_name=person.display_name or "Founder",
+        company=company,
+        email_type=payload.email_type,
+        brief=payload.brief.strip(),
+        evidence_summary="\n".join(item for item in evidence_parts if item),
+        api_key=settings.llm_api_key,
+        model=settings.llm_model,
+    )
+    return OutreachDraftResponse(
+        **draft.model_dump(),
+        recipient_email=person.email,
     )
 
 

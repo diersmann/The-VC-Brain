@@ -18,9 +18,24 @@ export interface CandidateProfileSummary {
   location: string | null;
   summary: string | null;
   website: string | null;
+  deck_url: string | null;
+  deck_title: string | null;
+  deck_stage: string | null;
+  inbound_label: string | null;
   source_types: string[];
   observation_count: number;
   completeness: number;
+}
+
+export interface CandidateThesisMatch {
+  version: string;
+  score: number;
+  confidence: number;
+  hard_eligible: boolean;
+  matched: string[];
+  failed: string[];
+  unknown: string[];
+  criteria: Record<string, Record<string, unknown>>;
 }
 
 export interface Candidate {
@@ -32,6 +47,7 @@ export interface Candidate {
   consent_state: string;
   origin: string | null;
   scores: CandidateScores | null;
+  thesis_match?: CandidateThesisMatch | null;
   profile?: CandidateProfileSummary | null;
   avatar_url?: string | null;
   avatar_source?: string | null;

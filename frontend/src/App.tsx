@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router";
 import { RootLayout } from "./components/layout/RootLayout";
 import { SourcingPage } from "./components/sourcing/SourcingPage";
@@ -12,13 +11,11 @@ import { InboundInboxPage } from "./pages/InboundInboxPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 
 export default function App() {
-  const [pendingApprovals] = useState(3);
-
   return (
     <BrowserRouter>
       <Routes>
         <Route path="apply" element={<InboundPage />} />
-        <Route element={<RootLayout pendingApprovals={pendingApprovals} />}>
+        <Route element={<RootLayout />}>
           <Route index element={<HomePage />} />
           <Route path="sourcing" element={<SourcingPage />} />
           <Route path="inbound" element={<InboundInboxPage />} />

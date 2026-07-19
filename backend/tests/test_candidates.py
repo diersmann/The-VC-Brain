@@ -158,6 +158,31 @@ class TestMapPersonToCandidate:
 
         assert result.origin == "inbound"
 
+    def test_person_with_explainable_thesis_match(self) -> None:
+        person = _make_person()
+        thesis_score = _make_score_snapshot(
+            subject_id=person.id,
+            rubric_version="thesis-match-v1:thesis-v001",
+            components={
+                "thesis_fit": 0.82,
+                "thesis_confidence": 0.74,
+                "thesis_version": "thesis-v001",
+                "hard_eligible": True,
+                "matched": ["Stage", "Sector"],
+                "failed": [],
+                "unknown": ["Check size"],
+                "criteria": {"stage": {"status": "matched"}},
+            },
+        )
+
+        result = map_person_to_candidate(person, score_snapshots=[thesis_score])
+
+        assert result.scores is not None
+        assert result.scores.thesis_fit == 0.82
+        assert result.thesis_match is not None
+        assert result.thesis_match.version == "thesis-v001"
+        assert result.thesis_match.matched == ["Stage", "Sector"]
+
     def test_person_with_cached_avatar(self) -> None:
         person = _make_person()
         person.avatar_data = b"jpeg-bytes"

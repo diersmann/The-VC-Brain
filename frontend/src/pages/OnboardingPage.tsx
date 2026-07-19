@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import {
   ArrowRight,
@@ -10,6 +11,7 @@ import {
   Sparkles,
   Target,
 } from "lucide-react";
+import { saveActiveThesis, useActiveThesis } from "../api/theses";
 
 interface Option {
   label: string;
@@ -49,10 +51,21 @@ const checks: Option[] = [
 
 export function OnboardingPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { data: activeThesis } = useActiveThesis();
   const [selectedStages, setSelectedStages] = useState<string[]>(["pre-seed", "seed"]);
   const [selectedSectors, setSelectedSectors] = useState<string[]>(["ai", "deep-tech"]);
   const [selectedRegions, setSelectedRegions] = useState<string[]>(["dach", "europe"]);
   const [selectedCheck, setSelectedCheck] = useState("250-500");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "error">("idle");
+
+  useEffect(() => {
+    if (!activeThesis) return;
+    setSelectedStages(activeThesis.stages);
+    setSelectedSectors(activeThesis.sectors);
+    setSelectedRegions(activeThesis.regions);
+    setSelectedCheck(checkBand(activeThesis.check_size_min_k_eur, activeThesis.check_size_max_k_eur));
+  }, [activeThesis]);
 
   const summary = useMemo(
     () => ({
@@ -64,12 +77,38 @@ export function OnboardingPage() {
     [selectedStages, selectedSectors, selectedRegions, selectedCheck],
   );
 
+  const saveAndScore = async () => {
+    setSaveState("saving");
+    const [minimum, maximum] = checkRange(selectedCheck);
+    try {
+      await saveActiveThesis({
+        name: "Berlin Deep Tech",
+        stages: selectedStages,
+        sectors: selectedSectors,
+        excluded_sectors: [],
+        regions: selectedRegions,
+        check_size_min_k_eur: minimum,
+        check_size_max_k_eur: maximum,
+        ownership_target_pct: 10,
+        risk_appetite: "balanced",
+        scoring_weights: { stage: 0.30, sector: 0.40, geography: 0.20, check_size: 0.10 },
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["active-thesis"] }),
+        queryClient.invalidateQueries({ queryKey: ["candidates"] }),
+      ]);
+      navigate("/sourcing");
+    } catch {
+      setSaveState("error");
+    }
+  };
+
   return (
     <div className="mx-auto max-w-[1180px] pb-10 pt-2">
       <div className="mb-8 max-w-2xl">
         <div className="eyebrow mb-2">Welcome to The VC Brain</div>
-        <h1 className="text-3xl font-bold tracking-tight text-ink">What are you looking to invest in?</h1>
-        <p className="mt-2 text-sm leading-6 text-muted">
+        <h1 className="page-title">What are you looking to invest in?</h1>
+        <p className="page-description">
           Choose a few basics. You can refine your thesis later as the system learns from your decisions.
         </p>
       </div>
@@ -118,8 +157,8 @@ export function OnboardingPage() {
                 <Target className="h-4 w-4" />
               </div>
               <div>
-                <h2 className="text-sm font-bold">Your starting thesis</h2>
-                <p className="text-[11px] text-muted">You can change this anytime</p>
+                <h2 className="section-title">Your starting thesis</h2>
+                <p className="supporting-text">{activeThesis ? `${activeThesis.version} · active` : "New thesis"}</p>
               </div>
             </div>
 
@@ -131,18 +170,19 @@ export function OnboardingPage() {
             </div>
 
             <div className="my-5 border-t border-line" />
-            <div className="mb-5 flex gap-2 rounded-md bg-surface-2 p-3 text-[11px] leading-5 text-muted">
+            <div className="mb-5 flex gap-2 rounded-md bg-surface-2 p-3 text-xs leading-5 text-muted">
               <Compass className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
               We’ll use these preferences to rank founders. Missing public history will never count against founder quality.
             </div>
 
             <button
-              onClick={() => navigate("/sourcing")}
-              disabled={!selectedStages.length || !selectedSectors.length || !selectedRegions.length}
+              onClick={() => void saveAndScore()}
+              disabled={saveState === "saving" || !selectedStages.length || !selectedSectors.length || !selectedRegions.length}
               className="flex w-full items-center justify-center gap-2 rounded-md bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#344c6c] disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Start discovering founders <ArrowRight className="h-4 w-4" />
+              {saveState === "saving" ? "Saving & scoring…" : "Save thesis & score founders"} <ArrowRight className="h-4 w-4" />
             </button>
+            {saveState === "error" && <p className="mt-3 text-center text-[11px] font-semibold text-danger">Unable to save the thesis. Please retry.</p>}
             <button onClick={() => navigate("/sourcing")} className="mt-3 w-full text-center text-xs font-semibold text-muted hover:text-accent">
               Skip for now
             </button>
@@ -151,6 +191,20 @@ export function OnboardingPage() {
       </div>
     </div>
   );
+}
+
+function checkRange(value: string): [number | null, number | null] {
+  if (value === "100-250") return [100, 250];
+  if (value === "250-500") return [250, 500];
+  if (value === "500-1000") return [500, 1000];
+  return [1000, null];
+}
+
+function checkBand(minimum: number | null, maximum: number | null): string {
+  if (minimum === 100 && maximum === 250) return "100-250";
+  if (minimum === 500 && maximum === 1000) return "500-1000";
+  if (minimum === 1000 && maximum == null) return "1000+";
+  return "250-500";
 }
 
 function ChoiceSection({
@@ -188,8 +242,8 @@ function ChoiceSection({
                   : "border-line bg-white text-ink-2 hover:border-line-2 hover:bg-surface-2"
               }`}
             >
-              <div className="pr-6 text-xs font-bold">{option.label}</div>
-              {option.description && <div className="mt-1 text-[10px] text-muted">{option.description}</div>}
+              <div className="pr-6 text-[13px] font-bold">{option.label}</div>
+              {option.description && <div className="mt-1 text-[11px] leading-4 text-muted">{option.description}</div>}
               {active && <Check className="absolute right-3 top-3.5 h-3.5 w-3.5" />}
             </button>
           );
@@ -251,8 +305,8 @@ function SectionTitle({ icon: Icon, title, hint }: { icon: React.ElementType; ti
         <Icon className="h-4 w-4" />
       </div>
       <div>
-        <h2 className="text-sm font-bold">{title}</h2>
-        <p className="text-[11px] text-muted">{hint}</p>
+        <h2 className="section-title">{title}</h2>
+        <p className="supporting-text">{hint}</p>
       </div>
     </div>
   );
@@ -261,8 +315,8 @@ function SectionTitle({ icon: Icon, title, hint }: { icon: React.ElementType; ti
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">{label}</div>
-      <div className="mt-1 text-xs font-semibold leading-5 text-ink-2">{value || "Not selected"}</div>
+      <div className="data-label">{label}</div>
+      <div className="data-value leading-5">{value || "Not selected"}</div>
     </div>
   );
 }

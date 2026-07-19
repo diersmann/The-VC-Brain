@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -150,6 +151,31 @@ class OpportunityFounder(Base):
         ForeignKey("persons.id", ondelete="CASCADE"),
         primary_key=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# Investment theses
+# ---------------------------------------------------------------------------
+
+
+class InvestmentThesis(TimestampMixin, Base):
+    """Immutable, versioned investor mandate used for opportunity alignment."""
+
+    __tablename__ = "investment_theses"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    version: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    stages: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    sectors: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    excluded_sectors: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    regions: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    check_size_min_k_eur: Mapped[float | None] = mapped_column(Float, nullable=True)
+    check_size_max_k_eur: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ownership_target_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    risk_appetite: Mapped[str] = mapped_column(String(32), nullable=False, default="balanced")
+    scoring_weights: Mapped[dict[str, float]] = mapped_column(JSONB, nullable=False)
 
 
 # ---------------------------------------------------------------------------
