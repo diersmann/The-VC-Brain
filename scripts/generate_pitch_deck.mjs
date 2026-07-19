@@ -37,7 +37,7 @@ const SPEAKER_NOTES = [
   "The second capability is explainability. Every conclusion follows a transparent chain: source, observation, claim, score, and decision. An investor can open any score to see its origin, discovery date, confidence level, and any conflicting evidence.",
   "We do not average everything into one misleading number. Founder, Market, and Idea–Market Fit remain independent dimensions. Each has its own score, trend, evidence, and confidence. For an investor, disagreement between the dimensions is often the most important signal.",
   "This is a live example for Eoghan McCabe. The system summarizes his track record and the evidence around Intercom, then separates Thesis Match, Founder Signal, and Evidence Quality. Investors can trace every claim, challenge or override the analysis, and choose to proceed, hold, or decline.",
-  "Our frontend is built with React and TypeScript, while FastAPI runs the core workflow. Redis and ARQ handle asynchronous collection, Postgres and pgvector store identities, evidence graphs, and scores, and MinIO preserves source artifacts. The full system runs in Docker with versioned evidence and scoring.",
+  "FirstCheck24 runs one evidence pipeline with two connected entry paths. Outbound starts from the fund thesis. A discovery agent scans public sources, creates an initial signal score, and places high-potential founders in a promising queue. A footprint agent then resolves identity and gathers deeper technical, company, and network evidence. The three-axis engine scores Founder, Market, and Idea–Market Fit independently, including trends, confidence, and SWOT. If the case is strong, the outreach agent drafts a personalized message, with the investor approving the send. When a founder applies inbound and uploads a deck, the deck agent extracts claims and adds them to the same evidence graph. The system re-scores the opportunity, highlights contradictions, and produces an explainable recommendation: proceed, hold, or decline. Every human decision feeds memory and improves the next search.",
   "This is more than a polished interface. The system already integrates ten types of public data sources, stores 112 persistent founder identities, and passes 106 automated tests. Our north star is to compress the journey from first signal to an investment decision into 24 hours.",
   "FirstCheck24 can be summarized in one line: find first, explain everything, and decide in 24 hours. We help exceptional founders get discovered earlier and help investors make every decision on transparent, verifiable evidence.",
 ];
@@ -77,6 +77,10 @@ function circle(slide, cx, cy, r, fill, transparency = 0) {
 
 function line(slide, x1, y1, x2, y2, color = C.line, width = 1.5, dash = "solid") {
   slide.addShape(pptx.ShapeType.line, { x: X(x1), y: X(y1), w: X(x2 - x1), h: X(y2 - y1), line: { color, width, dashType: dash, beginArrowType: "none", endArrowType: "none" } });
+}
+
+function arrow(slide, x1, y1, x2, y2, color = C.blue, width = 2) {
+  slide.addShape(pptx.ShapeType.line, { x: X(x1), y: X(y1), w: X(x2 - x1), h: X(y2 - y1), line: { color, width, beginArrowType: "none", endArrowType: "triangle" } });
 }
 
 function trendSegment(slide, x1, y1, x2, y2, color, width = 2.5) {
@@ -257,24 +261,59 @@ function addLightSlide() {
   footer(slide, 7);
 }
 
-// 08 — Stack, architecture and implementation
+// 08 — End-to-end agent architecture
 {
   const slide = addLightSlide();
-  titleBlock(slide, "Built to ship", "Implementation that\nmatches the promise.", "", 48);
-  addText(slide, "TECH STACK", 90, 245, 260, 26, 12, C.blue, true, { charSpacing: 1.8 });
-  const services = [["React + TypeScript", "Investor SPA", C.blueSoft, C.blue], ["FastAPI", "Modular API", C.purpleSoft, C.purple], ["ARQ + Redis", "Async jobs", C.amberSoft, C.amber], ["Postgres + pgvector", "Memory + graph", C.greenSoft, C.green], ["MinIO + Docker", "Artifacts + deployment", "EAF0F6", C.ink2]];
-  services.forEach(([a, b, fill, color], i) => { const y = 280 + i * 91; box(slide, 90, y, 470, 68, fill); addText(slide, a, 115, y + 8, 255, 27, 16, color, true); addText(slide, b, 370, y + 10, 160, 24, 12, C.muted, true, { align: "right" }); if (i < 4) line(slide, 325, y + 68, 325, y + 91, C.line, 2); });
+  titleBlock(slide, "Agent architecture", "Two entry paths. One evidence pipeline.", "Outbound discovers hidden founders. Inbound turns applications and decks into structured evidence.", 44, { width: 1240, subtitleWidth: 1320 });
 
-  box(slide, 625, 245, 885, 535, C.white, 0.18, { shadow: true });
-  addText(slide, "SYSTEM FLOW", 665, 270, 260, 28, 12, C.blue, true, { charSpacing: 1.8 });
-  const flow = [["01", "Investor SPA", "React UI + evidence drill-down", C.blueSoft, C.blue], ["02", "FastAPI core", "Identity, claims, scores, decisions", C.purpleSoft, C.purple], ["03", "Redis → ARQ worker", "Deadline-aware collection jobs", C.amberSoft, C.amber], ["04", "Data plane", "Postgres/pgvector + immutable MinIO", C.greenSoft, C.green]];
-  flow.forEach(([n, a, b, fill, color], i) => { const y = 315 + i * 78; box(slide, 665, y, 805, 58, fill); pill(slide, n, 680, y + 12, 48, C.white, color, { h: 34, size: 10 }); addText(slide, a, 750, y + 6, 250, 24, 16, C.ink, true); addText(slide, b, 1005, y + 8, 430, 24, 13, C.muted, false, { align: "right" }); if (i < 3) addText(slide, "↓", 1060, y + 56, 40, 24, 16, color, true, { align: "center" }); });
+  pill(slide, "OUTBOUND · PROACTIVE", 90, 246, 245, C.blueSoft, C.blue, { size: 10 });
+  const outbound = [
+    ["01", "DISCOVER", "Thesis + public signals", C.blueSoft, C.blue],
+    ["02", "SIGNAL SCORE", "Fast triage", C.purpleSoft, C.purple],
+    ["03", "PROMISING", "Human gate", C.greenSoft, C.green],
+    ["04", "FOOTPRINTS", "Identity + evidence", C.amberSoft, C.amber],
+    ["05", "3-AXIS SCORE", "Founder · Market · Fit", C.purpleSoft, C.purple],
+    ["06", "OUTREACH", "Draft + approve", C.blueSoft, C.blue],
+  ];
+  outbound.forEach(([n, a, b, fill, color], i) => {
+    const x = 90 + i * 245;
+    box(slide, x, 300, 210, 116, fill, 0.14, { shadow: i === 5 });
+    pill(slide, n, x + 16, 315, 42, C.white, color, { h: 28, size: 9 });
+    addText(slide, a, x + 16, 351, 178, 23, 13, color, true, { charSpacing: 0.8 });
+    addText(slide, b, x + 16, 380, 178, 22, 11, C.ink2, true);
+    if (i < outbound.length - 1) arrow(slide, x + 213, 358, x + 241, 358, color, 1.8);
+  });
 
-  addText(slide, "IMPLEMENTATION PRINCIPLES", 665, 645, 380, 26, 12, C.blue, true, { charSpacing: 1.6 });
-  pill(slide, "EVIDENCE-FIRST", 665, 690, 180, C.blueSoft, C.blue, { size: 10 });
-  pill(slide, "ASYNC JOBS", 860, 690, 150, C.amberSoft, C.amber, { size: 10 });
-  pill(slide, "VERSIONED SCORES", 1025, 690, 190, C.purpleSoft, C.purple, { size: 10 });
-  pill(slide, "DOCKER-FIRST", 1230, 690, 175, C.greenSoft, C.green, { size: 10 });
+  arrow(slide, 1525, 418, 1525, 492, C.blue, 2.2);
+  pill(slide, "INBOUND · RESPONSE", 1275, 455, 250, C.greenSoft, C.green, { size: 10 });
+  const inbound = [
+    ["11", "RECOMMEND", "Proceed · Hold · Decline", C.greenSoft, C.green],
+    ["10", "RE-SCORE", "Axes + SWOT + trend", C.purpleSoft, C.purple],
+    ["09", "EVIDENCE GRAPH", "Claims + provenance", C.blueSoft, C.blue],
+    ["08", "DECK AGENT", "Extract + challenge", C.amberSoft, C.amber],
+    ["07", "INBOUND", "Application + pitch deck", C.greenSoft, C.green],
+  ];
+  inbound.forEach(([n, a, b, fill, color], i) => {
+    const x = 90 + i * 294;
+    box(slide, x, 510, 250, 116, fill, 0.14, { shadow: i === 0 });
+    pill(slide, n, x + 16, 525, 42, C.white, color, { h: 28, size: 9 });
+    addText(slide, a, x + 16, 561, 218, 23, 13, color, true, { charSpacing: 0.7 });
+    addText(slide, b, x + 16, 590, 218, 22, 11, C.ink2, true);
+    if (i < inbound.length - 1) arrow(slide, x + 290, 568, x + 254, 568, color, 1.8);
+  });
+
+  box(slide, 90, 664, 1470, 58, "E9F0F8", 0.12);
+  addText(slide, "HUMAN DECISIONS + OUTCOMES", 115, 678, 340, 25, 12, C.ink2, true, { charSpacing: 0.8 });
+  addText(slide, "→", 455, 675, 45, 25, 18, C.blue, true, { align: "center" });
+  addText(slide, "MEMORY", 510, 678, 120, 25, 12, C.blue, true, { charSpacing: 1.2 });
+  addText(slide, "→", 640, 675, 45, 25, 18, C.blue, true, { align: "center" });
+  addText(slide, "SHARPER THESIS + FUTURE SCORING", 695, 678, 430, 25, 12, C.ink2, true, { charSpacing: 0.8 });
+  pill(slide, "React + TypeScript", 90, 747, 195, C.white, C.blue, { size: 9 });
+  pill(slide, "FastAPI", 300, 747, 125, C.white, C.purple, { size: 9 });
+  pill(slide, "ARQ + Redis", 440, 747, 145, C.white, C.amber, { size: 9 });
+  pill(slide, "Postgres + pgvector", 600, 747, 215, C.white, C.green, { size: 9 });
+  pill(slide, "MinIO + Docker", 830, 747, 180, C.white, C.ink2, { size: 9 });
+  pill(slide, "VERSIONED EVIDENCE", 1160, 747, 250, C.blueSoft, C.blue, { size: 9 });
   footer(slide, 8);
 }
 
