@@ -11,7 +11,7 @@ import { candidateDecisionScore, candidateEvidencePercent, candidateThesisPercen
 
 export function DecisionQueuePage() {
   const navigate = useNavigate();
-  const { data = [], isLoading, error } = useCandidates();
+  const { data = [], isLoading, error } = useCandidates("memo_ready");
   const [sortBy, setSortBy] = useState<DecisionSort>("thesis");
   const sortedCandidates = useMemo(() => sortDecisionCandidates(data, sortBy), [data, sortBy]);
   const ready = data.filter((candidate) => decisionReadiness(candidate) === "ready").length;
@@ -23,7 +23,7 @@ export function DecisionQueuePage() {
       <div className="mb-7">
         <div className="eyebrow mb-2">Human approval</div>
         <h1 className="page-title">Decision queue</h1>
-        <p className="page-description">Live candidates ordered by available database evidence.</p>
+        <p className="page-description">Memo-ready opportunities awaiting a human investment decision.</p>
       </div>
 
       <div className="mb-5 grid gap-3 sm:grid-cols-3">

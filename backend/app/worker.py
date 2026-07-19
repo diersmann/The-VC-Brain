@@ -13,6 +13,8 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.contact_job import contact_outbound_job, mock_inbound_reply_job
+from app.agents.lifecycle_job import advance_pipeline_job
 from app.agents.memo_job import generate_memo_job
 from app.agents.scoring_job import score_candidate_job
 from app.collectors.jobs import (
@@ -24,7 +26,7 @@ from app.collectors.jobs import (
     research_candidate_job,
     resolve_identities_job,
 )
-from app.collectors.queue import reset_tavily_budget
+from app.collectors.queue import initialize_agent_budget, reset_tavily_budget
 from app.config import get_settings
 from app.db.session import _get_session_factory, get_engine
 from app.processing.pipeline_job import process_candidate_job
@@ -41,6 +43,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     # Reset Tavily budget on worker start (in production, this should be
     # a monthly cron, but for MVP it's fine to reset on deploy).
     await reset_tavily_budget(ctx["redis"], settings.tavily_monthly_budget)
+    await initialize_agent_budget(ctx["redis"], settings.agent_monthly_budget)
 
     logger.info("worker_started", environment=settings.environment)
 
@@ -81,6 +84,9 @@ class WorkerSettings:
         score_candidate_job,
         generate_memo_job,
         process_candidate_job,
+        advance_pipeline_job,
+        contact_outbound_job,
+        mock_inbound_reply_job,
     ]
 
     cron_jobs = [  # noqa: RUF012
@@ -90,6 +96,15 @@ class WorkerSettings:
         cron(recompute_signals_job, minute={5}, unique=False),
         # resolve_identities_job: every hour at minute 25
         cron(resolve_identities_job, minute={25}, unique=False),
+        # advance_pipeline_job: every 2 minutes (unique to prevent overlap)
+        cron(
+            advance_pipeline_job,
+            minute={
+                0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30,
+                32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58,
+            },
+            unique=True,
+        ),
     ]
 
     on_startup = startup

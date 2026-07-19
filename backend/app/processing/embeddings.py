@@ -68,13 +68,26 @@ async def embed_observations(
     )
     observations: list[Observation] = list(result.scalars().all())
 
+    pending = [
+        obs
+        for obs in observations
+        if obs.object_value and not getattr(obs, "embedding", None)
+    ]
     embedded = 0
-    for obs in observations:
-        if obs.object_value and not getattr(obs, "embedding", None):
-            embedding = await generate_embedding(obs.object_value, client, model, semaphore)
-            if embedding is not None:
-                obs.embedding = embedding
-                embedded += 1
+    batch_size = 50
+    for start in range(0, len(pending), batch_size):
+        batch = pending[start : start + batch_size]
+        texts = [obs.object_value[:8000] for obs in batch]
+        async with semaphore:
+            try:
+                response = await client.embeddings.create(model=model, input=texts)
+            except Exception as exc:
+                logger.warning("embedding_batch_failed", error=str(exc), size=len(batch))
+                continue
+        vectors = sorted(response.data, key=lambda item: item.index)
+        for obs, item in zip(batch, vectors, strict=True):
+            obs.embedding = list(item.embedding)
+            embedded += 1
 
     await session.flush()
     logger.info(

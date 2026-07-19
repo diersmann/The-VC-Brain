@@ -47,10 +47,17 @@ class Settings(BaseSettings):
     agent_model: str = "gpt-4o"
     agent_concurrency: int = 2
     agent_max_tokens: int = 1000
+    agent_monthly_budget: int = 100
 
     # Embeddings
     embedding_model: str = "text-embedding-3-small"
     embedding_concurrency: int = 4
+
+    # Deal lifecycle
+    contact_threshold: float = 0.65
+    mock_reply_delay_seconds: int = 120
+    pipeline_stuck_after_minutes: int = 30
+    pipeline_batch_size: int = 5
 
     @property
     def cors_origin_list(self) -> list[str]:

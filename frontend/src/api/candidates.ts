@@ -22,8 +22,10 @@ export type DecisionResult = {
   created_at: string;
 };
 
-export async function fetchCandidates(signal?: AbortSignal): Promise<Candidate[]> {
-  const response = await fetch("/api/v1/candidates?limit=200", { signal });
+export async function fetchCandidates(signal?: AbortSignal, stage?: string): Promise<Candidate[]> {
+  const params = new URLSearchParams({ limit: "200" });
+  if (stage) params.set("stage", stage);
+  const response = await fetch(`/api/v1/candidates?${params.toString()}`, { signal });
 
   if (!response.ok) {
     throw new Error(`Candidates request failed with status ${response.status}`);
@@ -32,12 +34,17 @@ export async function fetchCandidates(signal?: AbortSignal): Promise<Candidate[]
   return (await response.json()) as Candidate[];
 }
 
-export function useCandidates() {
+export function useCandidates(stage?: string) {
   return useQuery({
-    queryKey: ["candidates"],
-    queryFn: ({ signal }) => fetchCandidates(signal),
+    queryKey: ["candidates", stage ?? "all"],
+    queryFn: ({ signal }) => fetchCandidates(signal, stage),
     staleTime: 60_000,
   });
+}
+
+export async function contactCandidate(candidateId: string): Promise<void> {
+  const response = await fetch(`/api/v1/candidates/${candidateId}/contact`, { method: "POST" });
+  if (!response.ok) throw new Error(`Contact request failed with status ${response.status}`);
 }
 
 export async function fetchCandidate(candidateId: string, signal?: AbortSignal): Promise<CandidateDetail> {

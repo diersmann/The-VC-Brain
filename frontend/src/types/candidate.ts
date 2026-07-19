@@ -53,6 +53,7 @@ export interface Candidate {
   avatar_source?: string | null;
   latest_score_at: string | null;
   created_at: string | null;
+  lifecycle_stage?: string | null;
 }
 
 export interface CandidateObservation {

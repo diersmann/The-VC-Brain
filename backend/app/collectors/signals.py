@@ -114,11 +114,22 @@ def compute_signal_score(
         "web_signal": round(web, 4),
     }
 
-    composite = sum(
-        components.get(key, 0.0) * weight
+    # Missing sources reduce coverage/confidence, not candidate quality.
+    # Normalize the composite over sources that actually supplied a signal.
+    available = {
+        key: weight
         for key, weight in _COMPOSITE_WEIGHTS.items()
+        if components.get(key, 0.0) > 0.0
+    }
+    available_weight = sum(available.values())
+    composite = (
+        sum(components[key] * weight for key, weight in available.items())
+        / available_weight
+        if available_weight
+        else 0.0
     )
     components["composite"] = round(composite, 4)
+    components["signal_coverage"] = round(available_weight, 4)
     return components
 
 

@@ -108,25 +108,11 @@ async def generate_memo_job(ctx: dict[str, Any], person_id: str) -> dict[str, An
         )
 
         # Find or create opportunity
-        opp_result = await session.execute(
-            select(Opportunity)
-            .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
-            .where(OpportunityFounder.person_id == person.id)
-            .order_by(Opportunity.created_at.desc())
-            .limit(1)
+        from app.opportunity_service import get_or_create_opportunity
+
+        opportunity = await get_or_create_opportunity(
+            session, person, source_kind="outbound", lifecycle_state="investigating",
         )
-        opportunity = opp_result.scalar_one_or_none()
-        if opportunity is None:
-            opportunity = Opportunity(
-                company_name=person.display_name or person.stable_id,
-                source_kind="outbound",
-                lifecycle_state="screening",
-            )
-            session.add(opportunity)
-            await session.flush()
-            session.add(
-                OpportunityFounder(opportunity_id=opportunity.id, person_id=person.id)
-            )
 
         # Generate memo
         semaphore = asyncio.Semaphore(settings.agent_concurrency)

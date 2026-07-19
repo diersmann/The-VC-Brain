@@ -116,6 +116,7 @@ class CandidateResponse(BaseModel):
     avatar_source: str | None = None
     latest_score_at: datetime | None = None
     created_at: datetime | None = None
+    lifecycle_stage: str | None = None
 
 
 class CandidateObservationResponse(BaseModel):
@@ -218,6 +219,7 @@ def map_person_to_candidate(
     origin: str | None = None,
     score_snapshots: list[ScoreSnapshot] | None = None,
     profile: CandidateProfileSummary | None = None,
+    lifecycle_stage: str | None = None,
 ) -> CandidateResponse:
     """Map a Person ORM row (with optional ScoreSnapshot) to a CandidateResponse.
 
@@ -317,6 +319,7 @@ def map_person_to_candidate(
         avatar_source=person.avatar_source_type,
         latest_score_at=latest_score_at,
         created_at=person.created_at,
+        lifecycle_stage=lifecycle_stage,
     )
 
 
@@ -442,6 +445,43 @@ async def _fetch_origin(
     return {row.person_id: row.source_kind for row in result}
 
 
+async def _fetch_lifecycle_stages(
+    session: AsyncSession,
+    person_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, str]:
+    """Return the lifecycle_state of the latest Opportunity per person."""
+    if not person_ids:
+        return {}
+
+    # Subquery: latest opportunity per person
+    latest_opp = (
+        select(
+            OpportunityFounder.person_id,
+            func.max(Opportunity.created_at).label("max_created"),
+        )
+        .select_from(OpportunityFounder)
+        .join(Opportunity, Opportunity.id == OpportunityFounder.opportunity_id)
+        .where(OpportunityFounder.person_id.in_(person_ids))
+        .group_by(OpportunityFounder.person_id)
+        .subquery()
+    )
+
+    result = await session.execute(
+        select(
+            OpportunityFounder.person_id,
+            Opportunity.lifecycle_state,
+        )
+        .select_from(OpportunityFounder)
+        .join(Opportunity, Opportunity.id == OpportunityFounder.opportunity_id)
+        .join(
+            latest_opp,
+            (OpportunityFounder.person_id == latest_opp.c.person_id)
+            & (Opportunity.created_at == latest_opp.c.max_created),
+        )
+    )
+    return {row.person_id: row.lifecycle_state for row in result}
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -456,8 +496,12 @@ async def list_candidates(
         pattern=r"^(inbound|outbound)$",
         description="Filter by opportunity origin (inbound/outbound)",
     ),
+    stage: str | None = Query(
+        default=None,
+        description="Filter by lifecycle stage (e.g. investigating, memo_ready, contacted)",
+    ),
 ) -> list[CandidateResponse]:
-    """List sourcing candidates (persons) with optional origin filter.
+    """List sourcing candidates (persons) with optional origin and stage filters.
 
     Returns persons ordered by creation date (newest first). Scores are
     populated from the latest ScoreSnapshot with a founder-score rubric,
@@ -467,9 +511,19 @@ async def list_candidates(
     query = select(Person).order_by(Person.created_at.desc()).limit(limit)
 
     if origin:
-        # Filter to persons who have at least one Opportunity with the
-        # given source_kind. Uses the many-to-many join table.
         query = query.join(Person.opportunities).where(Opportunity.source_kind == origin).distinct()
+
+    if stage:
+        # Filter to persons whose latest opportunity is in the given stage
+        latest_opp = (
+            select(OpportunityFounder.person_id, Opportunity.lifecycle_state)
+            .distinct(OpportunityFounder.person_id)
+            .join(Opportunity, Opportunity.id == OpportunityFounder.opportunity_id)
+            .where(Opportunity.lifecycle_state == stage)
+            .order_by(OpportunityFounder.person_id, Opportunity.created_at.desc())
+            .subquery()
+        )
+        query = query.join(latest_opp, Person.id == latest_opp.c.person_id)
 
     result = await session.execute(query)
     persons: list[Person] = list(result.scalars().all())
@@ -479,12 +533,13 @@ async def list_candidates(
 
     person_ids = [p.id for p in persons]
 
-    # Batch-fetch latest scores and origins
+    # Batch-fetch latest scores, origins, and lifecycle stages
     scores_task = _fetch_score_snapshots(session, person_ids)
     origins_task = _fetch_origin(session, person_ids)
     profiles_task = _fetch_candidate_profiles(session, person_ids)
-    score_snapshots, origins, profiles = await asyncio.gather(
-        scores_task, origins_task, profiles_task
+    stages_task = _fetch_lifecycle_stages(session, person_ids)
+    score_snapshots, origins, profiles, lifecycle_stages = await asyncio.gather(
+        scores_task, origins_task, profiles_task, stages_task
     )
 
     return [
@@ -493,6 +548,7 @@ async def list_candidates(
             origin=origins.get(p.id) or ("outbound" if p.handles else None),
             score_snapshots=score_snapshots.get(p.id),
             profile=profiles.get(p.id),
+            lifecycle_stage=lifecycle_stages.get(p.id),
         )
         for p in persons
     ]
@@ -511,11 +567,13 @@ async def get_candidate(
     score_snapshots = await _fetch_score_snapshots(session, [person.id])
     origins = await _fetch_origin(session, [person.id])
     profiles = await _fetch_candidate_profiles(session, [person.id])
+    lifecycle_stages = await _fetch_lifecycle_stages(session, [person.id])
     candidate = map_person_to_candidate(
         person,
         origin=origins.get(person.id) or ("outbound" if person.handles else None),
         score_snapshots=score_snapshots.get(person.id),
         profile=profiles.get(person.id),
+        lifecycle_stage=lifecycle_stages.get(person.id),
     )
 
     opportunity_result = await session.execute(
@@ -778,6 +836,44 @@ async def get_candidate_avatar(
         media_type=person.avatar_mime_type or "image/jpeg",
         headers=headers,
     )
+
+
+# ---------------------------------------------------------------------------
+# Manual contact endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{candidate_id}/contact", response_model=dict[str, str])
+async def contact_candidate(
+    candidate_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, str]:
+    """Manually trigger cold outreach for a candidate.
+
+    Works regardless of contact_threshold — allows investors to manually
+    target investigated persons who were not auto-contacted.
+    """
+    person = await session.get(Person, candidate_id)
+    if person is None or not person.canonical:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    import redis.asyncio as aioredis
+
+    from app.collectors.queue import enqueue as queue_enqueue
+    from app.config import get_settings
+
+    settings = get_settings()
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
+    try:
+        await queue_enqueue(
+            redis,
+            {"job_type": "contact_outbound", "person_id": str(person.id)},
+            priority=10.0,
+        )
+    finally:
+        await redis.aclose()
+
+    return {"message": f"Outreach queued for {candidate_id}"}
 
 
 # ---------------------------------------------------------------------------

@@ -139,6 +139,39 @@ async def reset_tavily_budget(redis: Any, monthly_limit: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Agent (LLM) budget counter
+# ---------------------------------------------------------------------------
+
+_AGENT_BUDGET_KEY = "vcbrain:budget:agent"
+
+
+async def get_agent_budget_remaining(redis: Any) -> int:
+    """Return remaining LLM agent calls for the current month."""
+    val = await redis.get(_AGENT_BUDGET_KEY)
+    return int(val) if val else 0
+
+
+async def decrement_agent_budget(redis: Any, amount: int = 1) -> int:
+    """Decrement the agent budget counter and return the new value."""
+    result: int = await redis.decrby(_AGENT_BUDGET_KEY, amount)
+    return result
+
+
+async def reset_agent_budget(redis: Any, monthly_limit: int) -> None:
+    """Set the agent budget counter (called on worker startup)."""
+    await redis.set(_AGENT_BUDGET_KEY, monthly_limit)
+
+
+async def initialize_agent_budget(redis: Any, monthly_limit: int) -> None:
+    """Initialize the agent budget only when the key does not exist.
+
+    Unlike reset_agent_budget, this is safe on worker restarts and does not
+    silently replenish spend capacity.
+    """
+    await redis.set(_AGENT_BUDGET_KEY, monthly_limit, nx=True)
+
+
+# ---------------------------------------------------------------------------
 # Discovery page tracker
 # ---------------------------------------------------------------------------
 

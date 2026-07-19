@@ -197,25 +197,48 @@ async def _compute_and_store_signal(
     result = await session.execute(select(Observation).where(Observation.subject_id == person.id))
     observations = result.scalars().all()
 
-    # Compute per-source signals from observations
-    github_score = 0.0
-    producthunt_score = 0.0
-    arxiv_score = 0.0
-    web_score = 0.0
-
+    # Aggregate all relevant observations before computing each source score.
+    values: dict[str, str] = {}
+    predicates = {obs.predicate for obs in observations}
     for obs in observations:
-        pred = obs.predicate
-        val = obs.object_value
-        if pred == "github_total_stars":
-            github_score = compute_github_signal(total_stars=int(val) if val.isdigit() else 0)
-        elif pred == "producthunt_total_upvotes":
-            producthunt_score = compute_producthunt_signal(
-                total_upvotes=int(val) if val.isdigit() else 0
-            )
-        elif pred == "arxiv_total_citations":
-            arxiv_score = compute_arxiv_signal(total_citations=int(val) if val.isdigit() else 0)
-        elif pred == "page_content":
-            web_score = compute_web_signal(has_company_site=True)
+        values.setdefault(obs.predicate, obs.object_value)
+
+    github_score = 0.0
+    if "github_login" in predicates:
+        languages = [
+            item.strip()
+            for item in values.get("github_languages", "").split(",")
+            if item.strip()
+        ]
+        github_score = compute_github_signal(
+            public_repos=int(values.get("github_public_repos", "0") or 0),
+            total_stars=int(values.get("github_total_stars", "0") or 0),
+            top_language_count=len(languages),
+            has_readme="github_top_repo_readme" in predicates,
+        )
+
+    producthunt_score = 0.0
+    if "producthunt_username" in predicates:
+        producthunt_score = compute_producthunt_signal(
+            total_upvotes=int(values.get("producthunt_total_upvotes", "0") or 0),
+            launch_count=int(values.get("producthunt_posts", "0") or 0),
+            has_maker_profile=True,
+        )
+
+    arxiv_score = 0.0
+    if "arxiv_paper_count" in predicates:
+        arxiv_score = compute_arxiv_signal(
+            paper_count=int(values.get("arxiv_paper_count", "0") or 0),
+            total_citations=int(values.get("arxiv_total_citations", "0") or 0),
+            in_relevant_categories=True,
+        )
+
+    web_score = compute_web_signal(
+        has_company_site="page_content" in predicates,
+        has_blog="blog_url" in predicates,
+        has_podcast_appearance="podcast_url" in predicates,
+        has_youtube_talk="youtube_recent_videos" in predicates,
+    )
 
     components = compute_signal_score(
         github=github_score,
@@ -312,6 +335,22 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                 )
                 # Still recompute signal score with existing observations
                 components = await _compute_and_store_signal(session, person, source)
+
+                from app.opportunity_service import (
+                    get_or_create_opportunity,
+                    transition_opportunity,
+                )
+
+                opportunity = await get_or_create_opportunity(
+                    session, person, source_kind="outbound", lifecycle_state="discovered"
+                )
+                composite = float(components.get("composite", 0.0))
+                if composite >= threshold and opportunity.lifecycle_state == "discovered":
+                    await transition_opportunity(
+                        session, opportunity, "interesting",
+                        reason=f"Signal composite {composite:.3f} >= threshold {threshold}",
+                    )
+
                 if above_threshold(components, threshold):
                     above_count += 1
                     task = {
@@ -354,6 +393,19 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
             # Compute signal score
             components = await _compute_and_store_signal(session, person, source)
 
+            # Create/update outbound opportunity at the right lifecycle stage
+            from app.opportunity_service import get_or_create_opportunity, transition_opportunity
+
+            opportunity = await get_or_create_opportunity(
+                session, person, source_kind="outbound", lifecycle_state="discovered"
+            )
+            composite = float(components.get("composite", 0.0))
+            if composite >= threshold and opportunity.lifecycle_state == "discovered":
+                await transition_opportunity(
+                    session, opportunity, "interesting",
+                    reason=f"Signal composite {composite:.3f} >= threshold {threshold}",
+                )
+
             # Enqueue deep collect if above threshold
             if above_threshold(components, threshold):
                 above_count += 1
@@ -364,7 +416,7 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                     "handle": seed.handle,
                 }
                 p = compute_priority(
-                    info_gain=info_gain(components.get("composite", 0.0), staleness_days=0.0),
+                    info_gain=info_gain(composite, staleness_days=0.0),
                     cost=connector.cost,
                     authority=connector.authority,
                 )
@@ -798,15 +850,12 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
         )
         opportunity = opportunity_result.scalar_one_or_none()
         if opportunity is None:
-            opportunity = Opportunity(
+            from app.opportunity_service import get_or_create_opportunity
+
+            opportunity = await get_or_create_opportunity(
+                session, person, source_kind="outbound", lifecycle_state="investigating",
                 company_name=company,
-                source_kind="outbound",
-                lifecycle_state="screening",
-                thesis_version="tavily-v1",
             )
-            session.add(opportunity)
-            await session.flush()
-            session.add(OpportunityFounder(opportunity_id=opportunity.id, person_id=person.id))
 
         for axis, scored in axis_scores.items():
             previous_value = previous_components.get(axis)
@@ -938,6 +987,16 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
     elif job_type == "process_candidate":
         await pool.enqueue_job(
             "process_candidate_job",
+            task.get("person_id", ""),
+        )
+    elif job_type == "contact_outbound":
+        await pool.enqueue_job(
+            "contact_outbound_job",
+            task.get("person_id", ""),
+        )
+    elif job_type == "mock_inbound_reply":
+        await pool.enqueue_job(
+            "mock_inbound_reply_job",
             task.get("person_id", ""),
         )
     else:

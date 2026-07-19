@@ -1,10 +1,11 @@
 import { NavLink } from "react-router";
-import { Compass, Inbox, LayoutDashboard, Scale } from "lucide-react";
+import { Compass, Inbox, LayoutDashboard, SearchCheck, Scale } from "lucide-react";
 
 const navItems = [
   { id: "home", label: "Overview", path: "/", icon: LayoutDashboard, color: "text-[#5277aa]" },
   { id: "inbound", label: "Inbound", path: "/inbound", icon: Inbox, color: "text-[#7656a5]" },
   { id: "sourcing", label: "Discover", path: "/sourcing", icon: Compass, color: "text-[#35816b]" },
+  { id: "investigated", label: "Investigated", path: "/investigated", icon: SearchCheck, color: "text-[#5074a8]" },
   { id: "decisions", label: "Decisions", path: "/decisions", icon: Scale, color: "text-[#b18435]" },
 ];
 
