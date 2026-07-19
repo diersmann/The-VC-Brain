@@ -63,6 +63,20 @@ class Person(TimestampMixin, Base):
         String(32), nullable=False, default="pending"
     )
 
+    # Identity / supersession
+    superseded_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("persons.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    canonical: Mapped[bool] = mapped_column(
+        nullable=False, default=True
+    )
+    merged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # relationships
     opportunities: Mapped[list["Opportunity"]] = relationship(
         secondary="opportunity_founders", back_populates="founders"
@@ -72,6 +86,15 @@ class Person(TimestampMixin, Base):
     )
     relationships_b: Mapped[list["Relationship"]] = relationship(
         foreign_keys="[Relationship.person_b_id]", back_populates="person_b"
+    )
+    superseded_by: Mapped["Person | None"] = relationship(
+        foreign_keys=[superseded_by_id],
+        remote_side="Person.id",
+        back_populates="supersedes",
+    )
+    supersedes: Mapped[list["Person"]] = relationship(
+        foreign_keys=[superseded_by_id],
+        back_populates="superseded_by",
     )
 
 
@@ -337,3 +360,42 @@ class DecisionEvent(TimestampMixin, Base):
     sla_metadata: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     opportunity: Mapped["Opportunity"] = relationship(back_populates="decision_events")
+
+
+# ---------------------------------------------------------------------------
+# Person Matches (identity resolution review queue)
+# ---------------------------------------------------------------------------
+
+class PersonMatch(TimestampMixin, Base):
+    """A candidate pair of Persons that may represent the same real person.
+
+    Created when identity resolution finds a match with confidence in the
+    ambiguous band (0.5-0.8).  An investor can approve or reject the match.
+    """
+
+    __tablename__ = "person_matches"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_uuid
+    )
+    person_a_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("persons.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    person_b_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("persons.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    reasons: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending"
+    )
+    resolved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

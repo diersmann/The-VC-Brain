@@ -83,7 +83,11 @@ async def _get_or_create_person(
     handle: str,
     display_hint: str = "",
 ) -> Person:
-    """Find a Person by handle in the JSONB handles column, or create one."""
+    """Find a Person by handle in the JSONB handles column, or create one.
+
+    If the found person has been merged (``canonical = False``), follows
+    the supersession chain to return the canonical Person.
+    """
     # Try to find existing person with this handle
     result = await session.execute(
         select(Person).where(
@@ -92,6 +96,11 @@ async def _get_or_create_person(
     )
     person = result.scalar_one_or_none()
     if person is not None:
+        # Follow supersession chain to canonical
+        while not person.canonical and person.superseded_by_id:
+            person = await session.get(Person, person.superseded_by_id)
+            if person is None:
+                break
         return person
 
     # Create new person
@@ -410,6 +419,8 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
             task.get("query", ""),
             task.get("source", ""),
         )
+    elif job_type == "resolve_identities":
+        await pool.enqueue_job("resolve_identities_job")
     else:
         await pool.enqueue_job(
             "collect_job",
@@ -463,3 +474,21 @@ async def recompute_signals_job(ctx: dict[str, Any]) -> dict[str, Any]:
 
     logger.info("recompute_signals_completed", persons=len(persons), above=above_count)
     return {"persons_checked": len(persons), "above_threshold": above_count}
+
+
+async def resolve_identities_job(ctx: dict[str, Any]) -> dict[str, int]:
+    """Periodic cron: run identity resolution across all canonical persons.
+
+    Detects duplicate Person records from different sources and either
+    auto-merges (high confidence) or flags for human review (medium confidence).
+    """
+    logger.info("resolve_identities_job_started")
+
+    async with _session_ctx(ctx) as session:
+        from app.identity import resolve_identities
+
+        summary = await resolve_identities(session, ctx["redis"])
+        await session.commit()
+
+    logger.info("resolve_identities_job_completed", **summary)
+    return summary

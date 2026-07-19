@@ -18,6 +18,7 @@ from app.collectors.jobs import (
     discover_job,
     dispatcher_job,
     recompute_signals_job,
+    resolve_identities_job,
 )
 from app.collectors.queue import reset_tavily_budget
 from app.config import get_settings
@@ -69,6 +70,7 @@ class WorkerSettings:
         collect_job,
         dispatcher_job,
         recompute_signals_job,
+        resolve_identities_job,
     ]
 
     cron_jobs = [  # noqa: RUF012
@@ -76,6 +78,8 @@ class WorkerSettings:
         cron(dispatcher_job, unique=False),
         # recompute_signals_job: every hour at minute 5
         cron(recompute_signals_job, minute={5}, unique=False),
+        # resolve_identities_job: every hour at minute 25
+        cron(resolve_identities_job, minute={25}, unique=False),
     ]
 
     on_startup = startup
