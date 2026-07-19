@@ -21,3 +21,7 @@ coverage/
 
 # Thesis config (local overrides)
 thesis.yaml
+
+# Generated presentation cache and Office lock files
+docs/.firstcheck24-pitch-build/
+docs/~$*.pptx
