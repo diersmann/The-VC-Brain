@@ -79,7 +79,7 @@ class GitHubConnector(Connector):
                     Seed(
                         source_type="github",
                         handle=login,
-                        display_hint=item.get("gravatar_id", login),
+                        display_hint=login,
                         metadata={"query": query, "gh_id": item.get("id")},
                     )
                 )

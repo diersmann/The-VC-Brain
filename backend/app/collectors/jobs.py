@@ -254,6 +254,10 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
     logger.info("discover_job_seeds", source=source, seed_count=len(seeds))
 
     above_count = 0
+    from app.config import get_settings as _get_settings
+    settings = ctx.get("settings") or _get_settings()
+    threshold = settings.signal_threshold
+
     async with _session_ctx(ctx) as session:
         for seed in seeds:
             person = await _get_or_create_person(
@@ -262,6 +266,46 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                 handle=seed.handle,
                 display_hint=seed.display_hint,
             )
+
+            # Staleness check: skip light collect if this person was already
+            # collected from this source recently (within freshness window).
+            from app.collectors.thesis_config import get_thesis_config
+            thesis = get_thesis_config()
+            freshness_days = thesis.get("source_freshness_days", {}).get(source, 7)
+            from datetime import UTC, datetime, timedelta
+            cutoff = datetime.now(UTC) - timedelta(days=freshness_days)
+
+            recent_snapshot = await session.execute(
+                select(SourceSnapshot).join(
+                    Observation, Observation.snapshot_id == SourceSnapshot.id
+                ).where(
+                    Observation.subject_id == person.id,
+                    SourceSnapshot.source_type == source,
+                    SourceSnapshot.collected_at >= cutoff,
+                ).limit(1)
+            )
+            if recent_snapshot.scalar_one_or_none() is not None:
+                logger.debug(
+                    "discover_skip_fresh",
+                    person_id=str(person.id), source=source,
+                )
+                # Still recompute signal score with existing observations
+                components = await _compute_and_store_signal(session, person, source)
+                if above_threshold(components, threshold):
+                    above_count += 1
+                    task = {
+                        "person_id": str(person.id),
+                        "source": source,
+                        "depth": "deep",
+                        "handle": seed.handle,
+                    }
+                    p = compute_priority(
+                        info_gain=info_gain(components.get("composite", 0.0), staleness_days=0.0),
+                        cost=connector.cost,
+                        authority=connector.authority,
+                    )
+                    await queue_enqueue(ctx["redis"], task, p)
+                continue
 
             # Light collect: get metadata
             try:
@@ -276,14 +320,18 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
             snapshot = await _write_snapshot(session, collected)
             await _write_observations(session, snapshot, collected.observations, person.id)
 
+            # Update Person display_name from observations if available
+            for obs in collected.observations:
+                if obs.get("predicate") == "display_name":
+                    name_val = str(obs.get("object_value", "")).strip()
+                    if name_val and name_val != person.display_name:
+                        person.display_name = name_val
+                    break
+
             # Compute signal score
             components = await _compute_and_store_signal(session, person, source)
 
             # Enqueue deep collect if above threshold
-            from app.config import get_settings as _get_settings
-            settings = ctx.get("settings") or _get_settings()
-            threshold = settings.signal_threshold
-
             if above_threshold(components, threshold):
                 above_count += 1
                 task = {

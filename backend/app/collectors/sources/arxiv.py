@@ -20,7 +20,7 @@ from app.collectors.base import Collected, Connector, ConnectorError, Depth, See
 
 logger = structlog.get_logger(__name__)
 
-_ARXIV_API = "http://export.arxiv.org/api/query"
+_ARXIV_API = "https://export.arxiv.org/api/query"
 _SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1"
 _DEFAULT_MAX_RESULTS = 50
 
