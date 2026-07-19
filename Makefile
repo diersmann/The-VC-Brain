@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help setup up down restart logs ps shell-api shell-db migrate lint typecheck test check build clean
+.PHONY: help setup up down restart logs ps shell-api shell-db shell-worker shell-redis shell-minio migrate lint typecheck test check build clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -16,7 +16,7 @@ down: ## Stop the development stack
 	$(COMPOSE) down
 
 restart: ## Restart application containers
-	$(COMPOSE) restart frontend api
+	$(COMPOSE) restart frontend api worker
 
 logs: ## Follow stack logs
 	$(COMPOSE) logs -f
@@ -26,6 +26,15 @@ ps: ## Show stack status
 
 shell-api: ## Open a shell in the API container
 	$(COMPOSE) exec api sh
+
+shell-worker: ## Open a shell in the worker container
+	$(COMPOSE) exec worker sh
+
+shell-redis: ## Open a redis-cli session
+	$(COMPOSE) exec redis redis-cli
+
+shell-minio: ## Open a shell in the MinIO container
+	$(COMPOSE) exec minio sh
 
 shell-db: ## Open psql in the database container
 	$(COMPOSE) exec postgres psql -U $${POSTGRES_USER:-vc_brain} -d $${POSTGRES_DB:-vc_brain}

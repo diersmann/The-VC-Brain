@@ -18,6 +18,31 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173"
 
+    # Redis
+    redis_url: str = "redis://localhost:6379/0"
+
+    # MinIO / S3-compatible object storage
+    minio_endpoint: str = "localhost:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_bucket: str = "vc-brain-snapshots"
+    minio_secure: bool = False
+
+    # Source API keys
+    github_token: str = ""
+    producthunt_token: str = ""
+    tavily_api_key: str = ""
+    youtube_api_key: str = ""
+
+    # Collection thresholds and limits
+    signal_threshold: float = 0.45
+    collection_concurrency: int = 4
+    tavily_monthly_budget: int = 1000
+    arxiv_min_citations: int = 10
+    arxiv_coauthor_cap: int = 20
+    website_seed_cap: int = 10
+    persons_created_per_day: int = 200
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

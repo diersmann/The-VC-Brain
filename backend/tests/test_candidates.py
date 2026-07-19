@@ -49,7 +49,7 @@ def _make_person(
 
 def _make_score_snapshot(
     subject_id: uuid.UUID,
-    components: dict | None = None,
+    components: dict[str, object] | None = None,
     rubric_version: str = "founder-v1",
 ) -> ScoreSnapshot:
     return ScoreSnapshot(

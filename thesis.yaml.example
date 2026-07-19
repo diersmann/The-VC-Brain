@@ -1,0 +1,48 @@
+# Thesis configuration for The VC Brain data collector.
+#
+# This file is optional.  Values here override the env defaults in
+# Settings.  Env vars (APP_SIGNAL_THRESHOLD, etc.) always win.
+#
+# Copy this to thesis.yaml and edit for your investment thesis.
+
+# --- Thresholds ---
+signal_threshold: 0.45          # composite signal score to trigger deep collect
+collection_concurrency: 4       # max concurrent deep-collect jobs
+tavily_monthly_budget: 1000     # max Tavily API calls per month
+
+# --- arXiv ---
+arxiv_min_citations: 10         # minimum citations to become a seed
+arxiv_coauthor_cap: 20          # max coauthors to expand per paper
+arxiv_categories:
+  - cs.AI
+  - cs.LG
+  - cs.CL
+  - cs.CV
+  - cs.SE
+  - cs.IR
+  - cs.NE
+  - cs.RO
+  - stat.ML
+
+# --- Web ---
+website_seed_cap: 10            # max outbound-link seeds per snapshot
+persons_created_per_day: 200   # global cap on new Person stubs per day
+
+# --- Discovery queries ---
+# These are the default queries used by the scheduler when no explicit
+# query is provided.  Edit to match your thesis.
+discovery_queries:
+  - "AI infrastructure founder"
+  - "machine learning startup"
+  - "developer tools founder"
+  - "SaaS founder Berlin"
+  - "YC founder AI"
+  - "deep tech entrepreneur"
+
+# --- Source freshness (days before re-collect) ---
+source_freshness_days:
+  github: 7
+  producthunt: 14
+  arxiv: 30
+  web: 30
+  hackernews: 7

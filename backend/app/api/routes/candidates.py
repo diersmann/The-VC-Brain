@@ -19,7 +19,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
@@ -133,7 +133,7 @@ async def _fetch_latest_scores(
     latest_per_subject = (
         select(
             ScoreSnapshot.subject_id,
-            text("MAX(created_at) AS max_created_at"),
+            func.max(ScoreSnapshot.created_at).label("max_created_at"),
         )
         .where(
             ScoreSnapshot.subject_id.in_(person_ids),
@@ -168,7 +168,7 @@ async def _fetch_origin(
     latest_opp = (
         select(
             OpportunityFounder.person_id,
-            text("MAX(opportunities.created_at) AS max_created"),
+            func.max(Opportunity.created_at).label("max_created"),
         )
         .select_from(OpportunityFounder)
         .join(Opportunity, Opportunity.id == OpportunityFounder.opportunity_id)

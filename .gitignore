@@ -18,3 +18,6 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+
+# Thesis config (local overrides)
+thesis.yaml
