@@ -1,7 +1,7 @@
 """add investment memos
 
-Revision ID: 003
-Revises: 002
+Revision ID: 005
+Revises: 004
 Create Date: 2026-07-19
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "003"
-down_revision: str | None = "002"
+revision: str = "005"
+down_revision: str | None = "004"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

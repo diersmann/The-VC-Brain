@@ -1,7 +1,7 @@
 """add observation embeddings
 
-Revision ID: 004
-Revises: 003
+Revision ID: 006
+Revises: 005
 Create Date: 2026-07-19
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from pgvector.sqlalchemy import Vector
 
-revision: str = "004"
-down_revision: str | None = "003"
+revision: str = "006"
+down_revision: str | None = "005"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
