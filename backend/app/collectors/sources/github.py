@@ -51,14 +51,18 @@ class GitHubConnector(Connector):
     # Discovery
     # ------------------------------------------------------------------
 
-    async def discover(self, query: str) -> list[Seed]:
+    async def discover(self, query: str, page: int = 1) -> list[Seed]:
         """Search GitHub users by location + topic.
 
         The query is interpreted as a GitHub search::
             location:<query> type:user repos:>0
+
+        Args:
+            query: Search query (location).
+            page: Page number (1-indexed, 30 results per page).
         """
         search_q = f"location:{query} type:user repos:>0"
-        params: dict[str, str | int] = {"q": search_q, "per_page": _DEFAULT_PER_PAGE, "page": 1}
+        params: dict[str, str | int] = {"q": search_q, "per_page": _DEFAULT_PER_PAGE, "page": page}
 
         async with await self._client() as client:
             resp = await client.get(f"{_API_BASE}/search/users", params=params)

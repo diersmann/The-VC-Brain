@@ -52,7 +52,7 @@ class WebsiteConnector(Connector):
             return self._tavily
         return None
 
-    async def discover(self, query: str) -> list[Seed]:
+    async def discover(self, query: str, page: int = 1) -> list[Seed]:
         """Website connector does not do discovery — use TavilySearchConnector."""
         return []
 

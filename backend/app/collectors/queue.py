@@ -23,6 +23,8 @@ _QUEUE_KEYS = {
 
 # Budget counter for Tavily
 _TAVILY_BUDGET_KEY = "vcbrain:budget:tavily"
+# Page tracker for auto-advancing discovery queries
+_PAGE_PREFIX = "vcbrain:page:"
 
 
 def _lane(priority: float) -> str:
@@ -134,3 +136,28 @@ async def decrement_tavily_budget(redis: Any, amount: int = 1) -> int:
 async def reset_tavily_budget(redis: Any, monthly_limit: int) -> None:
     """Set the Tavily budget counter (called on first-of-month or startup)."""
     await redis.set(_TAVILY_BUDGET_KEY, monthly_limit)
+
+
+# ---------------------------------------------------------------------------
+# Discovery page tracker
+# ---------------------------------------------------------------------------
+
+
+async def get_discovery_page(redis: Any, source: str, query: str) -> int:
+    """Get the next page number for a discovery query, auto-incrementing.
+
+    Returns the current page and advances the counter so the next call
+    gets the next page.  Resets to 1 after page 10 to avoid going too deep.
+    """
+    key = f"{_PAGE_PREFIX}{source}:{query}"
+    page = await redis.incr(key)
+    if page > 10:
+        await redis.set(key, 1)
+        page = 1
+    return page  # type: ignore[no-any-return]
+
+
+async def reset_discovery_page(redis: Any, source: str, query: str) -> None:
+    """Reset the page counter for a discovery query back to 1."""
+    key = f"{_PAGE_PREFIX}{source}:{query}"
+    await redis.set(key, 0)

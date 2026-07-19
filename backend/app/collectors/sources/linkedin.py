@@ -42,11 +42,14 @@ class LinkedInConnector(Connector):
             return self._tavily
         return None
 
-    async def discover(self, query: str) -> list[Seed]:
+    async def discover(self, query: str, page: int = 1) -> list[Seed]:
         """Search Tavily for LinkedIn profiles matching the query.
 
         Constructs a search like "linkedin <query> founder" to find
         public LinkedIn profile URLs.
+
+        Note: Tavily basic search does not support pagination.
+        The page parameter is accepted for interface consistency.
         """
         tavily = self._get_tavily()
         if not tavily:

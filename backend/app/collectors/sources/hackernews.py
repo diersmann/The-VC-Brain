@@ -36,11 +36,15 @@ class HackerNewsConnector(Connector):
     # Discovery
     # ------------------------------------------------------------------
 
-    async def discover(self, query: str) -> list[Seed]:
+    async def discover(self, query: str, page: int = 1) -> list[Seed]:
         """Search HN submissions and comments by topic, return author seeds.
 
         Uses Algolia's search API.  Returns authors of top stories and
         commenters on those stories.
+
+        Args:
+            query: Search topic.
+            page: Page number (1-indexed, 30 results per page).
         """
         seeds: list[Seed] = []
         seen_authors: set[str] = set()
@@ -51,6 +55,7 @@ class HackerNewsConnector(Connector):
                 "query": query,
                 "tags": "story",
                 "hitsPerPage": _DEFAULT_HITS,
+                "page": page - 1,  # Algolia is 0-indexed
             }
             resp = await client.get(f"{_ALGOLIA_API}/search", params=params)
             if resp.status_code != 200:

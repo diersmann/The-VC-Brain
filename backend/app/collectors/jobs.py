@@ -250,7 +250,13 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
     """
     logger.info("discover_job_started", query=query, source=source)
     connector = get_connector(source)
-    seeds = await connector.discover(query)
+
+    # Auto-advance page to find new people each run
+    from app.collectors.queue import get_discovery_page
+    page = await get_discovery_page(ctx["redis"], source, query)
+    logger.info("discover_job_page", source=source, query=query, page=page)
+
+    seeds = await connector.discover(query, page=page)
     logger.info("discover_job_seeds", source=source, seed_count=len(seeds))
 
     above_count = 0

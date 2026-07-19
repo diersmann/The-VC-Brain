@@ -46,11 +46,16 @@ class ProductHuntConnector(Connector):
     # Discovery
     # ------------------------------------------------------------------
 
-    async def discover(self, query: str) -> list[Seed]:
-        """Search Product Hunt posts by topic, return maker seeds."""
+    async def discover(self, query: str, page: int = 1) -> list[Seed]:
+        """Search Product Hunt posts by topic, return maker seeds.
+
+        Args:
+            query: Search topic.
+            page: Page number (1-indexed, 20 results per page).
+        """
         graphql_query = """
-        query SearchPosts($query: String!, $first: Int!) {
-            posts(order: VOTES, first: $first) {
+        query SearchPosts($query: String!, $first: Int!, $after: String) {
+            posts(order: VOTES, first: $first, after: $after) {
                 edges {
                     node {
                         id
@@ -68,11 +73,11 @@ class ProductHuntConnector(Connector):
             }
         }
         """
-        # Note: PH GraphQL search is limited; we use a broad query and filter client-side.
-        # For MVP, we search by topic and return makers of top posts.
+        # For MVP, we use page as a simple offset via cursor
+        after = str((page - 1) * _DEFAULT_PER_PAGE) if page > 1 else None
         payload = {
             "query": graphql_query,
-            "variables": {"query": query, "first": _DEFAULT_PER_PAGE},
+            "variables": {"query": query, "first": _DEFAULT_PER_PAGE, "after": after},
         }
 
         async with await self._client() as client:

@@ -51,11 +51,15 @@ class YouTubeConnector(Connector):
     # Discovery
     # ------------------------------------------------------------------
 
-    async def discover(self, query: str) -> list[Seed]:
+    async def discover(self, query: str, page: int = 1) -> list[Seed]:
         """Search YouTube for videos matching the query, return channel seeds.
 
         Returns channels (not individual videos) so we can collect the
         channel's full metadata and recent uploads.
+
+        Args:
+            query: Search topic.
+            page: Page number (1-indexed, 20 results per page).
         """
         api_key = self._get_api_key()
         if not api_key:
@@ -72,6 +76,9 @@ class YouTubeConnector(Connector):
             "maxResults": _DEFAULT_MAX_RESULTS,
             "key": api_key,
         }
+        # YouTube uses pageToken (string), not page numbers.
+        # For MVP, we skip pagination and just use the first page.
+        # Phase 2: track pageToken in Redis.
 
         async with await self._client() as client:
             resp = await client.get(f"{_API_BASE}/search", params=params)

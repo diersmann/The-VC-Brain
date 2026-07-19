@@ -36,12 +36,15 @@ class TavilySearchConnector(Connector):
         self._client = TavilyClient(api_key=settings.tavily_api_key)
         return self._client
 
-    async def discover(self, query: str) -> list[Seed]:
+    async def discover(self, query: str, page: int = 1) -> list[Seed]:
         """Search Tavily and return seeds from results.
 
         Each result becomes a Seed with source_type="web".
         Named entities (persons, organizations) are extracted from the
         result snippet using a simple heuristic (proper NER is Phase 2).
+
+        Note: Tavily basic search does not support pagination.
+        The page parameter is accepted for interface consistency.
         """
         client = self._get_client()
         try:

@@ -69,10 +69,14 @@ class Connector(Protocol):
     authority: float  # 0.0 (low) - 1.0 (high)
     cost: float  # relative cost per collect call (used in priority math)
 
-    async def discover(self, query: str) -> list[Seed]:
+    async def discover(self, query: str, page: int = 1) -> list[Seed]:
         """Return candidate seeds for a discovery query.
 
         This should be cheap — metadata-only API calls, no full fetches.
+
+        Args:
+            query: Search query string.
+            page: Page number for paginated sources (1-indexed).
         """
         ...
 

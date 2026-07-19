@@ -52,12 +52,16 @@ class ArxivConnector(Connector):
     # Discovery
     # ------------------------------------------------------------------
 
-    async def discover(self, query: str) -> list[Seed]:
+    async def discover(self, query: str, page: int = 1) -> list[Seed]:
         """Search arXiv by topic, return author seeds (threshold-gated).
 
         Only returns authors whose papers:
         - Are in thesis-relevant categories, AND
         - Have >= arxiv_min_citations (via Semantic Scholar).
+
+        Args:
+            query: Search topic.
+            page: Page number (1-indexed, 50 results per page).
         """
         from app.config import get_settings
 
@@ -67,9 +71,10 @@ class ArxivConnector(Connector):
         # Build arXiv search query
         cat_filter = " OR ".join(f"cat:{c}" for c in _DEFAULT_CATEGORIES)
         search_query = f"({query}) AND ({cat_filter})"
+        start = (page - 1) * _DEFAULT_MAX_RESULTS
         params: dict[str, str | int] = {
             "search_query": f"all:{search_query}",
-            "start": 0,
+            "start": start,
             "max_results": _DEFAULT_MAX_RESULTS,
             "sortBy": "relevance",
             "sortOrder": "descending",

@@ -51,11 +51,14 @@ class PodcastsConnector(Connector):
             return self._tavily
         return None
 
-    async def discover(self, query: str) -> list[Seed]:
+    async def discover(self, query: str, page: int = 1) -> list[Seed]:
         """Search Tavily for podcast episodes matching the query.
 
         Constructs searches like "podcast <query> founder" to find
         podcast episode URLs.
+
+        Note: Tavily basic search does not support pagination.
+        The page parameter is accepted for interface consistency.
         """
         tavily = self._get_tavily()
         if not tavily:
