@@ -115,11 +115,58 @@ class TestMapPersonToCandidate:
         assert result.scores.thesis_fit is None
         assert result.scores.evidence_confidence is None
 
+    def test_merges_multi_axis_and_discovery_snapshots(self) -> None:
+        person = _make_person()
+        multi_axis = _make_score_snapshot(
+            subject_id=person.id,
+            rubric_version="founder-tavily-v1",
+            components={
+                "founder": 0.81,
+                "market": 0.74,
+                "idea_market": 0.69,
+                "evidence_confidence": 0.72,
+            },
+        )
+        discovery = _make_score_snapshot(
+            subject_id=person.id,
+            rubric_version="signal-v1",
+            components={"composite": 0.42, "github_signal": 0.8},
+        )
+
+        result = map_person_to_candidate(
+            person,
+            score_snapshots=[discovery, multi_axis],
+        )
+
+        assert result.scores is not None
+        assert result.scores.founder == 0.81
+        assert result.scores.market == 0.74
+        assert result.scores.idea_market == 0.69
+        assert result.scores.discovery_signal == 0.42
+        assert result.scores.raw == {
+            "composite": 0.42,
+            "github_signal": 0.8,
+            "founder": 0.81,
+            "market": 0.74,
+            "idea_market": 0.69,
+            "evidence_confidence": 0.72,
+        }
+
     def test_person_with_origin(self) -> None:
         person = _make_person()
         result = map_person_to_candidate(person, origin="inbound")
 
         assert result.origin == "inbound"
+
+    def test_person_with_cached_avatar(self) -> None:
+        person = _make_person()
+        person.avatar_data = b"jpeg-bytes"
+        person.avatar_source_type = "linkedin"
+
+        result = map_person_to_candidate(person)
+
+        assert result.avatar_url == f"/api/v1/candidates/{person.id}/avatar"
+        assert result.avatar_source == "linkedin"
 
     def test_person_with_null_display_name(self) -> None:
         person = _make_person(display_name=None)

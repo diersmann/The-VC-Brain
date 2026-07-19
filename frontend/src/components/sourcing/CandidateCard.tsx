@@ -1,23 +1,200 @@
 import { useState } from "react";
-import { ArrowUpRight, Bookmark, CheckCircle2, MapPin, Sparkles, Target, TrendingUp, ShieldCheck, X } from "lucide-react";
-import type { Candidate } from "../../types/candidate";
-import { getMockFounderProfile } from "../../data/mockFounderProfiles";
+import {
+  ArrowUpRight,
+  Bookmark,
+  Building2,
+  CheckCircle2,
+  ExternalLink,
+  Lightbulb,
+  MapPin,
+  ShieldCheck,
+  Sparkles,
+  Store,
+  UserRound,
+  X,
+} from "lucide-react";
 
-interface Props { candidate:Candidate; onViewFounder:()=>void; onAddPipeline:()=>void; }
-const initials=(name:string|null)=>(name??"?").split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
-const pct=(value:number|null|undefined)=>value==null?"—":`${Math.round(value*100)}%`;
-export function CandidateCard({candidate,onViewFounder,onAddPipeline}:Props){
- const [dismissed,setDismissed]=useState(false); if(dismissed)return null;
- const d=getMockFounderProfile(candidate.stable_id);
- const score=candidate.scores?.thesis_fit;
- const originTone=candidate.origin==="inbound"?"bg-[#ece9fb] text-[#7059a6]":candidate.origin==="outbound"?"bg-[#e4f3ee] text-[#327d68]":"bg-accent-soft text-accent";
- return <article onClick={onViewFounder} className="panel group cursor-pointer rounded-lg p-5 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_45px_rgba(65,90,125,.13)]">
-   <div className="flex items-start gap-3"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#dce6f2] to-[#c6d3e3] text-sm font-bold text-accent ring-2 ring-white shadow-sm">{initials(candidate.display_name)}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h3 className="truncate font-bold">{candidate.display_name??candidate.stable_id}</h3>{candidate.consent_state==="granted"&&<CheckCircle2 className="h-3.5 w-3.5 text-success"/>}<span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${originTone}`}>{candidate.origin==="inbound"?"Inbound":candidate.origin==="outbound"?"Outbound":"Discovered"}</span></div><div className="text-xs font-medium text-ink-2">{d.role} · {d.company}</div><div className="mt-1 flex items-center gap-1 text-[11px] text-muted"><MapPin className="h-3 w-3 text-[#c27a5b]"/>{d.location}</div></div><button aria-label="Dismiss" onClick={e=>{e.stopPropagation();setDismissed(true)}} className="rounded-md p-1.5 text-muted-2 hover:bg-surface-2"><X className="h-4 w-4"/><span className="sr-only">Dismiss</span></button></div>
-   <div className="my-4 rounded-md bg-surface-2 p-3.5"><div className="flex gap-2"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent"/><div><div className="text-[10px] font-bold uppercase tracking-wider text-muted">Why surfaced</div><p className="mt-1 text-xs leading-5 text-ink-2">{d.signal}</p></div></div></div>
-   {!candidate.scores && <div className="mb-2 text-[11px] font-semibold text-warn">No scores yet</div>}
-   <div className="grid grid-cols-3 gap-2"><Metric icon={Target} label="Thesis fit" value={pct(score)} tone="blue"/><Metric icon={TrendingUp} label="Momentum" value={pct(candidate.scores?.momentum)} tone="purple"/><Metric icon={ShieldCheck} label="Evidence" value={pct(candidate.scores?.evidence_confidence)} tone={(candidate.scores?.evidence_confidence??1)<.5?"amber":"green"}/></div>
-   <div className="mt-4 flex flex-wrap gap-1.5">{d.tags.map(t=><span key={t} className="rounded-full border border-line bg-white px-2.5 py-1 text-[10px] font-medium text-muted">{t}</span>)}</div>
-   <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-3"><button onClick={e=>{e.stopPropagation();onAddPipeline()}} className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-accent"><Bookmark className="h-3.5 w-3.5"/>Add to Pipeline</button><button onClick={e=>e.stopPropagation()} className="text-xs font-semibold text-muted hover:text-accent">Draft Outreach</button><button onClick={e=>{e.stopPropagation();setDismissed(true)}} className="text-xs font-semibold text-muted hover:text-danger">Dismiss</button><button onClick={onViewFounder} className="ml-auto flex items-center gap-1 text-xs font-bold text-accent">{"View Founder"}<ArrowUpRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5"/></button></div>
- </article>;
+import { formatPredicate } from "../../data/candidateProfile";
+import type { Candidate } from "../../types/candidate";
+import { CandidateAvatar } from "../common/CandidateAvatar";
+
+interface Props {
+  candidate: Candidate;
+  onViewFounder: () => void;
+  onAddPipeline: () => void;
 }
-function Metric({icon:Icon,label,value,tone}:{icon:React.ElementType;label:string;value:string;tone:"blue"|"purple"|"green"|"amber"}){const colors={blue:"bg-[#e7eef9] text-[#5074a8]",purple:"bg-[#eee9f8] text-[#785ba2]",green:"bg-[#e5f3ed] text-[#38806b]",amber:"bg-[#fff1de] text-[#ad7433]"};return <div className="rounded-md border border-line bg-white p-2.5"><div className="mb-1.5 flex items-center gap-1.5 text-[10px] text-muted"><span className={`flex h-5 w-5 items-center justify-center rounded ${colors[tone]}`}><Icon className="h-3 w-3"/></span>{label}</div><div className="text-sm font-bold text-ink">{value}</div></div>}
+
+const percentage = (value: number | null | undefined) =>
+  value == null ? "—" : `${Math.round(value * 100)}%`;
+
+export function CandidateCard({ candidate, onViewFounder, onAddPipeline }: Props) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+
+  const profile = candidate.profile;
+  const source = Object.keys(candidate.handles ?? {})[0] ?? candidate.origin ?? "database";
+  const handle = Object.values(candidate.handles ?? {})[0];
+  const evidence = candidate.scores?.evidence_confidence;
+  const originTone = candidate.origin === "inbound"
+    ? "bg-[#ece9fb] text-[#7059a6]"
+    : candidate.origin === "outbound"
+      ? "bg-[#e4f3ee] text-[#327d68]"
+      : "bg-accent-soft text-accent";
+
+  return (
+    <article
+      onClick={onViewFounder}
+      className="panel group cursor-pointer rounded-lg p-5 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_45px_rgba(65,90,125,.13)]"
+    >
+      <div className="flex items-start gap-3">
+        <CandidateAvatar
+          name={candidate.display_name}
+          avatarUrl={candidate.avatar_url}
+          className="h-12 w-12 rounded-lg bg-gradient-to-br from-[#dce6f2] to-[#c6d3e3] text-sm font-bold text-accent ring-2 ring-white shadow-sm"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="truncate font-bold">{candidate.display_name ?? candidate.stable_id}</h3>
+            {candidate.consent_state === "granted" && <CheckCircle2 className="h-3.5 w-3.5 text-success" />}
+            <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${originTone}`}>
+              {candidate.origin === "inbound" ? "Inbound" : candidate.origin === "outbound" ? "Outbound" : "Discovered"}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
+            <span className="inline-flex items-center gap-1 font-medium text-ink-2">
+              <Building2 className="h-3 w-3 text-[#6f8db7]" />
+              {profile?.company?.replace(/^@/, "") || "Company not disclosed"}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <MapPin className="h-3 w-3 text-[#c27a5b]" />
+              {profile?.location || "Location not disclosed"}
+            </span>
+          </div>
+          <div className="mt-1 text-[10px] text-muted">
+            {formatPredicate(source)}{handle ? ` · ${handle}` : ""}
+          </div>
+        </div>
+        <button
+          aria-label="Dismiss"
+          onClick={(event) => {
+            event.stopPropagation();
+            setDismissed(true);
+          }}
+          className="rounded-md p-1.5 text-muted-2 hover:bg-surface-2"
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">Dismiss</span>
+        </button>
+      </div>
+
+      <div className="my-4 rounded-md bg-gradient-to-br from-surface-2 to-[#edf2f8] p-3.5">
+        <div className="flex gap-2">
+          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted">Evidence summary</div>
+            <p className="mt-1 line-clamp-3 text-xs leading-5 text-ink-2">
+              {profile?.summary || `Public activity was collected from ${formatPredicate(source)}, but a verified founder summary is still pending.`}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {!candidate.scores && <div className="mb-2 text-[11px] font-semibold text-warn">No scores yet</div>}
+      <div className="grid grid-cols-3 gap-2">
+        <Metric icon={UserRound} label="Founder" value={percentage(candidate.scores?.founder ?? candidate.scores?.raw?.founder)} tone="blue" />
+        <Metric icon={Store} label="Market" value={percentage(candidate.scores?.market ?? candidate.scores?.raw?.market)} tone="green" />
+        <Metric icon={Lightbulb} label="Idea × Market" value={percentage(candidate.scores?.idea_market ?? candidate.scores?.raw?.idea_market)} tone="purple" />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[9px] font-semibold text-muted">
+        <span className="inline-flex items-center gap-1 rounded-full bg-[#fff1de] px-2.5 py-1 text-[#986329]">
+          <ShieldCheck className="h-3 w-3" /> Evidence {percentage(evidence)}
+        </span>
+        <span className="rounded-full bg-white/80 px-2.5 py-1">
+          {profile?.observation_count ?? 0} observations
+        </span>
+        <span className="rounded-full bg-white/80 px-2.5 py-1">
+          {profile?.source_types.length ?? 0} source types
+        </span>
+        <span className="rounded-full bg-white/80 px-2.5 py-1">
+          {Math.round((profile?.completeness ?? 0) * 100)}% complete
+        </span>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-1.5">
+        {(profile?.source_types ?? Object.keys(candidate.handles ?? {})).map((tag) => (
+          <span key={tag} className="rounded-full bg-white/75 px-2.5 py-1 text-[10px] font-medium text-muted shadow-sm">
+            {formatPredicate(tag)}
+          </span>
+        ))}
+        {profile?.website && (
+          <a
+            href={profile.website}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2.5 py-1 text-[10px] font-bold text-accent"
+          >
+            Website <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md bg-surface-2/70 px-3 py-2.5">
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            onAddPipeline();
+          }}
+          className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-accent"
+        >
+          <Bookmark className="h-3.5 w-3.5" />{"Add to Pipeline"}
+        </button>
+        <button onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-muted hover:text-accent">
+          {"Draft Outreach"}
+        </button>
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            setDismissed(true);
+          }}
+          className="text-xs font-semibold text-muted hover:text-danger"
+        >
+          Dismiss
+        </button>
+        <button onClick={onViewFounder} className="ml-auto flex items-center gap-1 text-xs font-bold text-accent">
+          {"View Founder"}<ArrowUpRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function Metric({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  tone: "blue" | "purple" | "green";
+}) {
+  const colors = {
+    blue: "bg-[#e7eef9] text-[#5074a8]",
+    purple: "bg-[#eee9f8] text-[#785ba2]",
+    green: "bg-[#e5f3ed] text-[#38806b]",
+  };
+  return (
+    <div className="rounded-md bg-white/70 p-2.5 shadow-[0_6px_18px_rgba(70,91,120,.06)]">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[10px] text-muted">
+        <span className={`flex h-5 w-5 items-center justify-center rounded ${colors[tone]}`}>
+          <Icon className="h-3 w-3" />
+        </span>
+        {label}
+      </div>
+      <div className="text-sm font-bold text-ink">{value}</div>
+    </div>
+  );
+}

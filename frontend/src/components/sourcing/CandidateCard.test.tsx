@@ -44,6 +44,19 @@ describe("CandidateCard", () => {
     expect(screen.getByText("AC")).toBeDefined();
   });
 
+  test("renders the cached avatar endpoint when available", () => {
+    render(
+      <CandidateCard
+        candidate={{ ...baseCandidate, avatar_url: "/api/v1/candidates/test-id/avatar" }}
+        onViewFounder={() => {}}
+        onAddPipeline={() => {}}
+      />,
+    );
+
+    const image = screen.getByAltText("Alice Chen avatar") as HTMLImageElement;
+    expect(image.src).toContain("/api/v1/candidates/test-id/avatar");
+  });
+
   test("renders inbound badge for inbound origin", () => {
     render(
       <CandidateCard

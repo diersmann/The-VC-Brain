@@ -47,7 +47,7 @@ Core entities are:
 
 | Entity | Purpose | Required fields |
 |---|---|---|
-| Person | Persistent identity across opportunities | Stable ID, names, handles, consent/privacy state |
+| Person | Persistent identity across opportunities | Stable ID, names, handles, consent/privacy state, cached public avatar bytes and source provenance |
 | Organization | Company, institution, accelerator, or fund | Stable ID, names, type, locations |
 | Opportunity | A company and idea evaluated at a point in time | Company, founders, source kind, lifecycle state, thesis version |
 | SourceSnapshot | Immutable copy or reference to collected material | URI, source type, content hash, collected time, license/access metadata |
@@ -381,7 +381,7 @@ The design bar is Notion-level approachability at the top layer and Bloomberg-le
 
 Primary views are:
 
-1. **Sourcing feed:** ranked candidates, trigger signals, novelty, momentum, thesis fit, and activation status
+1. **Sourcing feed:** verified public identities ranked by the three independent Founder, Market, and Idea-Market axes; compact cards also expose company, location, evidence-backed summary, source coverage, observation count, and profile completeness. Handle-only leads remain outside the ranked feed until identity evidence is sufficient.
 2. **Opportunity inbox:** unified inbound/outbound funnel, stage, owner, SLA risk, and next action
 3. **Founder profile:** persistent scorecard, timeline, projects, evidence coverage, and corrections
 4. **Relationship graph:** typed, time-aware, evidence-backed edges with weak inferences visually separated

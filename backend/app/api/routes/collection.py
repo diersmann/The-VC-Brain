@@ -6,14 +6,19 @@ and manage identity resolution.
 
 from __future__ import annotations
 
+import uuid
 from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collectors.queue import queue_depth
 from app.collectors.registry import all_connectors
+from app.db import get_session
+from app.db.models import Observation, Person, ScoreSnapshot
 
 logger = structlog.get_logger(__name__)
 
@@ -59,6 +64,37 @@ class PersonMatchListResponse(BaseModel):
 
 
 class PersonMatchActionResponse(BaseModel):
+    message: str
+
+
+class ResearchBatchRequest(BaseModel):
+    candidate_ids: list[str] | None = None
+    limit: int = 25
+
+
+class ResearchQueueResponse(BaseModel):
+    queued: int
+    candidate_ids: list[str]
+    message: str
+
+
+class ResearchStatusResponse(BaseModel):
+    candidate_id: str
+    status: str
+    research_observations: int
+    latest_scores: dict[str, object] | None = None
+    scored_at: str | None = None
+
+
+class AvatarBatchRequest(BaseModel):
+    candidate_ids: list[str] | None = None
+    limit: int = 100
+    force: bool = False
+
+
+class AvatarQueueResponse(BaseModel):
+    queued: int
+    candidate_ids: list[str]
     message: str
 
 
@@ -125,10 +161,178 @@ async def collection_health(
 ) -> HealthResponse:
     """Return collection system health: queue depth and connector status."""
     depths = await queue_depth(redis)
-    connectors = {
-        name: "registered" for name in all_connectors()
-    }
+    connectors = {name: "registered" for name in all_connectors()}
     return HealthResponse(queue_depth=depths, connectors=connectors)
+
+
+# ---------------------------------------------------------------------------
+# Tavily multi-axis candidate research
+# ---------------------------------------------------------------------------
+
+
+@router.post("/avatars/batch", response_model=AvatarQueueResponse)
+async def fetch_candidate_avatars(
+    body: AvatarBatchRequest,
+    redis: Annotated[Any, Depends(get_redis)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AvatarQueueResponse:
+    """Queue one-time avatar caching for verified, scored candidates."""
+    query = (
+        select(Person)
+        .join(ScoreSnapshot, ScoreSnapshot.subject_id == Person.id)
+        .where(
+            Person.canonical.is_(True),
+            ScoreSnapshot.rubric_version == "founder-tavily-v1",
+        )
+        .distinct()
+        .order_by(Person.created_at.desc())
+    )
+    if body.candidate_ids:
+        try:
+            candidate_ids = [uuid.UUID(item) for item in body.candidate_ids]
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid candidate id") from exc
+        query = query.where(Person.id.in_(candidate_ids))
+    if not body.force:
+        query = query.where(Person.avatar_data.is_(None))
+
+    result = await session.execute(query.limit(max(1, min(body.limit, 200))))
+    people = list(result.scalars().all())
+
+    from app.collectors.queue import enqueue as queue_enqueue
+
+    queued_ids: list[str] = []
+    for person in people:
+        await queue_enqueue(
+            redis,
+            {
+                "job_type": "fetch_candidate_avatar",
+                "person_id": str(person.id),
+                "source": "avatar",
+            },
+            priority=10.0,
+        )
+        queued_ids.append(str(person.id))
+
+    return AvatarQueueResponse(
+        queued=len(queued_ids),
+        candidate_ids=queued_ids,
+        message=f"Queued avatar caching for {len(queued_ids)} candidates",
+    )
+
+
+@router.post("/research/batch", response_model=ResearchQueueResponse)
+async def research_candidates(
+    body: ResearchBatchRequest,
+    redis: Annotated[Any, Depends(get_redis)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ResearchQueueResponse:
+    """Queue Tavily Founder, Market and Idea-Market research for candidates."""
+    limit = max(1, min(100, body.limit))
+    query = select(Person).where(Person.canonical.is_(True)).order_by(Person.created_at.desc())
+    if body.candidate_ids:
+        try:
+            ids = [uuid.UUID(item) for item in body.candidate_ids]
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid candidate id") from exc
+        query = query.where(Person.id.in_(ids))
+
+    result = await session.execute(query.limit(200))
+    people = list(result.scalars().all())
+    if not body.candidate_ids:
+        people = [
+            person
+            for person in people
+            if person.display_name
+            and person.display_name.lower()
+            not in {value.lower() for value in (person.handles or {}).values()}
+        ]
+    people = people[:limit]
+
+    from app.collectors.queue import enqueue as queue_enqueue
+
+    queued_ids: list[str] = []
+    for person in people:
+        await queue_enqueue(
+            redis,
+            {
+                "job_type": "research_candidate",
+                "person_id": str(person.id),
+                "source": "tavily_search",
+            },
+            priority=10.0,
+        )
+        queued_ids.append(str(person.id))
+
+    return ResearchQueueResponse(
+        queued=len(queued_ids),
+        candidate_ids=queued_ids,
+        message=f"Queued Tavily multi-axis research for {len(queued_ids)} candidates",
+    )
+
+
+@router.post("/research/{candidate_id}", response_model=ResearchQueueResponse)
+async def research_candidate(
+    candidate_id: uuid.UUID,
+    redis: Annotated[Any, Depends(get_redis)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ResearchQueueResponse:
+    person = await session.get(Person, candidate_id)
+    if person is None or not person.canonical:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    from app.collectors.queue import enqueue as queue_enqueue
+
+    await queue_enqueue(
+        redis,
+        {
+            "job_type": "research_candidate",
+            "person_id": str(person.id),
+            "source": "tavily_search",
+        },
+        priority=10.0,
+    )
+    return ResearchQueueResponse(
+        queued=1,
+        candidate_ids=[str(person.id)],
+        message="Queued Tavily multi-axis research",
+    )
+
+
+@router.get("/research/{candidate_id}/status", response_model=ResearchStatusResponse)
+async def candidate_research_status(
+    candidate_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ResearchStatusResponse:
+    person = await session.get(Person, candidate_id)
+    if person is None:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    score_result = await session.execute(
+        select(ScoreSnapshot)
+        .where(
+            ScoreSnapshot.subject_id == candidate_id,
+            ScoreSnapshot.rubric_version == "founder-tavily-v1",
+        )
+        .order_by(ScoreSnapshot.created_at.desc())
+        .limit(1)
+    )
+    snapshot = score_result.scalar_one_or_none()
+    count_result = await session.execute(
+        select(func.count(Observation.id)).where(
+            Observation.subject_id == candidate_id,
+            Observation.predicate.like("research_%"),
+        )
+    )
+    observation_count = int(count_result.scalar_one())
+
+    return ResearchStatusResponse(
+        candidate_id=str(candidate_id),
+        status="completed" if snapshot else "pending" if observation_count else "not_started",
+        research_observations=observation_count,
+        latest_scores=snapshot.components if snapshot else None,
+        scored_at=snapshot.created_at.isoformat() if snapshot and snapshot.created_at else None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +370,8 @@ async def list_pending_matches() -> PersonMatchListResponse:
         from sqlalchemy import select
 
         result = await session.execute(
-            select(PersonMatch).where(PersonMatch.status == "pending")
+            select(PersonMatch)
+            .where(PersonMatch.status == "pending")
             .order_by(PersonMatch.confidence.desc())
         )
         matches = result.scalars().all()
@@ -200,9 +405,7 @@ async def approve_match(match_id: str) -> PersonMatchActionResponse:
     try:
         from sqlalchemy import select
 
-        result = await session.execute(
-            select(PersonMatch).where(PersonMatch.id == match_id)
-        )
+        result = await session.execute(select(PersonMatch).where(PersonMatch.id == match_id))
         match = result.scalar_one_or_none()
         if match is None:
             raise HTTPException(status_code=404, detail="Match not found")
@@ -234,6 +437,7 @@ async def approve_match(match_id: str) -> PersonMatchActionResponse:
         match.status = "approved"
         match.resolved_by = "api"
         from datetime import UTC, datetime
+
         match.resolved_at = datetime.now(UTC)
 
         await session.commit()
@@ -259,9 +463,7 @@ async def reject_match(match_id: str) -> PersonMatchActionResponse:
     try:
         from sqlalchemy import select
 
-        result = await session.execute(
-            select(PersonMatch).where(PersonMatch.id == match_id)
-        )
+        result = await session.execute(select(PersonMatch).where(PersonMatch.id == match_id))
         match = result.scalar_one_or_none()
         if match is None:
             raise HTTPException(status_code=404, detail="Match not found")
@@ -272,6 +474,7 @@ async def reject_match(match_id: str) -> PersonMatchActionResponse:
         match.status = "rejected"
         match.resolved_by = "api"
         from datetime import UTC, datetime
+
         match.resolved_at = datetime.now(UTC)
 
         await session.commit()

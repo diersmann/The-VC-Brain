@@ -17,7 +17,9 @@ from app.collectors.jobs import (
     collect_job,
     discover_job,
     dispatcher_job,
+    fetch_candidate_avatar_job,
     recompute_signals_job,
+    research_candidate_job,
     resolve_identities_job,
 )
 from app.collectors.queue import reset_tavily_budget
@@ -69,7 +71,9 @@ class WorkerSettings:
         discover_job,
         collect_job,
         dispatcher_job,
+        fetch_candidate_avatar_job,
         recompute_signals_job,
+        research_candidate_job,
         resolve_identities_job,
     ]
 

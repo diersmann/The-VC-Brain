@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   ArrowLeft,
@@ -5,16 +6,20 @@ import {
   Building2,
   CheckCircle2,
   CircleGauge,
+  ExternalLink,
   Globe2,
   Lightbulb,
   MapPin,
   RefreshCw,
+  Sparkles,
   TrendingDown,
   TrendingUp,
   UserRound,
 } from "lucide-react";
-import { mockCandidates } from "../data/mockCandidates";
-import { getMockFounderProfile, type FounderAssessment, type FounderProfile } from "../data/mockFounderProfiles";
+import { researchCandidate, useCandidate } from "../api/candidates";
+import { CandidateAvatar } from "../components/common/CandidateAvatar";
+import { buildFounderProfile } from "../data/candidateProfile";
+import type { FounderAssessment, FounderProfile } from "../types/profile";
 
 const axisDetails = {
   Founder: {
@@ -43,8 +48,22 @@ const axisDetails = {
 export function FounderProfilePage() {
   const { founderId } = useParams();
   const navigate = useNavigate();
-  const founder = mockCandidates.find((candidate) => candidate.id === founderId) ?? mockCandidates[0];
-  const profile = getMockFounderProfile(founder.stable_id);
+  const { data: founder, isLoading, error, refetch } = useCandidate(founderId);
+  const [researchState, setResearchState] = useState<"idle" | "queued" | "error">("idle");
+
+  if (isLoading) return <div className="py-20 text-center text-sm text-muted">Loading source evidence…</div>;
+  if (error || !founder) return <div className="py-20 text-center"><div className="text-sm font-bold">Founder not found</div><button onClick={() => navigate("/sourcing")} className="mt-3 text-xs font-bold text-accent">Back to discover</button></div>;
+
+  const profile = buildFounderProfile(founder);
+  const runResearch = async () => {
+    setResearchState("queued");
+    try {
+      await researchCandidate(founder.id);
+      window.setTimeout(() => void refetch(), 65_000);
+    } catch {
+      setResearchState("error");
+    }
+  };
 
   return (
     <div className="mx-auto max-w-[1180px] pb-10">
@@ -55,9 +74,11 @@ export function FounderProfilePage() {
       <header className="panel mb-6 rounded-lg p-5 md:p-6">
         <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
           <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#dce6f2] to-[#c6d3e3] text-lg font-bold text-accent">
-              {profile.initials}
-            </div>
+            <CandidateAvatar
+              name={founder.display_name}
+              avatarUrl={founder.avatar_url}
+              className="h-16 w-16 rounded-lg bg-gradient-to-br from-[#dce6f2] to-[#c6d3e3] text-lg font-bold text-accent"
+            />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold tracking-tight">{founder.display_name}</h1>
@@ -72,9 +93,12 @@ export function FounderProfilePage() {
               </div>
             </div>
           </div>
-          <div className="rounded-md bg-accent-soft px-4 py-3 text-right">
-            <div className="text-[9px] font-bold uppercase tracking-wider text-accent-muted">Thesis match</div>
-            <div className="mt-1 text-xl font-bold text-accent">{profile.thesisFit}%</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={runResearch} disabled={researchState === "queued"} className="inline-flex items-center gap-2 rounded-md bg-[#eee8f8] px-4 py-3 text-[10px] font-bold text-[#7656a5] disabled:opacity-60"><Sparkles className="h-3.5 w-3.5" />{researchState === "queued" ? "Tavily research queued" : researchState === "error" ? "Research failed · retry" : "Research with Tavily"}</button>
+            <div className="rounded-md bg-accent-soft px-4 py-3 text-right">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-accent-muted">Thesis match</div>
+              <div className="mt-1 text-xl font-bold text-accent">{profile.thesisFit ? `${profile.thesisFit}%` : "Pending"}</div>
+            </div>
           </div>
         </div>
       </header>
@@ -86,12 +110,20 @@ export function FounderProfilePage() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
-        {profile.assessments.map((assessment, index) => (
-          <AxisCard key={assessment.title} assessment={assessment} profile={profile} seed={profile.founderScore + index * 7} />
+        {profile.assessments.map((assessment) => (
+          <AxisCard key={assessment.title} assessment={assessment} profile={profile} history={profile.axisTrendHistory[assessment.title]} />
         ))}
       </div>
 
-      <div className="mt-5 flex items-start gap-3 rounded-lg border border-line bg-white px-5 py-4 shadow-sm">
+      <section className="panel mt-5 rounded-lg p-5">
+        <div className="flex items-end justify-between gap-3">
+          <div><div className="eyebrow mb-2">Source-backed research</div><h2 className="text-base font-bold">Tavily evidence & claims</h2><p className="mt-1 text-[11px] text-muted">Public sources used by the three independent assessments.</p></div>
+          <span className="rounded-md bg-accent-soft px-2.5 py-1 text-[9px] font-bold text-accent">{profile.claims.length} records</span>
+        </div>
+        {profile.claims.length === 0 ? <div className="mt-4 rounded-md bg-surface-2 p-4 text-[11px] text-muted">No research claims stored yet. Run Tavily research to populate this section.</div> : <div className="mt-4 grid gap-2 lg:grid-cols-2">{profile.claims.map((claim, index) => <div key={`${claim.claim}-${index}`} className="rounded-md bg-surface-2/80 p-3.5"><div className="flex items-start justify-between gap-3"><p className="text-[10px] font-semibold leading-5 text-ink-2">{claim.claim}</p><span className="shrink-0 rounded bg-white px-2 py-1 text-[8px] font-bold text-muted">{claim.trust}% trust</span></div><div className="mt-2 flex items-center justify-between gap-2 text-[9px] text-muted"><span>{claim.status}</span>{claim.source.startsWith("http") ? <a href={claim.source} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-accent">Open source <ExternalLink className="h-3 w-3" /></a> : <span>{claim.source}</span>}</div></div>)}</div>}
+      </section>
+
+      <div className="mt-5 flex items-start gap-3 rounded-lg bg-white/70 px-5 py-4 shadow-[0_12px_34px_rgba(70,91,120,.08)] backdrop-blur-xl">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#eef0f8] text-[#6676a2]"><BrainCircuit className="h-4 w-4" /></span>
         <div><div className="text-xs font-bold">Feedback to Memory</div><p className="mt-1 text-[11px] leading-5 text-muted">Each assessment, trend change and investor correction is stored as a new version. Future screening improves without rewriting the historical decision context.</p></div>
         <RefreshCw className="ml-auto mt-1 h-4 w-4 shrink-0 text-muted-2" />
@@ -100,10 +132,10 @@ export function FounderProfilePage() {
   );
 }
 
-function AxisCard({ assessment, profile, seed }: { assessment: FounderAssessment; profile: FounderProfile; seed: number }) {
+function AxisCard({ assessment, profile, history }: { assessment: FounderAssessment; profile: FounderProfile; history: number[] }) {
   const details = axisDetails[assessment.title];
   const Icon = details.icon;
-  const values = trendValues(assessment.trend, seed);
+  const values = history.length ? history.slice(-5) : [0];
   const ratingStyle = assessment.rating === "Bullish"
     ? "bg-[#e4f2ed] text-success"
     : assessment.rating === "Bearish"
@@ -122,26 +154,26 @@ function AxisCard({ assessment, profile, seed }: { assessment: FounderAssessment
         <h3 className="mt-4 text-base font-bold">{assessment.title}</h3>
         <p className="mt-1 text-[11px] leading-5 text-muted">{details.description}</p>
 
-        <div className="mt-4 rounded-md border border-line bg-surface-2 p-3">
+        <div className="mt-4 rounded-md bg-surface-2/80 p-3 shadow-inner shadow-white/80">
           <div className="text-[9px] font-bold uppercase tracking-wider text-muted-2">Why this rating</div>
           <p className="mt-1.5 text-[11px] font-medium leading-5 text-ink-2">{assessment.body}</p>
         </div>
 
-        <div className="mt-4 space-y-3 border-t border-line pt-4">
+        <div className="mt-4 space-y-3 rounded-md bg-white/55 p-3">
           <InsightRow kind="support" label="Supporting evidence" text={explanation.support} meta={explanation.supportMeta} />
           <InsightRow kind="risk" label="Counter-evidence / risk" text={explanation.risk} />
           <InsightRow kind="unknown" label="Still unknown" text={explanation.unknown} />
         </div>
       </div>
 
-      <div className="border-t border-line bg-surface-2 px-5 pb-4 pt-4">
+      <div className="bg-gradient-to-br from-surface-2 to-[#edf4f4] px-5 pb-4 pt-4">
         <div className="mb-2 flex items-center justify-between">
           <div><div className="text-[9px] font-bold uppercase tracking-wider text-muted-2">Trend · last 5 updates</div><div className="mt-1 flex items-center gap-1.5 text-xs font-bold" style={{ color: details.color }}><TrendIcon className="h-3.5 w-3.5" />{assessment.trend}</div></div>
-          <div className="text-right"><div className="text-lg font-bold">{values.at(-1)}</div><div className="text-[9px] text-muted">Current signal</div></div>
+          <div className="text-right"><div className="text-lg font-bold">{values.at(-1) || "—"}</div><div className="text-[9px] text-muted">Current signal</div></div>
         </div>
         <TrendChart values={values} color={details.color} />
         <div className="mt-1 flex justify-between text-[8px] text-muted-2"><span>Earlier evidence</span><span>Latest</span></div>
-        <div className="mt-3 border-t border-line pt-3">
+        <div className="mt-3 rounded-md bg-white/55 p-3">
           <div className="mb-1.5 flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-muted-2"><span>Assessment confidence</span><span>{assessment.confidence}%</span></div>
           <div className="h-1.5 bg-surface-3"><div className="h-full" style={{ width: `${assessment.confidence}%`, backgroundColor: details.color }} /></div>
           <p className="mt-2 text-[9px] leading-4 text-muted">Each point is a versioned Memory update based on new evidence or an investor correction.</p>
@@ -192,7 +224,7 @@ function TrendChart({ values, color }: { values: number[]; color: string }) {
   const width = 300; const height = 92; const pad = 8;
   const min = Math.min(...values) - 5; const max = Math.max(...values) + 5;
   const points = values.map((value, index) => {
-    const x = pad + index * ((width - pad * 2) / (values.length - 1));
+    const x = values.length === 1 ? width / 2 : pad + index * ((width - pad * 2) / (values.length - 1));
     const y = height - pad - ((value - min) / Math.max(1, max - min)) * (height - pad * 2);
     return { x, y, value };
   });
@@ -205,11 +237,4 @@ function TrendChart({ values, color }: { values: number[]; color: string }) {
     <polyline points={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
     {points.map((point,index)=><circle key={index} cx={point.x} cy={point.y} r={index===points.length-1?4:2.5} fill="white" stroke={color} strokeWidth="2" />)}
   </svg>;
-}
-
-function trendValues(trend: FounderAssessment["trend"], seed: number): number[] {
-  const base = 52 + (seed % 16);
-  if (trend === "Improving") return [base, base + 4, base + 3, base + 10, base + 15];
-  if (trend === "Declining") return [base + 14, base + 11, base + 12, base + 5, base];
-  return [base + 2, base + 5, base + 3, base + 4, base + 3];
 }
