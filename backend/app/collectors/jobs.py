@@ -925,6 +925,21 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
             "fetch_candidate_avatar_job",
             task.get("person_id", ""),
         )
+    elif job_type == "score_candidate":
+        await pool.enqueue_job(
+            "score_candidate_job",
+            task.get("person_id", ""),
+        )
+    elif job_type == "generate_memo":
+        await pool.enqueue_job(
+            "generate_memo_job",
+            task.get("person_id", ""),
+        )
+    elif job_type == "process_candidate":
+        await pool.enqueue_job(
+            "process_candidate_job",
+            task.get("person_id", ""),
+        )
     else:
         await pool.enqueue_job(
             "collect_job",

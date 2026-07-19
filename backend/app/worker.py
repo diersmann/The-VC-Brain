@@ -13,6 +13,8 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.memo_job import generate_memo_job
+from app.agents.scoring_job import score_candidate_job
 from app.collectors.jobs import (
     collect_job,
     discover_job,
@@ -25,6 +27,7 @@ from app.collectors.jobs import (
 from app.collectors.queue import reset_tavily_budget
 from app.config import get_settings
 from app.db.session import _get_session_factory, get_engine
+from app.processing.pipeline_job import process_candidate_job
 
 logger = structlog.get_logger(__name__)
 
@@ -75,6 +78,9 @@ class WorkerSettings:
         recompute_signals_job,
         research_candidate_job,
         resolve_identities_job,
+        score_candidate_job,
+        generate_memo_job,
+        process_candidate_job,
     ]
 
     cron_jobs = [  # noqa: RUF012

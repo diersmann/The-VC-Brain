@@ -326,7 +326,7 @@ def map_person_to_candidate(
 
 # Heuristic: founder-score rubrics start with "founder" or "person".
 # TODO: Replace with a proper subject_type column on ScoreSnapshot.
-_CANDIDATE_RUBRIC_PATTERNS = ("founder%", "person%", "signal%", "thesis%")
+_CANDIDATE_RUBRIC_PATTERNS = ("founder%", "person%", "signal%", "thesis%", "founder-agent%")
 
 
 def _candidate_rubric_filter() -> Any:
@@ -778,3 +778,78 @@ async def get_candidate_avatar(
         media_type=person.avatar_mime_type or "image/jpeg",
         headers=headers,
     )
+
+
+# ---------------------------------------------------------------------------
+# Investment memo routes
+# ---------------------------------------------------------------------------
+
+
+class MemoResponse(BaseModel):
+    """A generated investment memo."""
+
+    sections: list[dict[str, object]]
+    generation_mode: str | None = None
+    model_version: str | None = None
+    created_at: datetime | None = None
+
+
+@router.get("/{candidate_id}/memo", response_model=MemoResponse)
+async def get_candidate_memo(
+    candidate_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> MemoResponse:
+    """Return the latest investment memo for a candidate."""
+    from app.db.models import InvestmentMemo
+
+    result = await session.execute(
+        select(InvestmentMemo)
+        .join(Opportunity, Opportunity.id == InvestmentMemo.opportunity_id)
+        .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
+        .where(OpportunityFounder.person_id == candidate_id)
+        .order_by(InvestmentMemo.created_at.desc())
+        .limit(1)
+    )
+    memo = result.scalar_one_or_none()
+    if memo is None:
+        raise HTTPException(status_code=404, detail="No memo found for this candidate")
+
+    sections = memo.sections.get("sections", []) if isinstance(memo.sections, dict) else []
+    return MemoResponse(
+        sections=sections,
+        generation_mode=(
+            memo.sections.get("generation_mode")
+            if isinstance(memo.sections, dict) else None
+        ),
+        model_version=memo.model_version,
+        created_at=memo.created_at,
+    )
+
+
+@router.post("/{candidate_id}/memo/generate", response_model=dict[str, str])
+async def generate_candidate_memo(
+    candidate_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, str]:
+    """Queue investment memo generation for a candidate."""
+    person = await session.get(Person, candidate_id)
+    if person is None or not person.canonical:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    import redis.asyncio as aioredis
+
+    from app.collectors.queue import enqueue as queue_enqueue
+    from app.config import get_settings
+
+    settings = get_settings()
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
+    try:
+        await queue_enqueue(
+            redis,
+            {"job_type": "generate_memo", "person_id": str(person.id)},
+            priority=10.0,
+        )
+    finally:
+        await redis.aclose()
+
+    return {"message": f"Memo generation queued for {candidate_id}"}

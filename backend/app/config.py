@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     website_seed_cap: int = 10
     persons_created_per_day: int = 200
 
+    # Scoring agents
+    agent_model: str = "gpt-4o"
+    agent_concurrency: int = 2
+    agent_max_tokens: int = 1000
+
+    # Embeddings
+    embedding_model: str = "text-embedding-3-small"
+    embedding_concurrency: int = 4
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

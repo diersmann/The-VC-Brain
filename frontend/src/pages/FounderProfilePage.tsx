@@ -24,7 +24,13 @@ import {
   TrendingUp,
   UserRound,
 } from "lucide-react";
-import { researchCandidate, useCandidate } from "../api/candidates";
+import {
+  fetchCandidateMemo,
+  generateCandidateMemo,
+  researchCandidate,
+  useCandidate,
+  type CandidateMemo,
+} from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { buildFounderProfile } from "../data/candidateProfile";
@@ -60,6 +66,9 @@ export function FounderProfilePage() {
   const navigate = useNavigate();
   const { data: founder, isLoading, error, refetch } = useCandidate(founderId);
   const [researchState, setResearchState] = useState<"idle" | "queued" | "error">("idle");
+  const [memo, setMemo] = useState<CandidateMemo | null>(null);
+  const [memoLoading, setMemoLoading] = useState(false);
+  const [memoGenerating, setMemoGenerating] = useState(false);
 
   if (isLoading) return <div className="py-20 text-center text-sm text-muted">Loading source evidence…</div>;
   if (error || !founder) return <div className="py-20 text-center"><div className="text-sm font-bold">Founder not found</div><button onClick={() => navigate("/sourcing")} className="mt-3 text-xs font-bold text-accent">Back to discover</button></div>;
@@ -74,6 +83,24 @@ export function FounderProfilePage() {
       window.setTimeout(() => void refetch(), 65_000);
     } catch {
       setResearchState("error");
+    }
+  };
+  const loadMemo = async () => {
+    setMemoLoading(true);
+    try {
+      const m = await fetchCandidateMemo(founder.id);
+      setMemo(m);
+    } finally {
+      setMemoLoading(false);
+    }
+  };
+  const runMemoGeneration = async () => {
+    setMemoGenerating(true);
+    try {
+      await generateCandidateMemo(founder.id);
+      window.setTimeout(() => void loadMemo(), 65_000);
+    } catch {
+      setMemoGenerating(false);
     }
   };
 
@@ -160,6 +187,48 @@ export function FounderProfilePage() {
           <span className="status-pill numeric bg-accent-soft text-accent">{profile.claims.length} records</span>
         </div>
         {profile.claims.length === 0 ? <div className="mt-4 rounded-md bg-surface-2 p-4 text-xs text-muted">No research claims stored yet. Run Tavily research to populate this section.</div> : <div className="mt-4 grid gap-2 lg:grid-cols-2">{profile.claims.map((claim, index) => <div key={`${claim.claim}-${index}`} className="rounded-md bg-surface-2/80 p-3.5"><div className="flex items-start justify-between gap-3"><p className="text-xs font-semibold leading-5 text-ink-2">{claim.claim}</p><span className="numeric shrink-0 rounded bg-white px-2 py-1 text-[10px] font-bold text-muted">{claim.trust}% trust</span></div><div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted"><span>{claim.status}</span>{claim.source.startsWith("http") ? <a href={claim.source} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-accent">Open source <ExternalLink className="h-3 w-3" /></a> : <span>{claim.source}</span>}</div></div>)}</div>}
+      </section>
+
+      <section className="panel mt-5 rounded-lg p-5">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <div className="eyebrow mb-2">AI-generated investment memo</div>
+            <h2 className="section-title">Investment Memo</h2>
+            <p className="supporting-text mt-1">Evidence-backed memo with linked sources. Each factual claim references observation IDs.</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={loadMemo} disabled={memoLoading} className="inline-flex items-center gap-1.5 rounded-md bg-surface-2 px-3 py-2 text-[11px] font-bold text-ink-2 disabled:opacity-60">
+              <RefreshCw className="h-3.5 w-3.5" />{memoLoading ? "Loading…" : "Load memo"}
+            </button>
+            <button onClick={runMemoGeneration} disabled={memoGenerating} className="inline-flex items-center gap-1.5 rounded-md bg-[#eee8f8] px-3 py-2 text-[11px] font-bold text-[#7656a5] disabled:opacity-60">
+              <Sparkles className="h-3.5 w-3.5" />{memoGenerating ? "Queued…" : "Generate memo"}
+            </button>
+          </div>
+        </div>
+        {memo && memo.sections.length > 0 ? (
+          <div className="mt-4 space-y-3">
+            {memo.generation_mode === "template_fallback" && (
+              <div className="rounded-md bg-[#fff1df] px-3 py-2 text-[11px] font-semibold text-[#a96e2d]">
+                Memo generated from template (LLM was unavailable).
+              </div>
+            )}
+            {memo.sections.map((section, idx) => (
+              <div key={idx} className="rounded-md bg-surface-2/80 p-3.5">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-accent">{section.title}</div>
+                <p className="mt-1.5 text-xs leading-5 text-ink-2">{section.text}</p>
+                {section.evidence_ids.length > 0 && (
+                  <div className="numeric mt-2 text-[10px] text-muted">
+                    Evidence: {section.evidence_ids.length} observations linked
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-md bg-surface-2 p-4 text-xs text-muted">
+            No memo generated yet. Click "Generate memo" to create an AI-backed investment memo.
+          </div>
+        )}
       </section>
 
       <div className="mt-5 flex items-start gap-3 rounded-lg bg-white/70 px-5 py-4 shadow-[0_12px_34px_rgba(70,91,120,.08)] backdrop-blur-xl">

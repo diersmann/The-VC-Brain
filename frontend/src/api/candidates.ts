@@ -108,3 +108,28 @@ export async function recordCandidateDecision(
   }
   return (await response.json()) as DecisionResult;
 }
+
+export type MemoSection = {
+  title: string;
+  text: string;
+  evidence_ids: string[];
+};
+
+export type CandidateMemo = {
+  sections: MemoSection[];
+  generation_mode: string | null;
+  model_version: string | null;
+  created_at: string | null;
+};
+
+export async function fetchCandidateMemo(candidateId: string, signal?: AbortSignal): Promise<CandidateMemo> {
+  const response = await fetch(`/api/v1/candidates/${candidateId}/memo`, { signal });
+  if (response.status === 404) return { sections: [], generation_mode: null, model_version: null, created_at: null };
+  if (!response.ok) throw new Error(`Memo request failed with status ${response.status}`);
+  return (await response.json()) as CandidateMemo;
+}
+
+export async function generateCandidateMemo(candidateId: string): Promise<void> {
+  const response = await fetch(`/api/v1/candidates/${candidateId}/memo/generate`, { method: "POST" });
+  if (!response.ok) throw new Error(`Memo generation failed with status ${response.status}`);
+}

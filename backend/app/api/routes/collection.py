@@ -483,3 +483,86 @@ async def reject_match(match_id: str) -> PersonMatchActionResponse:
         return PersonMatchActionResponse(message="Match rejected")
     finally:
         await session.close()
+
+
+# ---------------------------------------------------------------------------
+# Multi-agent scoring routes
+# ---------------------------------------------------------------------------
+
+
+@router.post("/research/{candidate_id}/score", response_model=DiscoverResponse)
+async def score_candidate_route(
+    candidate_id: uuid.UUID,
+    redis: Annotated[Any, Depends(get_redis)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DiscoverResponse:
+    """Queue multi-agent scoring for a candidate."""
+    person = await session.get(Person, candidate_id)
+    if person is None or not person.canonical:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    from app.collectors.queue import enqueue as queue_enqueue
+
+    await queue_enqueue(
+        redis,
+        {
+            "job_type": "score_candidate",
+            "person_id": str(person.id),
+        },
+        priority=10.0,
+    )
+    return DiscoverResponse(message=f"Queued multi-agent scoring for {candidate_id}")
+
+
+@router.post("/research/score/batch", response_model=ResearchQueueResponse)
+async def score_candidates_batch(
+    redis: Annotated[Any, Depends(get_redis)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    limit: int = 20,
+) -> ResearchQueueResponse:
+    """Queue multi-agent scoring for all canonical persons with observations."""
+    from app.collectors.queue import enqueue as queue_enqueue
+
+    result = await session.execute(
+        select(Person.id).where(Person.canonical.is_(True)).limit(limit)
+    )
+    person_ids = [str(row[0]) for row in result.all()]
+
+    for pid in person_ids:
+        await queue_enqueue(
+            redis,
+            {"job_type": "score_candidate", "person_id": pid},
+            priority=5.0,
+        )
+
+    return ResearchQueueResponse(
+        queued=len(person_ids),
+        candidate_ids=person_ids,
+        message=f"Queued multi-agent scoring for {len(person_ids)} candidates",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Processing pipeline routes
+# ---------------------------------------------------------------------------
+
+
+@router.post("/research/{candidate_id}/process", response_model=DiscoverResponse)
+async def process_candidate_route(
+    candidate_id: uuid.UUID,
+    redis: Annotated[Any, Depends(get_redis)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DiscoverResponse:
+    """Queue the processing pipeline (reconcile + embed + dedup) for a candidate."""
+    person = await session.get(Person, candidate_id)
+    if person is None or not person.canonical:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    from app.collectors.queue import enqueue as queue_enqueue
+
+    await queue_enqueue(
+        redis,
+        {"job_type": "process_candidate", "person_id": str(person.id)},
+        priority=5.0,
+    )
+    return DiscoverResponse(message=f"Queued processing pipeline for {candidate_id}")
