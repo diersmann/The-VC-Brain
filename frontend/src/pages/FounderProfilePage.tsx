@@ -1,61 +1,164 @@
 import { useNavigate, useParams } from "react-router";
-import { Activity, ArrowLeft, ArrowUpRight, Award, Bookmark, Building2, CalendarDays, CheckCircle2, CircleAlert, Crosshair, FileText, Github, Globe2, Linkedin, Mail, MessageSquare, Network, ShieldCheck, Sparkles, TrendingUp, UserRound, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  BrainCircuit,
+  Building2,
+  CheckCircle2,
+  CircleGauge,
+  Globe2,
+  Lightbulb,
+  MapPin,
+  RefreshCw,
+  TrendingDown,
+  TrendingUp,
+  UserRound,
+} from "lucide-react";
 import { mockCandidates } from "../data/mockCandidates";
-import { getMockFounderProfile, type FounderRelation } from "../data/mockFounderProfiles";
+import { getMockFounderProfile, type FounderAssessment } from "../data/mockFounderProfiles";
 
-export function FounderProfilePage(){
- const {founderId}=useParams(); const navigate=useNavigate(); const founder=mockCandidates.find(c=>c.id===founderId)??mockCandidates[0]; const profile=getMockFounderProfile(founder.stable_id);
- return <div className="pb-8">
-   <button onClick={()=>navigate('/sourcing')} className="mb-5 flex items-center gap-2 text-xs font-semibold text-muted hover:text-accent"><ArrowLeft className="h-4 w-4"/>Back to discovery</button>
-   <section className="panel mb-5 rounded-lg p-5 md:p-7">
-    <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
-      <div className="flex min-w-0 flex-1 gap-4"><div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#dbe6f2] to-[#bdcbdd] text-xl font-bold text-accent shadow-inner">{profile.initials}</div><div><div className="mb-2 flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold tracking-tight">{founder.display_name}</h1><CheckCircle2 className="h-4 w-4 text-success"/><span className="rounded-full bg-[#e9f4ef] px-2.5 py-1 text-[10px] font-bold text-success">IDENTITY VERIFIED</span></div><div className="text-sm font-semibold text-ink-2">{profile.role} · {profile.company}</div><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted"><span>{profile.location}</span><span>{profile.stage}</span><span>{profile.sector}</span></div><div className="mt-3 flex gap-2"><Social icon={Linkedin}/><Social icon={Github}/><Social icon={Globe2}/><Social icon={Mail}/></div></div></div>
-      <div className="flex gap-2"><button className="flex items-center gap-2 rounded-md border border-line px-3.5 py-2.5 text-xs font-semibold text-ink-2"><Bookmark className="h-4 w-4"/>Save</button><button className="flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-xs font-semibold text-white"><MessageSquare className="h-4 w-4"/>Start outreach</button></div>
-    </div>
-    <p className="mt-6 max-w-4xl text-sm leading-6 text-muted">{profile.summary}</p>
-    <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Score icon={Award} tone="blue" label="Founder score" value={String(profile.founderScore)} hint={profile.scoreHint}/><Score icon={Activity} tone="purple" label="Execution momentum" value={String(profile.momentum)} hint="Trajectory signal"/><Score icon={Crosshair} tone="green" label="Thesis alignment" value={String(profile.thesisFit)} hint="Active thesis version"/><Score icon={ShieldCheck} tone="amber" label="Evidence confidence" value={String(profile.evidence)} hint={`${profile.gaps.length} open truth gaps`} warning/></div>
-   </section>
+const axisDetails = {
+  Founder: {
+    icon: UserRound,
+    description: "Who they are, their traits and track record.",
+    checks: ["Technical capability", "Execution history", "Team building"],
+    color: "#6f8db7",
+    soft: "bg-[#e7eef9] text-[#5074a8]",
+  },
+  Market: {
+    icon: Globe2,
+    description: "Market sizing, competitors and SWOT.",
+    checks: ["Market size", "Competitive landscape", "Tailwinds & risks"],
+    color: "#4f9b84",
+    soft: "bg-[#e4f2ed] text-[#347c67]",
+  },
+  "Idea × Market": {
+    icon: Lightbulb,
+    description: "Does the idea survive scrutiny, or can the team pivot?",
+    checks: ["Problem strength", "Solution fit", "Pivot capacity"],
+    color: "#8b6db6",
+    soft: "bg-[#eee8f8] text-[#7656a5]",
+  },
+};
 
-   <div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
-    <div className="space-y-5">
-      <Section title="Opportunity assessment" subtitle="Independent axes — not averaged" icon={Sparkles}>
-        <div className="grid gap-3 md:grid-cols-3">{profile.assessments.map(item=><Assessment key={item.title} {...item}/>)}</div>
-      </Section>
-      <Section title="Founder journey" subtitle="Time-aware milestones with source confidence" icon={CalendarDays}>
-        <div className="relative ml-2 border-l border-[#ced9e7] pl-6">{profile.events.map((e,i)=>{const tone=eventTone(e.type);return <div key={e.title} className={`${i===profile.events.length-1?"pb-0":"pb-7"} relative`}><span className={`absolute -left-[30px] top-1 h-3 w-3 rounded-full border-[3px] border-white shadow-[0_0_0_1px_#9eafc4] ${tone.dot}`}/><div className="mb-1 flex flex-wrap items-center gap-2"><span className="text-[11px] font-bold text-accent">{e.date}</span><span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${tone.badge}`}>{e.type}</span><span className="ml-auto flex items-center gap-1 text-[10px] text-muted"><ShieldCheck className="h-3 w-3 text-success"/>Trust {e.trust}%</span></div><h4 className="text-sm font-bold">{e.title}</h4><p className="mt-1 text-xs leading-5 text-muted">{e.body}</p></div>})}</div>
-      </Section>
-      <Section title="Claims & evidence" subtitle="Every claim preserves provenance, freshness and trust" icon={ShieldCheck}>
-        <div className="space-y-2.5">{profile.claims.map(c=><div key={c.claim} className="rounded-lg border border-line bg-surface-2 p-4"><div className="flex gap-3"><div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${c.trust>80?"bg-[#e4f2ed] text-success":c.trust>65?"bg-[#fff2df] text-warn":"bg-[#fbe9e9] text-danger"}`}>{c.trust>80?<CheckCircle2 className="h-4 w-4"/>:<CircleAlert className="h-4 w-4"/>}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><h4 className="text-xs font-bold leading-5">{c.claim}</h4><span className="shrink-0 text-xs font-bold text-accent">{c.trust}%</span></div><p className="mt-1 text-[11px] text-muted">{c.source}</p><div className="mt-2 text-[10px] font-semibold text-muted">{c.status}</div></div></div></div>)}</div>
-      </Section>
+export function FounderProfilePage() {
+  const { founderId } = useParams();
+  const navigate = useNavigate();
+  const founder = mockCandidates.find((candidate) => candidate.id === founderId) ?? mockCandidates[0];
+  const profile = getMockFounderProfile(founder.stable_id);
+
+  return (
+    <div className="mx-auto max-w-[1180px] pb-10">
+      <button onClick={() => navigate("/sourcing")} className="mb-5 flex items-center gap-2 text-xs font-semibold text-muted hover:text-accent">
+        <ArrowLeft className="h-4 w-4" /> Back to discover
+      </button>
+
+      <header className="panel mb-6 rounded-lg p-5 md:p-6">
+        <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#dce6f2] to-[#c6d3e3] text-lg font-bold text-accent">
+              {profile.initials}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold tracking-tight">{founder.display_name}</h1>
+                <CheckCircle2 className="h-4 w-4 text-success" />
+              </div>
+              <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-ink-2">
+                <Building2 className="h-3.5 w-3.5 text-accent-muted" /> {profile.role} · {profile.company}
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-3 text-[11px] text-muted">
+                <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{profile.location}</span>
+                <span>{profile.stage}</span><span>{profile.sector}</span>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-md bg-accent-soft px-4 py-3 text-right">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-accent-muted">Thesis match</div>
+            <div className="mt-1 text-xl font-bold text-accent">{profile.thesisFit}%</div>
+          </div>
+        </div>
+      </header>
+
+      <div className="mb-5">
+        <div className="eyebrow mb-2">Independent assessment</div>
+        <h2 className="text-xl font-bold">Multi-Axis Screening</h2>
+        <p className="mt-1 text-xs text-muted">Three separate views of the opportunity. They are deliberately not averaged into one score.</p>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        {profile.assessments.map((assessment, index) => (
+          <AxisCard key={assessment.title} assessment={assessment} seed={profile.founderScore + index * 7} />
+        ))}
+      </div>
+
+      <div className="mt-5 flex items-start gap-3 rounded-lg border border-line bg-white px-5 py-4 shadow-sm">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#eef0f8] text-[#6676a2]"><BrainCircuit className="h-4 w-4" /></span>
+        <div><div className="text-xs font-bold">Feedback to Memory</div><p className="mt-1 text-[11px] leading-5 text-muted">Each assessment, trend change and investor correction is stored as a new version. Future screening improves without rewriting the historical decision context.</p></div>
+        <RefreshCw className="ml-auto mt-1 h-4 w-4 shrink-0 text-muted-2" />
+      </div>
     </div>
-    <div className="space-y-5">
-      <Section title="Relationship network" subtitle="People, companies and institutions" icon={Network}><RelationshipGraph founderName={founder.display_name ?? "Founder"} initials={profile.initials} relations={profile.relations}/></Section>
-      <Section title="Evidence coverage" subtitle="Missing evidence lowers confidence, not merit" icon={FileText}>
-       <div className="space-y-4">{profile.coverage.map(item=><Coverage key={item.label} {...item}/>)}</div>
-       <div className="mt-5 rounded-lg bg-[#fff8ed] p-4"><div className="flex gap-2"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warn"/><div><div className="text-xs font-bold text-[#74522a]">Open truth gaps</div><ul className="mt-2 space-y-1.5 text-[11px] leading-4 text-[#8c6a42]">{profile.gaps.map(gap=><li key={gap}>• {gap}</li>)}</ul></div></div></div>
-      </Section>
-      <Section title="Projects & affiliations" subtitle="Evidence-backed work history" icon={Building2}>
-        {profile.affiliations.map(({name,role,meta,kind})=>{const Icon=kind==="company"?Building2:kind==="work"?Users:UserRound;return <div key={name} className="flex items-center gap-3 border-b border-line py-3 last:border-0"><div className="flex h-9 w-9 items-center justify-center rounded-md bg-surface-2 text-accent"><Icon className="h-4 w-4"/></div><div><div className="text-xs font-bold">{name}</div><div className="text-[11px] text-muted">{role}</div></div><span className="ml-auto text-[10px] text-muted-2">{meta}</span></div>})}
-      </Section>
-    </div>
-   </div>
- </div>;
+  );
 }
 
-function Section({title,subtitle,icon:Icon,children}:{title:string;subtitle:string;icon:React.ElementType;children:React.ReactNode}){return <section className="panel rounded-lg p-5"><div className="mb-5 flex items-start gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-md bg-accent-soft text-accent"><Icon className="h-4 w-4"/></div><div><h2 className="text-sm font-bold">{title}</h2><p className="mt-0.5 text-[11px] text-muted">{subtitle}</p></div><button className="ml-auto text-muted-2"><ArrowUpRight className="h-4 w-4"/></button></div>{children}</section>}
-function Social({icon:Icon}:{icon:React.ElementType}){return <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-white text-muted hover:text-accent"><Icon className="h-3.5 w-3.5"/></button>}
-function Score({icon:Icon,tone,label,value,hint,warning}:{icon:React.ElementType;tone:"blue"|"purple"|"green"|"amber";label:string;value:string;hint:string;warning?:boolean}){const colors={blue:"bg-[#e7eef9] text-[#4f72a5]",purple:"bg-[#eee8f8] text-[#7656a5]",green:"bg-[#e4f2ed] text-[#347c67]",amber:"bg-[#fff0dc] text-[#a96e2d]"};return <div className="rounded-lg border border-line bg-surface-2 p-4"><div className="flex items-start justify-between"><div className="text-[10px] font-bold uppercase tracking-wider text-muted">{label}</div><span className={`flex h-8 w-8 items-center justify-center rounded-md ${colors[tone]}`}><Icon className="h-4 w-4"/></span></div><div className="mt-1 flex items-end gap-1"><span className="text-2xl font-bold">{value}</span><span className="pb-1 text-[10px] text-muted">/100</span></div><div className={`mt-2 text-[10px] font-semibold ${warning?"text-warn":"text-success"}`}>{hint}</div></div>}
-function Assessment({title,rating,trend,confidence,body}:{title:string;rating:string;trend:string;confidence:number;body:string}){const ratingTone=rating==="Bullish"?"bg-[#e4f2ed] text-success":rating==="Bearish"?"bg-[#fbe8e9] text-danger":"bg-[#fff1df] text-warn";const titleIcon=title==="Founder"?UserRound:title==="Market"?Globe2:Crosshair;const Icon=titleIcon;return <div className="rounded-lg border border-line bg-surface-2 p-4"><div className="mb-3 flex items-center justify-between"><span className="flex items-center gap-1.5 text-xs font-bold"><Icon className="h-3.5 w-3.5 text-accent-muted"/>{title}</span><span className={`rounded-full px-2 py-1 text-[9px] font-bold ${ratingTone}`}>{rating}</span></div><p className="min-h-12 text-[11px] leading-4 text-muted">{body}</p><div className="mt-3 flex items-center gap-1.5 text-[10px] font-semibold text-[#7656a5]"><TrendingUp className="h-3 w-3"/>{trend}<span className="ml-auto text-muted">{confidence}% confidence</span></div></div>}
-function eventTone(type:string){if(["Traction","Milestone","Validation"].includes(type))return{dot:"bg-[#4f9b84]",badge:"bg-[#e5f3ed] text-[#347c67]"};if(["Product","Science","Research","Work sample"].includes(type))return{dot:"bg-[#6d8fbd]",badge:"bg-[#e7eef9] text-[#4f72a5]"};if(["Team","Career","Discovery"].includes(type))return{dot:"bg-[#8b6db6]",badge:"bg-[#eee8f8] text-[#7656a5]"};return{dot:"bg-[#d39a55]",badge:"bg-[#fff1df] text-[#a96e2d]"}}
-function Coverage({label,value}:{label:string;value:number}){return <div><div className="mb-1.5 flex justify-between text-[11px]"><span className="font-medium text-ink-2">{label}</span><span className="font-bold text-muted">{value}%</span></div><div className="h-2 rounded-full bg-surface-3"><div className="h-full rounded-full bg-accent-muted" style={{width:`${value}%`}}/></div></div>}
+function AxisCard({ assessment, seed }: { assessment: FounderAssessment; seed: number }) {
+  const details = axisDetails[assessment.title];
+  const Icon = details.icon;
+  const values = trendValues(assessment.trend, seed);
+  const ratingStyle = assessment.rating === "Bullish"
+    ? "bg-[#e4f2ed] text-success"
+    : assessment.rating === "Bearish"
+      ? "bg-[#fbe8e9] text-danger"
+      : "bg-[#fff1df] text-warn";
+  const TrendIcon = assessment.trend === "Declining" ? TrendingDown : assessment.trend === "Improving" ? TrendingUp : CircleGauge;
 
-function RelationshipGraph({founderName,initials,relations}:{founderName:string;initials:string;relations:FounderRelation[]}){
- const positions=[{x:82,y:68,r:34},{x:350,y:65,r:31},{x:362,y:222,r:34},{x:88,y:230,r:34}];
- const fills={company:"#dce8f3",person:"#e6edf5",institution:"#eef0e5",investor:"#eee8f4"};
- return <div><svg viewBox="0 0 430 300" className="w-full overflow-visible" role="img" aria-label={`${founderName} relationship graph`}>
- <defs><filter id="shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#6b7f99" floodOpacity=".18"/></filter></defs>
- <g stroke="#b9c6d6" strokeWidth="1.4">{relations.slice(0,4).map((relation,index)=>{const p=positions[index];return <line key={relation.label} x1="215" y1="145" x2={p.x} y2={p.y} strokeDasharray={relation.verified?undefined:"4 5"}/>})}</g>
- <GraphNode x={215} y={145} r={43} fill="#415a7d" label={initials} sub="Founder" inverse/>
- {relations.slice(0,4).map((relation,index)=>{const p=positions[index];return <GraphNode key={relation.label} {...p} fill={fills[relation.kind]} label={relation.label} sub={relation.sub}/>})}
- </svg><div className="mt-1 flex flex-wrap gap-3 text-[9px] text-muted"><span className="flex items-center gap-1"><i className="h-px w-4 bg-[#9eafc4]"/>Verified relationship</span><span className="flex items-center gap-1"><i className="w-4 border-t border-dashed border-[#9eafc4]"/>Inferred connection</span></div></div>}
-function GraphNode({x,y,r,fill,label,sub,inverse}:{x:number;y:number;r:number;fill:string;label:string;sub:string;inverse?:boolean}){return <g filter="url(#shadow)"><circle cx={x} cy={y} r={r} fill={fill} stroke="white" strokeWidth="4"/><text x={x} y={y-2} textAnchor="middle" fontSize="11" fontWeight="700" fill={inverse?"white":"#344258"}>{label}</text><text x={x} y={y+12} textAnchor="middle" fontSize="8" fill={inverse?"#dce5ef":"#8291a5"}>{sub}</text></g>}
+  return (
+    <article className="panel overflow-hidden rounded-lg">
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <span className={`flex h-10 w-10 items-center justify-center rounded-md ${details.soft}`}><Icon className="h-5 w-5" /></span>
+          <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${ratingStyle}`}>{assessment.rating}</span>
+        </div>
+        <h3 className="mt-4 text-base font-bold">{assessment.title}</h3>
+        <p className="mt-1 min-h-10 text-[11px] leading-5 text-muted">{details.description}</p>
+        <div className="mt-4 space-y-2 border-t border-line pt-4">
+          {details.checks.map((check) => <div key={check} className="flex items-center gap-2 text-[11px] text-ink-2"><CheckCircle2 className="h-3.5 w-3.5" style={{ color: details.color }} />{check}</div>)}
+        </div>
+      </div>
+
+      <div className="border-t border-line bg-surface-2 px-5 pb-4 pt-4">
+        <div className="mb-2 flex items-center justify-between">
+          <div><div className="text-[9px] font-bold uppercase tracking-wider text-muted-2">Trend · last 5 updates</div><div className="mt-1 flex items-center gap-1.5 text-xs font-bold" style={{ color: details.color }}><TrendIcon className="h-3.5 w-3.5" />{assessment.trend}</div></div>
+          <div className="text-right"><div className="text-lg font-bold">{values.at(-1)}</div><div className="text-[9px] text-muted">{assessment.confidence}% confidence</div></div>
+        </div>
+        <TrendChart values={values} color={details.color} />
+        <div className="mt-1 flex justify-between text-[8px] text-muted-2"><span>Earlier evidence</span><span>Latest</span></div>
+      </div>
+    </article>
+  );
+}
+
+function TrendChart({ values, color }: { values: number[]; color: string }) {
+  const width = 300; const height = 92; const pad = 8;
+  const min = Math.min(...values) - 5; const max = Math.max(...values) + 5;
+  const points = values.map((value, index) => {
+    const x = pad + index * ((width - pad * 2) / (values.length - 1));
+    const y = height - pad - ((value - min) / Math.max(1, max - min)) * (height - pad * 2);
+    return { x, y, value };
+  });
+  const line = points.map((point) => `${point.x},${point.y}`).join(" ");
+  const area = `${pad},${height - pad} ${line} ${width - pad},${height - pad}`;
+  return <svg viewBox={`0 0 ${width} ${height}`} className="h-[92px] w-full" role="img" aria-label={`Trend values ${values.join(", ")}`}>
+    <defs><linearGradient id={`area-${color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity=".24"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
+    {[25,50,75].map(y=><line key={y} x1="8" y1={y} x2="292" y2={y} stroke="#dfe6ef" strokeWidth="1" strokeDasharray="3 4"/>)}
+    <polygon points={area} fill={`url(#area-${color.replace("#", "")})`} />
+    <polyline points={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+    {points.map((point,index)=><circle key={index} cx={point.x} cy={point.y} r={index===points.length-1?4:2.5} fill="white" stroke={color} strokeWidth="2" />)}
+  </svg>;
+}
+
+function trendValues(trend: FounderAssessment["trend"], seed: number): number[] {
+  const base = 52 + (seed % 16);
+  if (trend === "Improving") return [base, base + 4, base + 3, base + 10, base + 15];
+  if (trend === "Declining") return [base + 14, base + 11, base + 12, base + 5, base];
+  return [base + 2, base + 5, base + 3, base + 4, base + 3];
+}
