@@ -67,11 +67,16 @@ export function DecisionActionDock({
 
       <div className="fixed bottom-4 right-4 z-[60] flex items-center gap-1.5 rounded-lg bg-white/88 p-2 shadow-[0_18px_55px_rgba(31,45,66,.2)] backdrop-blur-2xl sm:bottom-6 sm:right-6">
         <span className="hidden items-center gap-1.5 px-2 text-[10px] font-bold uppercase tracking-wider text-muted sm:inline-flex"><Scale className="h-3.5 w-3.5 text-accent" /> Decide</span>
+        <span className="hidden items-center gap-1.5 rounded-md bg-surface-2 px-2.5 py-2 text-[9px] font-bold uppercase tracking-wider text-muted lg:inline-flex"><span className="h-1.5 w-1.5 rounded-full bg-accent-muted" />{formatState(currentState)}</span>
         {actions.map((action) => {
           const Icon = action.icon;
-          return <button key={action.value} type="button" onClick={() => { setSelected(action.value); setStatus("idle"); }} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2.5 text-xs font-bold transition hover:-translate-y-0.5 ${action.style}`}><Icon className="h-3.5 w-3.5" />{action.label}</button>;
+          return <button key={action.value} type="button" aria-pressed={selected === action.value} onClick={() => { setSelected(action.value); setStatus("idle"); }} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2.5 text-xs font-bold transition hover:-translate-y-0.5 ${action.style} ${selected === action.value ? "ring-2 ring-current ring-offset-1" : ""}`}><Icon className="h-3.5 w-3.5" />{action.label}</button>;
         })}
       </div>
     </>
   );
+}
+
+function formatState(value: string): string {
+  return value.replace(/[_-]+/g, " ");
 }

@@ -1,20 +1,22 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowDownUp, Clock3, Scale, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowDownUp, ChevronRight, Scale, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useCandidates } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
-import { formatDate, formatPredicate, percentage } from "../data/candidateProfile";
-import { sortDecisionCandidates, type DecisionSort } from "../data/decisionQueue";
-import type { Candidate } from "../types/candidate";
+import { DecisionScoreIndicator, DecisionStatusBadge } from "../components/decision/DecisionVisuals";
+import { KeyMetricCard } from "../components/common/KeyMetricCard";
+import { formatDate, formatPredicate } from "../data/candidateProfile";
+import { buildDecisionBrief, sortDecisionCandidates, type DecisionSort } from "../data/decisionQueue";
+import { candidateDecisionScore, candidateEvidencePercent, candidateThesisPercent, decisionReadiness, ratioPercent } from "../data/portfolioMetrics";
 
 export function DecisionQueuePage() {
   const navigate = useNavigate();
   const { data = [], isLoading, error } = useCandidates();
   const [sortBy, setSortBy] = useState<DecisionSort>("thesis");
   const sortedCandidates = useMemo(() => sortDecisionCandidates(data, sortBy), [data, sortBy]);
-  const scored = data.filter((candidate) => decisionScore(candidate) !== null);
-  const highSignal = data.filter((candidate) => (decisionScore(candidate) ?? 0) >= 45);
-  const pending = data.filter((candidate) => !candidate.scores).length;
+  const ready = data.filter((candidate) => decisionReadiness(candidate) === "ready").length;
+  const investigate = data.filter((candidate) => decisionReadiness(candidate) === "investigate").length;
+  const evidenceGaps = data.filter((candidate) => decisionReadiness(candidate) === "evidence-gap").length;
 
   return (
     <div className="mx-auto max-w-[1100px] pb-10">
@@ -25,9 +27,9 @@ export function DecisionQueuePage() {
       </div>
 
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
-        <QueueMetric icon={Scale} label="Scored profiles" value={String(scored.length)} tone="blue" />
-        <QueueMetric icon={ShieldCheck} label="Above signal threshold" value={String(highSignal.length)} tone="green" />
-        <QueueMetric icon={Clock3} label="Awaiting score" value={String(pending)} tone="amber" />
+        <KeyMetricCard icon={ShieldCheck} label="Ready for review" value={ready} detail="Strong thesis fit backed by sufficient evidence" progress={ratioPercent(ready, data.length)} progressLabel={`${ready} of ${data.length} opportunities`} tone="green" />
+        <KeyMetricCard icon={Scale} label="Investigate" value={investigate} detail="Promising signal that still needs investor scrutiny" progress={ratioPercent(investigate, data.length)} progressLabel={`${investigate} of ${data.length} opportunities`} tone="blue" />
+        <KeyMetricCard icon={AlertTriangle} label="Evidence gaps" value={evidenceGaps} detail="Insufficient signal for a defensible decision" progress={ratioPercent(evidenceGaps, data.length)} progressLabel={`${evidenceGaps} of ${data.length} opportunities`} tone="amber" />
       </div>
 
       {isLoading && <div className="py-16 text-center text-sm text-muted">Loading decision candidates…</div>}
@@ -58,28 +60,39 @@ export function DecisionQueuePage() {
 
       <div className="space-y-3">
         {sortedCandidates.map((candidate) => {
-          const score = decisionScore(candidate);
+          const thesisScore = candidateThesisPercent(candidate);
+          const evidenceScore = candidateEvidencePercent(candidate);
+          const discoveryScore = candidateDecisionScore(candidate);
+          const readiness = decisionReadiness(candidate);
           const source = Object.keys(candidate.handles ?? {})[0] ?? candidate.origin ?? "database";
           return (
             <article
               key={candidate.id}
               onClick={() => navigate(`/decisions/${candidate.id}`)}
-              className="panel cursor-pointer rounded-lg p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
+              className="panel group cursor-pointer rounded-lg p-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
             >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-                <div className="flex min-w-[220px] items-center gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <CandidateAvatar name={candidate.display_name} avatarUrl={candidate.avatar_url} className="h-11 w-11 rounded-lg bg-accent-soft font-bold text-accent" />
                   <div>
                     <h2 className="text-[15px] font-bold leading-tight">{candidate.display_name ?? candidate.stable_id}</h2>
-                    <p className="text-[11px] text-muted">{formatPredicate(source)} · Added {formatDate(candidate.created_at)}</p>
+                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-[.08em] text-muted-2">{formatPredicate(source)}</p>
+                    <p className="mt-1 text-[10px] text-muted">Added {formatDate(candidate.created_at)}</p>
                   </div>
                 </div>
-                <div className="grid flex-1 grid-cols-2 gap-3 md:grid-cols-4">
-                  <Datum label="Thesis match" value={candidate.scores?.thesis_fit == null ? "Not scored" : `${percentage(candidate.scores.thesis_fit)}%`} icon={ShieldCheck} />
-                  <Datum label="Review status" value={recommendation(candidate)} icon={Scale} />
-                  <Datum label="Evidence" value={candidate.scores?.evidence_confidence == null ? "Collecting" : `${percentage(candidate.scores.evidence_confidence)}%`} icon={AlertTriangle} />
-                  <Datum label="Discovery signal" value={score == null ? "Pending" : `${score}%`} icon={Clock3} />
+                <DecisionStatusBadge state={readiness} showDetail={false} />
+              </div>
+              <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(280px,1fr)_minmax(340px,.9fr)_20px] lg:items-center">
+                <div className="min-w-0">
+                  <div className="data-label">AI investment brief</div>
+                  <p className="mt-1.5 text-[11px] leading-[1.65] text-ink-2">{buildDecisionBrief(candidate)}</p>
                 </div>
+                <div className="grid grid-cols-3 gap-5">
+                  <DecisionScoreIndicator label="Thesis match" value={thesisScore} detail="Strategy fit" />
+                  <DecisionScoreIndicator label="Evidence" value={evidenceScore} detail="Source quality" />
+                  <DecisionScoreIndicator label="Decision signal" value={discoveryScore} detail="Available score" />
+                </div>
+                <ChevronRight className="h-5 w-5 text-muted-2 transition-transform group-hover:translate-x-1 group-hover:text-accent" />
               </div>
             </article>
           );
@@ -87,26 +100,4 @@ export function DecisionQueuePage() {
       </div>
     </div>
   );
-}
-
-function decisionScore(candidate: Candidate): number | null {
-  const value = candidate.scores?.thesis_fit ?? candidate.scores?.raw?.composite ?? candidate.scores?.momentum;
-  return value == null ? null : percentage(value);
-}
-
-function recommendation(candidate: Candidate): string {
-  const thesis = candidate.scores?.thesis_fit;
-  if (thesis != null && thesis >= 0.75) return "Ready for review";
-  const score = decisionScore(candidate);
-  if (score != null && score >= 45) return "Investigate";
-  return "Collect evidence";
-}
-
-function QueueMetric({ icon: Icon, label, value, tone }: { icon: React.ElementType; label: string; value: string; tone: "blue" | "amber" | "green" }) {
-  const tones = { blue: "bg-[#e7eef9] text-[#5074a8]", amber: "bg-[#fff1df] text-[#a96e2d]", green: "bg-[#e4f2ed] text-[#347c67]" };
-  return <div className="panel flex items-center gap-3 rounded-lg p-4"><span className={`flex h-10 w-10 items-center justify-center rounded-md ${tones[tone]}`}><Icon className="h-4 w-4" /></span><div><div className="metric-value">{value}</div><div className="mt-1 text-[11px] text-muted">{label}</div></div></div>;
-}
-
-function Datum({ label, value, icon: Icon }: { label: string; value: string; icon: React.ElementType }) {
-  return <div className="rounded-md bg-white/55 px-3 py-2.5"><div className="data-label flex items-center gap-1"><Icon className="h-3 w-3" />{label}</div><div className="data-value numeric truncate">{value}</div></div>;
 }

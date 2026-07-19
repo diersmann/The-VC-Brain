@@ -17,13 +17,16 @@ import {
   Linkedin,
   MapPin,
   RefreshCw,
+  ShieldCheck,
   Sparkles,
+  Target,
   TrendingDown,
   TrendingUp,
   UserRound,
 } from "lucide-react";
 import { researchCandidate, useCandidate } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
+import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { buildFounderProfile } from "../data/candidateProfile";
 import { candidateExternalLinks, type CandidateLinkKind } from "../data/candidateLinks";
 import type { FounderAssessment, FounderProfile } from "../types/profile";
@@ -63,6 +66,7 @@ export function FounderProfilePage() {
 
   const profile = buildFounderProfile(founder);
   const externalLinks = candidateExternalLinks(founder);
+  const founderAssessment = profile.assessments.find((assessment) => assessment.title === "Founder");
   const runResearch = async () => {
     setResearchState("queued");
     try {
@@ -111,13 +115,15 @@ export function FounderProfilePage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button onClick={runResearch} disabled={researchState === "queued"} className="inline-flex items-center gap-2 rounded-md bg-[#eee8f8] px-4 py-3 text-[11px] font-bold text-[#7656a5] disabled:opacity-60"><Sparkles className="h-3.5 w-3.5" />{researchState === "queued" ? "Tavily research queued" : researchState === "error" ? "Research failed · retry" : "Research with Tavily"}</button>
-            <div className="rounded-md bg-accent-soft px-4 py-3 text-right">
-              <div className="data-label text-accent-muted">Thesis match</div>
-              <div className="numeric mt-1 text-2xl font-bold leading-none text-accent">{profile.thesisFit != null ? `${profile.thesisFit}%` : "Pending"}</div>
-            </div>
           </div>
         </div>
       </header>
+
+      <section className="mb-6 grid gap-3 sm:grid-cols-3">
+        <KeyMetricCard icon={Target} label="Thesis match" value={profile.thesisFit} suffix="%" detail="Fit with the active fund strategy" progress={profile.thesisFit} progressLabel={founder.thesis_match?.hard_eligible ? "Hard constraints passed" : "Review constraints"} tone="purple" />
+        <KeyMetricCard icon={UserRound} label="Founder signal" value={profile.founderScore} suffix="/100" detail="Traits, track record and execution evidence" progress={profile.founderScore} progressLabel={founderAssessment?.rating ?? "Assessment pending"} tone="green" />
+        <KeyMetricCard icon={ShieldCheck} label="Evidence quality" value={profile.evidence} suffix="%" detail="Confidence-weighted coverage of key claims" progress={profile.evidence} progressLabel={`${profile.claims.length} evidence records`} tone="blue" />
+      </section>
 
       {founder.thesis_match && (
         <section className="panel mb-6 rounded-lg p-5">

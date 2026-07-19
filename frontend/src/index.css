@@ -58,6 +58,8 @@ button { cursor: pointer; }
 .data-value { margin-top: .3rem; color: #344258; font-size: .8125rem; line-height: 1.35; font-weight: 600; }
 .metric-value { color: #1b2638; font-size: 1.5rem; line-height: 1; font-weight: 700; letter-spacing: -.025em; }
 .numeric, .metric-value { font-variant-numeric: tabular-nums lining-nums; font-feature-settings: "tnum" 1, "lnum" 1; }
+.brand-wordmark { display: inline-flex; align-items: baseline; color: #172337; font-size: 1.25rem; line-height: 1; font-weight: 780; letter-spacing: -.052em; white-space: nowrap; }
+.brand-wordmark-number { margin-left: .2rem; color: #557dc0; font-size: .82em; font-weight: 800; letter-spacing: -.035em; font-variant-numeric: lining-nums; }
 .status-pill { display: inline-flex; align-items: center; gap: .3rem; border-radius: .375rem; padding: .32rem .55rem; font-size: .6875rem; line-height: 1; font-weight: 700; }
 .interactive-focus:focus-visible { outline: 2px solid rgba(65,90,125,.42); outline-offset: 2px; }
 .scrollbar-none { scrollbar-width: none; }

@@ -6,7 +6,6 @@ import {
   Check,
   CheckCircle2,
   Clock3,
-  DollarSign,
   ExternalLink,
   FileText,
   Lightbulb,
@@ -24,6 +23,7 @@ import {
 import { Link, useParams } from "react-router";
 import { useCandidate } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
+import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { DecisionActionDock } from "../components/decision/DecisionActionDock";
 import { buildFounderProfile, formatPredicate } from "../data/candidateProfile";
 import type { CandidateDetail } from "../types/candidate";
@@ -196,16 +196,14 @@ function FounderSidebar({
 
 function AiSummary({ profile, meta }: { profile: FounderProfile; meta: DecisionMeta }) {
   const styles = {
-    Proceed: "bg-[#e4f2ed] text-[#347c67]",
-    Hold: "bg-[#fff1df] text-[#a96e2d]",
-    Investigate: "bg-[#e7eef9] text-[#5074a8]",
+    Proceed: { color: "#347c67", soft: "#e4f2ed", label: "Move forward" },
+    Hold: { color: "#a96e2d", soft: "#fff1df", label: "Pause & verify" },
+    Investigate: { color: "#5074a8", soft: "#e7eef9", label: "Diligence needed" },
   };
+  const recommendation = styles[meta.recommendation];
 
   return (
-    <section className="panel relative overflow-hidden rounded-lg p-5 sm:p-6">
-      <div className="pointer-events-none absolute -right-12 -top-16 h-44 w-44 rounded-full bg-[#d9e5f7]/75 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-16 left-1/4 h-32 w-32 rounded-full bg-[#dff0ea]/70 blur-3xl" />
-      <div className="relative">
+    <section className="panel rounded-lg p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="eyebrow mb-2 flex items-center gap-1.5">
@@ -213,41 +211,27 @@ function AiSummary({ profile, meta }: { profile: FounderProfile; meta: DecisionM
           </div>
           <h2 className="text-xl font-bold tracking-tight">{profile.company} at a glance</h2>
         </div>
-        <span className={`status-pill ${styles[meta.recommendation]}`}>
-          {meta.recommendation}
-        </span>
+        <div role="status" aria-label={`AI recommendation: ${meta.recommendation}`} className="inline-flex items-center gap-2 rounded-md px-2.5 py-2" style={{ backgroundColor: recommendation.soft }}>
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: recommendation.color }} />
+          <span className="text-[10px] font-bold" style={{ color: recommendation.color }}>{meta.recommendation} · {recommendation.label}</span>
+        </div>
       </div>
       <p className="mt-4 max-w-[900px] text-sm leading-7 text-ink-2">{meta.aiSummary}</p>
       <div className="mt-4 flex items-center gap-2 text-[10px] font-semibold leading-4 text-muted-2">
         <ShieldCheck className="h-3.5 w-3.5 text-accent" /> Generated from available evidence; key claims still require human verification.
-      </div>
       </div>
     </section>
   );
 }
 
 function DealMetrics({ profile, meta }: { profile: FounderProfile; meta: DecisionMeta }) {
-  const metrics = [
-    { label: "Round", value: meta.round, detail: meta.valuation, icon: DollarSign, color: "text-[#5074a8] bg-[#e7eef9]" },
-    { label: "Thesis match", value: `${profile.thesisFit}%`, detail: "Fund strategy fit", icon: Target, color: "text-[#7d64ad] bg-[#eee9f7]" },
-    { label: "Founder signal", value: `${profile.founderScore}/100`, detail: profile.signal, icon: Users, color: "text-[#347c67] bg-[#e4f2ed]" },
-    { label: "Evidence quality", value: `${profile.evidence}%`, detail: "Source-weighted", icon: ShieldCheck, color: "text-[#a96e2d] bg-[#fff1df]" },
-  ];
+  const founderAssessment = profile.assessments.find((assessment) => assessment.title === "Founder");
 
   return (
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {metrics.map(({ label, value, detail, icon: Icon, color }) => (
-        <div key={label} className="panel rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <span className="data-label">{label}</span>
-            <span className={`flex h-7 w-7 items-center justify-center rounded-md ${color}`}>
-              <Icon className="h-3.5 w-3.5" />
-            </span>
-          </div>
-          <div className="metric-value mt-2">{value}</div>
-          <div className="mt-1.5 truncate text-[11px] text-muted">{detail}</div>
-        </div>
-      ))}
+    <section className="grid gap-3 sm:grid-cols-3">
+      <KeyMetricCard icon={Target} label="Thesis match" value={profile.thesisFit} suffix="%" detail="Fit with the active fund strategy" progress={profile.thesisFit} progressLabel={meta.recommendation} tone="purple" />
+      <KeyMetricCard icon={Users} label="Founder signal" value={profile.founderScore} suffix="/100" detail="Traits, execution history and team-building signal" progress={profile.founderScore} progressLabel={founderAssessment?.rating ?? "Assessment pending"} tone="green" />
+      <KeyMetricCard icon={ShieldCheck} label="Evidence quality" value={profile.evidence} suffix="%" detail="Confidence-weighted coverage of key claims" progress={profile.evidence} progressLabel={`${profile.claims.length} evidence records`} tone="blue" />
     </section>
   );
 }
@@ -278,31 +262,41 @@ function AxisScreening({ profile }: { profile: FounderProfile }) {
 
 function AxisCard({ assessment, score, values }: { assessment: FounderAssessment; score: number; values: number[] }) {
   const TrendIcon = assessment.trend === "Improving" ? TrendingUp : assessment.trend === "Declining" ? TrendingDown : Minus;
-  const tone = assessment.rating === "Bullish" ? "#347c67" : assessment.rating === "Bearish" ? "#b65d5d" : "#a96e2d";
+  const ratingVisual = assessment.rating === "Bullish"
+    ? { color: "#347c67", soft: "#e4f2ed" }
+    : assessment.rating === "Bearish"
+      ? { color: "#b65d5d", soft: "#fbe8e9" }
+      : assessment.rating === "Pending"
+        ? { color: "#7d8999", soft: "#edf1f5" }
+        : { color: "#a96e2d", soft: "#fff1df" };
+  const tone = ratingVisual.color;
   const trendData = values.length ? values.slice(-5) : [score];
   const change = score - trendData[0];
 
   return (
     <article
-      className="rounded-lg p-4 shadow-[0_10px_28px_rgba(70,91,120,.07)]"
-      style={{ background: `linear-gradient(145deg, ${tone}12, rgba(255,255,255,.88) 58%)` }}
+      className="rounded-lg bg-white/55 p-4 shadow-[0_8px_22px_rgba(70,91,120,.05)]"
     >
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="text-[13px] font-bold">{assessment.title}</div>
-          <div className="mt-1 flex items-center gap-1 text-[10px] font-bold" style={{ color: tone }}>
-            <TrendIcon className="h-3 w-3" /> {assessment.rating} · {assessment.trend}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded px-2 py-1 text-[9px] font-bold uppercase tracking-wider" style={{ color: tone, backgroundColor: ratingVisual.soft }}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone }} />{assessment.rating}
+            </span>
+            <span className="inline-flex items-center gap-1 px-1 py-1 text-[9px] font-bold text-muted">
+              <TrendIcon className="h-3 w-3" style={{ color: tone }} />{assessment.trend}
+            </span>
           </div>
         </div>
-        <div className="text-right">
-          <div className="numeric text-2xl font-bold leading-none" style={{ color: tone }}>{score}</div>
-          <div className="data-label mt-1">axis score</div>
+        <div className="w-20 shrink-0 text-right">
+          <span className="numeric text-xl font-bold leading-none" style={{ color: tone }}>{score}</span>
+          <div role="meter" aria-label={`${assessment.title} axis score: ${score}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={score} className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ backgroundColor: ratingVisual.soft }}>
+            <div className="h-full rounded-full" style={{ width: `${score}%`, backgroundColor: tone }} />
+          </div>
         </div>
       </div>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-2">
-        <div className="h-full rounded-full" style={{ width: `${score}%`, backgroundColor: tone }} />
-      </div>
-      <div className="mt-3 rounded-md bg-white/60 px-3 pb-2 pt-3 shadow-inner shadow-white/80 backdrop-blur-sm">
+      <div className="mt-3 rounded-md bg-surface-2/70 px-3 pb-2 pt-3">
         <div className="flex items-center justify-between">
           <span className="data-label">Trend · last 5 updates</span>
           <span className="numeric text-[10px] font-bold" style={{ color: tone }}>
@@ -316,8 +310,9 @@ function AxisCard({ assessment, score, values }: { assessment: FounderAssessment
         </div>
       </div>
       <p className="mt-3 text-xs leading-5 text-muted">{assessment.body}</p>
-      <div className="mt-3 rounded bg-white/55 px-2.5 py-2 text-[10px] text-muted-2">
-        Confidence <span className="numeric font-bold text-ink-2">{assessment.confidence}%</span>
+      <div className="mt-3 rounded bg-surface-2/70 px-2.5 py-2">
+        <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-muted-2"><span>Evidence confidence</span><span className="numeric" style={{ color: tone }}>{assessment.confidence}%</span></div>
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full" style={{ backgroundColor: ratingVisual.soft }}><div className="h-full rounded-full" style={{ width: `${assessment.confidence}%`, backgroundColor: tone }} /></div>
       </div>
     </article>
   );

@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { ArrowRight, ExternalLink, FileText, Inbox, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, ExternalLink, FileText, Inbox, Search, ShieldCheck, Sparkles, Target } from "lucide-react";
 import { useCandidates } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
+import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { formatDate, formatPredicate, percentage } from "../data/candidateProfile";
+import { hasDecisionScore, isThesisAligned, ratioPercent } from "../data/portfolioMetrics";
 
 export function InboundInboxPage() {
   const navigate = useNavigate();
@@ -13,8 +15,8 @@ export function InboundInboxPage() {
     if (candidate.origin !== "inbound") return false;
     return !query || (candidate.display_name ?? candidate.stable_id).toLowerCase().includes(query.toLowerCase());
   }), [data, query]);
-  const parsed = inbound.filter((candidate) => candidate.scores).length;
-  const needsAttention = inbound.length - parsed;
+  const thesisAligned = inbound.filter(isThesisAligned).length;
+  const needsAttention = inbound.filter((candidate) => !hasDecisionScore(candidate)).length;
 
   return (
     <div className="mx-auto max-w-[1160px] pb-10">
@@ -23,9 +25,9 @@ export function InboundInboxPage() {
       </div>
 
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
-        <Stat icon={Inbox} value={String(inbound.length)} label="Inbound records" tone="purple" />
-        <Stat icon={Sparkles} value={String(parsed)} label="Scored records" tone="blue" />
-        <Stat icon={ShieldCheck} value={String(needsAttention)} label="Need assessment" tone="amber" />
+        <KeyMetricCard icon={Inbox} label="Applications" value={inbound.length} detail="Founder-submitted opportunities in the live inbox" progress={ratioPercent(inbound.length, data.length)} progressLabel={`${inbound.length} of ${data.length} pipeline records`} tone="purple" />
+        <KeyMetricCard icon={Target} label="Thesis aligned" value={thesisAligned} detail="Applications clearing the 75% strategy-fit threshold" progress={ratioPercent(thesisAligned, inbound.length)} progressLabel={`${thesisAligned} of ${inbound.length} applications`} tone="green" />
+        <KeyMetricCard icon={AlertTriangle} label="Needs assessment" value={needsAttention} detail="Applications without a usable decision score" progress={ratioPercent(needsAttention, inbound.length)} progressLabel={`${needsAttention} of ${inbound.length} applications`} tone="amber" />
       </div>
 
       <section className="panel space-y-1 rounded-lg p-2">
@@ -53,7 +55,6 @@ export function InboundInboxPage() {
   );
 }
 
-function Stat({ icon: Icon, value, label, tone }: { icon: React.ElementType; value: string; label: string; tone: "purple" | "blue" | "amber" }) { const colors = { purple: "bg-[#eee8f8] text-[#7656a5]", blue: "bg-[#e7eef9] text-[#5074a8]", amber: "bg-[#fff1df] text-[#a96e2d]" }; return <div className="panel flex items-center gap-3 rounded-lg p-4"><span className={`flex h-9 w-9 items-center justify-center rounded-md ${colors[tone]}`}><Icon className="h-4 w-4" /></span><div><div className="metric-value">{value}</div><div className="mt-1 text-[11px] text-muted">{label}</div></div></div>; }
 function Cell({ label, value }: { label: string; value: string }) { return <div><div className="data-label">{label}</div><div className="data-value numeric">{value}</div></div>; }
 function ThesisScore({ value }: { value: number | null | undefined }) {
   const score = value == null ? null : percentage(value);

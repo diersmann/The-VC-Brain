@@ -1,10 +1,12 @@
 import { useNavigate } from "react-router";
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, Compass, Inbox, Target } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, CircleGauge, ShieldCheck, Target } from "lucide-react";
 import { useCandidates } from "../api/candidates";
 import { useActiveThesis } from "../api/theses";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
+import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { InvestmentWorkflowTree } from "../components/overview/InvestmentWorkflowTree";
 import { formatDate, formatPredicate, percentage } from "../data/candidateProfile";
+import { candidateThesisPercent, decisionReadiness, hasDecisionScore, median, ratioPercent } from "../data/portfolioMetrics";
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -12,8 +14,13 @@ export function HomePage() {
   const { data: activeThesis } = useActiveThesis();
   const inbound = data.filter((candidate) => candidate.origin === "inbound");
   const outbound = data.filter((candidate) => candidate.origin === "outbound");
-  const scored = data.filter((candidate) => candidate.scores);
+  const scored = data.filter(hasDecisionScore);
   const highSignal = data.filter((candidate) => (candidate.scores?.thesis_fit ?? candidate.scores?.raw?.composite ?? 0) >= 0.45);
+  const reviewReady = data.filter((candidate) => decisionReadiness(candidate) === "ready");
+  const thesisScores = data.map(candidateThesisPercent);
+  const measuredThesisScores = thesisScores.filter((value): value is number => value !== null);
+  const medianThesis = median(thesisScores);
+  const scoringCoverage = ratioPercent(scored.length, data.length);
   const priorities = [...data].sort((a, b) => score(b) - score(a)).slice(0, 4);
   const thesisItems = activeThesis ? [
     activeThesis.sectors.map(thesisLabel).join(" · "),
@@ -25,7 +32,7 @@ export function HomePage() {
   return (
     <div className="mx-auto max-w-[1220px] pb-10">
       <section className="mb-7 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-        <div><div className="eyebrow mb-2">Investment workspace</div><h1 className="page-title">Good morning, Sophie</h1><p className="page-description">Live sourcing and decision data from the VC Brain database.</p></div>
+        <div><div className="eyebrow mb-2">Investment workspace</div><h1 className="page-title">Good morning, Sophie</h1><p className="page-description">Live sourcing and decision data from the FirstCheck24 database.</p></div>
         <button onClick={() => navigate("/thesis")} className="flex w-fit items-center gap-3 rounded-md bg-white/75 px-4 py-2.5 shadow-[0_8px_24px_rgba(70,91,120,.08)] backdrop-blur-xl"><span className={`h-2 w-2 rounded-full ${activeThesis ? "bg-success" : "bg-warn"}`} /><div className="text-left"><div className="text-xs font-bold">{activeThesis?.name ?? "Configure thesis"}</div><div className="text-[10px] text-muted">{activeThesis ? `${activeThesis.version} · active` : "No active thesis"}</div></div><ArrowRight className="h-3.5 w-3.5 text-muted" /></button>
       </section>
 
@@ -43,11 +50,10 @@ export function HomePage() {
         onNavigate={navigate}
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={Inbox} label="Inbound records" value={String(inbound.length)} hint="Live database" color="purple" />
-        <Metric icon={Compass} label="Public discoveries" value={String(outbound.length)} hint={`${highSignal.length} high signal`} color="green" />
-        <Metric icon={Clock3} label="Awaiting score" value={String(data.length - scored.length)} hint="Need assessment" color="amber" />
-        <Metric icon={CheckCircle2} label="Scored profiles" value={String(scored.length)} hint="Versioned scores" color="blue" />
+      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        <KeyMetricCard icon={ShieldCheck} label="Review ready" value={reviewReady.length} detail="Thesis fit ≥75% with sufficient evidence" progress={ratioPercent(reviewReady.length, data.length)} progressLabel={`${reviewReady.length} of ${data.length} opportunities`} tone="green" />
+        <KeyMetricCard icon={Target} label="Median thesis fit" value={medianThesis} suffix="%" detail="Central strategy-fit score across assessed deals" progress={medianThesis} progressLabel={`${measuredThesisScores.length} opportunities measured`} tone="purple" />
+        <KeyMetricCard icon={CircleGauge} label="Scoring coverage" value={scoringCoverage} suffix="%" detail="Share of the pipeline with a decision signal" progress={scoringCoverage} progressLabel={`${scored.length} of ${data.length} profiles`} tone="blue" />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
@@ -79,5 +85,4 @@ function score(candidate: { scores: { thesis_fit: number | null; raw?: Record<st
 function thesisLabel(value: string): string { return value === "ai" ? "AI" : value === "b2b" ? "B2B" : value === "dach" ? "DACH" : formatPredicate(value); }
 function formatCheckRange(minimum: number | null, maximum: number | null): string { if (minimum == null && maximum == null) return "Check size not set"; if (maximum == null) return `€${minimum}k+`; return `€${minimum ?? 0}k – €${maximum}k`; }
 function tone(color: string) { return color === "purple" ? "bg-[#eee8f8] text-[#7656a5]" : color === "green" ? "bg-[#e4f2ed] text-[#347c67]" : color === "amber" ? "bg-[#fff1df] text-[#a96e2d]" : "bg-[#e7eef9] text-[#5074a8]"; }
-function Metric({ icon: Icon, label, value, hint, color }: { icon: React.ElementType; label: string; value: string; hint: string; color: string }) { return <div className="panel flex items-center gap-3 rounded-lg p-4"><span className={`flex h-10 w-10 items-center justify-center rounded-md ${tone(color)}`}><Icon className="h-4 w-4" /></span><div><div className="metric-value">{value}</div><div className="mt-1 text-[11px] font-semibold text-ink-2">{label}</div></div><span className="ml-auto self-end text-[10px] text-muted">{hint}</span></div>; }
 function Cell({ label, value }: { label: string; value: string }) { return <div><div className="data-label">{label}</div><div className="data-value numeric">{value}</div></div>; }

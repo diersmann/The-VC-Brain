@@ -106,7 +106,7 @@ export function OnboardingPage() {
   return (
     <div className="mx-auto max-w-[1180px] pb-10 pt-2">
       <div className="mb-8 max-w-2xl">
-        <div className="eyebrow mb-2">Welcome to The VC Brain</div>
+        <div className="eyebrow mb-2">Welcome to FirstCheck24</div>
         <h1 className="page-title">What are you looking to invest in?</h1>
         <p className="page-description">
           Choose a few basics. You can refine your thesis later as the system learns from your decisions.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sortDecisionCandidates } from "../data/decisionQueue";
+import { buildDecisionBrief, sortDecisionCandidates } from "../data/decisionQueue";
 import type { Candidate } from "../types/candidate";
 
 function candidate(
@@ -42,5 +42,27 @@ describe("sortDecisionCandidates", () => {
   it("sorts by newest and founder name", () => {
     expect(sortDecisionCandidates(candidates, "newest").map((item) => item.display_name)).toEqual(["Gamma", "Alpha", "Beta"]);
     expect(sortDecisionCandidates(candidates, "name").map((item) => item.display_name)).toEqual(["Alpha", "Beta", "Gamma"]);
+  });
+
+  it("builds an evidence-aware brief without inventing missing context", () => {
+    const summaryCandidate = candidate("Alpha", { thesis_fit: 0.8, evidence_confidence: 0.7 }, "2026-02-01T00:00:00Z");
+    summaryCandidate.profile = {
+      company: "Example AI",
+      role: null,
+      location: null,
+      summary: "Technical founder building enterprise AI infrastructure",
+      website: null,
+      deck_url: null,
+      deck_title: null,
+      deck_stage: null,
+      inbound_label: null,
+      source_types: ["github"],
+      observation_count: 4,
+      completeness: 0.6,
+    };
+
+    expect(buildDecisionBrief(summaryCandidate)).toContain("Technical founder building enterprise AI infrastructure.");
+    expect(buildDecisionBrief(summaryCandidate)).toContain("thesis fit is 80%");
+    expect(buildDecisionBrief(candidate("Gamma", {}, "2026-03-01T00:00:00Z"))).toContain("more decision-critical evidence is required");
   });
 });

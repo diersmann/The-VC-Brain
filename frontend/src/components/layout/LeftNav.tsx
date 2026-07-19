@@ -1,5 +1,5 @@
 import { NavLink } from "react-router";
-import { Compass, Sparkles, Inbox, LayoutDashboard, Scale } from "lucide-react";
+import { Compass, Inbox, LayoutDashboard, Scale } from "lucide-react";
 
 const navItems = [
   { id: "home", label: "Overview", path: "/", icon: LayoutDashboard, color: "text-[#5277aa]" },
@@ -11,9 +11,11 @@ const navItems = [
 export function LeftNav() {
   return (
     <aside className="sticky top-0 hidden h-screen w-[218px] shrink-0 flex-col overflow-y-auto bg-white/60 shadow-[12px_0_40px_rgba(70,91,120,.06)] backdrop-blur-2xl md:flex">
-      <div className="flex items-center gap-3 px-6 py-7">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-white shadow-lg shadow-slate-300"><Sparkles className="h-5 w-5" /></div>
-        <div><div className="font-bold tracking-tight">The VC Brain</div><div className="text-[10px] font-semibold uppercase tracking-[.16em] text-muted-2">Founder intelligence</div></div>
+      <div className="px-7 py-8">
+        <div className="brand-wordmark" aria-label="FirstCheck24">
+          <span>FirstCheck</span><span className="brand-wordmark-number">24</span>
+        </div>
+        <div className="mt-1.5 text-[9px] font-semibold uppercase tracking-[.19em] text-muted-2">Investment intelligence</div>
       </div>
       <div className="px-4 py-3">
         <div className="eyebrow px-3 pb-3">Workspace</div>

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Search, Sparkles, Users, Radar, TrendingUp } from "lucide-react";
+import { Radar, Search, ShieldCheck, Sparkles, Target } from "lucide-react";
 import { triggerDiscovery, useCandidates } from "../../api/candidates";
+import { KeyMetricCard } from "../common/KeyMetricCard";
+import { isEvidenceReady, isThesisAligned, ratioPercent } from "../../data/portfolioMetrics";
 import { hasHighMultiAxisSignal } from "../../data/sourcingSignals";
 import type { Candidate } from "../../types/candidate";
 import { CandidateCard } from "./CandidateCard";
@@ -24,18 +26,17 @@ export function SourcingPage() {
   const [outreachCandidate,setOutreachCandidate]=useState<Candidate|null>(null);
   const runDiscovery=async()=>{setDiscovering(true);try{await triggerDiscovery(query,"github");window.setTimeout(()=>void refetch(),5000);}finally{setDiscovering(false)}};
   const highSignal=candidates.filter(hasHighMultiAxisSignal).length;
-  const recentlyAdded=candidates.filter(candidate=>candidate.created_at&&Date.now()-new Date(candidate.created_at).getTime()<7*86400000).length;
+  const thesisAligned=candidates.filter(isThesisAligned).length;
+  const evidenceReady=candidates.filter(isEvidenceReady).length;
   return <div>
     <section className="mb-6">
       <div><div className="eyebrow mb-2">Intelligence workspace</div><h1 className="page-title">Founder discovery</h1><p className="page-description">Evidence-backed signals from products, research, communities and founder-submitted material.</p></div>
     </section>
 
     <div className="mb-6 grid gap-3 sm:grid-cols-3">
-      {[
-        {icon:Users,label:"Verified candidates",value:String(candidates.length),hint:"Real identity + evidence",tone:"bg-[#e8eef8] text-[#4e6f9e]",dot:"bg-[#6f8db7]"},
-        {icon:Radar,label:"High multi-axis signal",value:String(highSignal),hint:"All 3 axes ≥ 67%",tone:"bg-[#e7f3ef] text-[#38836e]",dot:"bg-[#4f9b84]"},
-        {icon:TrendingUp,label:"Added this week",value:String(recentlyAdded),hint:"Public-source discovery",tone:"bg-[#f0eafa] text-[#7656a5]",dot:"bg-[#8b6db6]"},
-      ].map(({icon:Icon,label,value,hint,tone,dot})=><div key={label} className="panel flex items-center gap-4 rounded-lg border-t-2 border-t-transparent p-4 transition hover:border-t-current"><div className={`flex h-11 w-11 items-center justify-center rounded-lg ${tone}`}><Icon className="h-5 w-5"/></div><div><div className="metric-value flex items-center gap-2">{value}<span className={`h-1.5 w-1.5 rounded-full ${dot}`}/></div><div className="mt-1 text-xs font-medium text-ink-2">{label}</div></div><span className="ml-auto self-end text-[10px] text-muted">{hint}</span></div>)}
+      <KeyMetricCard icon={Radar} label="High multi-axis" value={highSignal} detail="Founder, Market and Idea × Market all score ≥67%" progress={ratioPercent(highSignal, candidates.length)} progressLabel={`${highSignal} of ${candidates.length} verified profiles`} tone="green" />
+      <KeyMetricCard icon={Target} label="Thesis aligned" value={thesisAligned} detail="Candidates clearing the active thesis threshold" progress={ratioPercent(thesisAligned, candidates.length)} progressLabel={`${thesisAligned} of ${candidates.length} verified profiles`} tone="purple" />
+      <KeyMetricCard icon={ShieldCheck} label="Evidence ready" value={evidenceReady} detail="Profiles with at least 60% evidence confidence" progress={ratioPercent(evidenceReady, candidates.length)} progressLabel={`${evidenceReady} of ${candidates.length} verified profiles`} tone="blue" />
     </div>
 
     <section className="panel mb-6 rounded-lg p-5">
