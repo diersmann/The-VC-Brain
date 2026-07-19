@@ -58,12 +58,12 @@ export function HomePage() {
 
       <div className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
         <section className="panel space-y-1 rounded-lg p-2">
-          <div className="flex items-center justify-between rounded-md bg-gradient-to-r from-[#edf3fb] to-transparent px-3 py-3"><div><h2 className="section-title">Priority candidates</h2><p className="supporting-text">Ordered by recorded thesis or discovery signal</p></div><button onClick={() => navigate("/decisions")} className="text-xs font-bold text-accent">View all</button></div>
+          <div className="flex items-center justify-between rounded-md bg-gradient-to-r from-[#edf3fb] to-transparent px-3 py-3"><div><h2 className="section-title">Priority candidates</h2><p className="supporting-text">Ordered by recorded thesis or discovery signal</p></div><button onClick={() => navigate("/investigated")} className="text-xs font-bold text-accent">View all</button></div>
           {priorities.length === 0 && <div className="px-3 py-10 text-center text-xs text-muted">No live candidates yet.</div>}
           {priorities.map((candidate, index) => {
             const source = Object.keys(candidate.handles ?? {})[0] ?? candidate.origin ?? "database";
             return (
-              <button key={candidate.id} onClick={() => navigate(`/decisions/${candidate.id}`)} className="grid w-full items-center gap-3 rounded-md px-3 py-3.5 text-left transition-colors hover:bg-white/65 sm:grid-cols-[1.2fr_.8fr_1.2fr_auto]">
+              <button key={candidate.id} onClick={() => navigate(`/founders/${candidate.id}`)} className="grid w-full items-center gap-3 rounded-md px-3 py-3.5 text-left transition-colors hover:bg-white/65 sm:grid-cols-[1.2fr_.8fr_1.2fr_auto]">
                 <div className="flex items-center gap-3"><CandidateAvatar name={candidate.display_name} avatarUrl={candidate.avatar_url} className={`h-9 w-9 rounded-md text-xs font-bold ${tone(["amber", "blue", "purple", "green"][index % 4])}`} /><div><div className="text-[13px] font-bold leading-tight">{candidate.display_name ?? candidate.stable_id}</div><div className="mt-1 text-[11px] text-muted">{formatPredicate(source)} · {candidate.origin ?? "unclassified"}</div></div></div>
                 <Cell label="Thesis match" value={candidate.scores?.thesis_fit == null ? "Not scored" : `${percentage(candidate.scores.thesis_fit)}%`} />
                 <div><div className="data-label">Next action</div><div className="mt-1 flex items-center gap-1 text-xs font-semibold text-ink-2"><AlertTriangle className="h-3.5 w-3.5 text-warn" />{candidate.scores ? "Review evidence" : "Complete scoring"}</div></div>

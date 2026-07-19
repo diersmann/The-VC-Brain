@@ -44,19 +44,6 @@ _DEFAULTS: dict[str, Any] = {
         "cs.RO",
         "stat.ML",
     ],
-    "discovery_queries": [
-        "AI infrastructure founder",
-        "machine learning startup",
-        "developer tools founder",
-        "SaaS founder Berlin",
-    ],
-    "source_freshness_days": {
-        "github": 7,
-        "producthunt": 14,
-        "arxiv": 30,
-        "web": 30,
-        "hackernews": 7,
-    },
 }
 
 

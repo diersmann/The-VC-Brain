@@ -32,6 +32,8 @@ class ThesisRequest(BaseModel):
     ownership_target_pct: float | None = Field(default=10.0, ge=0, le=100)
     risk_appetite: RiskAppetite = "balanced"
     scoring_weights: dict[str, float] = Field(default_factory=lambda: dict(DEFAULT_WEIGHTS))
+    discovery_queries: list[str] = Field(default_factory=list)
+    source_freshness_days: dict[str, int] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_thesis(self) -> ThesisRequest:
@@ -68,6 +70,8 @@ class ThesisResponse(BaseModel):
     ownership_target_pct: float | None
     risk_appetite: str
     scoring_weights: dict[str, float]
+    discovery_queries: list[str]
+    source_freshness_days: dict[str, int]
 
 
 class ThesisSaveResponse(BaseModel):
@@ -95,6 +99,47 @@ async def get_active_thesis(
     return thesis
 
 
+def _generate_discovery_queries(regions: list[Region], sectors: list[Sector]) -> list[str]:
+    region_locations = {
+        "dach": ["Berlin", "Munich", "Zurich", "Vienna", "Germany", "Switzerland", "Austria"],
+        "europe": ["London", "Paris", "Berlin", "Amsterdam", "Stockholm", "Europe"],
+        "uk": ["London", "Manchester", "Cambridge", "Oxford", "United Kingdom"],
+        "us": ["San Francisco", "New York", "Seattle", "Austin", "Boston", "United States"],
+        "global": ["San Francisco", "London", "Berlin", "New York", "Singapore"],
+    }
+    sector_terms = {
+        "ai": ["AI", "machine-learning", "deep-learning"],
+        "deep-tech": ["robotics", "quantum", "semiconductor"],
+        "b2b": ["SaaS", "B2B", "enterprise"],
+        "climate": ["climate-tech", "sustainability"],
+        "fintech": ["fintech", "blockchain", "crypto"],
+        "health": ["biotech", "digital-health"],
+    }
+    
+    locations = []
+    for r in regions:
+        locations.extend(region_locations.get(r, []))
+    locations = list(dict.fromkeys(locations))
+    
+    terms = []
+    for s in sectors:
+        terms.extend(sector_terms.get(s, []))
+    terms = list(dict.fromkeys(terms))
+    
+    if not locations:
+        locations = ["Berlin", "London", "San Francisco"]
+        
+    if not terms:
+        return locations
+        
+    queries = []
+    for loc in locations:
+        for term in terms:
+            queries.append(f"{loc} {term}")
+            
+    return queries[:20]
+
+
 @router.post("/active", response_model=ThesisSaveResponse)
 async def save_active_thesis(
     body: ThesisRequest,
@@ -108,19 +153,30 @@ async def save_active_thesis(
         .where(InvestmentThesis.is_active.is_(True))
         .values(is_active=False)
     )
+    
+    stages = list(dict.fromkeys(body.stages))
+    sectors = list(dict.fromkeys(body.sectors))
+    regions = list(dict.fromkeys(body.regions))
+    
+    discovery_queries = body.discovery_queries
+    if not discovery_queries:
+        discovery_queries = _generate_discovery_queries(regions, sectors)
+        
     thesis = InvestmentThesis(
         version=f"thesis-v{version_number:03d}",
         name=body.name,
         is_active=True,
-        stages=list(dict.fromkeys(body.stages)),
-        sectors=list(dict.fromkeys(body.sectors)),
+        stages=stages,
+        sectors=sectors,
         excluded_sectors=list(dict.fromkeys(body.excluded_sectors)),
-        regions=list(dict.fromkeys(body.regions)),
+        regions=regions,
         check_size_min_k_eur=body.check_size_min_k_eur,
         check_size_max_k_eur=body.check_size_max_k_eur,
         ownership_target_pct=body.ownership_target_pct,
         risk_appetite=body.risk_appetite,
         scoring_weights=body.scoring_weights,
+        discovery_queries=discovery_queries,
+        source_freshness_days=body.source_freshness_days,
     )
     session.add(thesis)
     await session.flush()

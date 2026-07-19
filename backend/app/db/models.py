@@ -178,6 +178,10 @@ class InvestmentThesis(TimestampMixin, Base):
     ownership_target_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     risk_appetite: Mapped[str] = mapped_column(String(32), nullable=False, default="balanced")
     scoring_weights: Mapped[dict[str, float]] = mapped_column(JSONB, nullable=False)
+    discovery_queries: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    source_freshness_days: Mapped[dict[str, int]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
 
 
 # ---------------------------------------------------------------------------

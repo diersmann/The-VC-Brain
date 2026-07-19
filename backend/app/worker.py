@@ -14,10 +14,12 @@ from arq.cron import cron
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.contact_job import contact_outbound_job, mock_inbound_reply_job
+from app.agents.inbound_job import process_inbound_pitch_job
 from app.agents.lifecycle_job import advance_pipeline_job
 from app.agents.memo_job import generate_memo_job
 from app.agents.scoring_job import score_candidate_job
 from app.collectors.jobs import (
+    auto_discovery_job,
     collect_job,
     discover_job,
     dispatcher_job,
@@ -87,6 +89,8 @@ class WorkerSettings:
         advance_pipeline_job,
         contact_outbound_job,
         mock_inbound_reply_job,
+        auto_discovery_job,
+        process_inbound_pitch_job,
     ]
 
     cron_jobs = [  # noqa: RUF012
@@ -94,6 +98,8 @@ class WorkerSettings:
         cron(dispatcher_job, unique=False),
         # recompute_signals_job: every hour at minute 5
         cron(recompute_signals_job, minute={5}, unique=False),
+        # auto_discovery_job: every hour at minute 15
+        cron(auto_discovery_job, minute={15}, unique=False),
         # resolve_identities_job: every hour at minute 25
         cron(resolve_identities_job, minute={25}, unique=False),
         # advance_pipeline_job: every 2 minutes (unique to prevent overlap)

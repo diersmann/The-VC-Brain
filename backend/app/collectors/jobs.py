@@ -309,10 +309,24 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
 
             # Staleness check: skip light collect if this person was already
             # collected from this source recently (within freshness window).
-            from app.collectors.thesis_config import get_thesis_config
+            from sqlalchemy import select
 
-            thesis = get_thesis_config()
-            freshness_days = thesis.get("source_freshness_days", {}).get(source, 7)
+            from app.db.models import InvestmentThesis
+            
+            active_thesis_result = await session.execute(
+                select(InvestmentThesis)
+                .where(InvestmentThesis.is_active.is_(True))
+                .order_by(InvestmentThesis.created_at.desc())
+                .limit(1)
+            )
+            active_thesis = active_thesis_result.scalar_one_or_none()
+            
+            if active_thesis:
+                freshness_days = active_thesis.source_freshness_days.get(source, 7)
+            else:
+                from app.collectors.thesis_config import get_thesis_config
+                thesis = get_thesis_config()
+                freshness_days = thesis.get("source_freshness_days", {}).get(source, 7)
             from datetime import UTC, datetime, timedelta
 
             cutoff = datetime.now(UTC) - timedelta(days=freshness_days)
@@ -1069,3 +1083,34 @@ async def resolve_identities_job(ctx: dict[str, Any]) -> dict[str, int]:
 
     logger.info("resolve_identities_job_completed", **summary)
     return summary
+
+
+async def auto_discovery_job(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Periodic cron: fetch active thesis and enqueue discovery for its queries."""
+    from sqlalchemy import select
+
+    from app.db.models import InvestmentThesis
+
+    logger.info("auto_discovery_job_started")
+    enqueued = 0
+    async with _session_ctx(ctx) as session:
+        active_thesis_result = await session.execute(
+            select(InvestmentThesis)
+            .where(InvestmentThesis.is_active.is_(True))
+            .order_by(InvestmentThesis.created_at.desc())
+            .limit(1)
+        )
+        active_thesis = active_thesis_result.scalar_one_or_none()
+
+        if active_thesis and active_thesis.discovery_queries:
+            for query in active_thesis.discovery_queries:
+                task = {
+                    "job_type": "discover",
+                    "query": query,
+                    "source": "github",
+                }
+                await queue_enqueue(ctx["redis"], task, priority=5.0)
+                enqueued += 1
+
+    logger.info("auto_discovery_job_completed", enqueued=enqueued)
+    return {"enqueued": enqueued}

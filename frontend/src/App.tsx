@@ -10,12 +10,14 @@ import { DecisionDetailPage } from "./pages/DecisionDetailPage";
 import { InboundInboxPage } from "./pages/InboundInboxPage";
 import { InvestigatedPage } from "./pages/InvestigatedPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { PitchSubmissionPage } from "./pages/PitchSubmissionPage";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="apply" element={<InboundPage />} />
+        <Route path="submit" element={<PitchSubmissionPage />} />
         <Route element={<RootLayout />}>
           <Route index element={<HomePage />} />
           <Route path="sourcing" element={<SourcingPage />} />

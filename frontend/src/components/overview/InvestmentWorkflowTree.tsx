@@ -96,7 +96,7 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
             value={`${counts.total} opportunities`}
             detail="Received · triage · identity resolution"
             tone="slate"
-            onClick={() => onNavigate("/decisions")}
+            onClick={() => onNavigate("/investigated")}
           />
 
           <ArrowConnector label="assess" />
@@ -108,7 +108,7 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
             value={`${counts.scored} scored`}
             detail={`Founder · Market · Idea × Market · ${counts.pending} pending`}
             tone="green"
-            onClick={() => onNavigate("/decisions")}
+            onClick={() => onNavigate("/investigated")}
           />
 
           <ArrowConnector label="memo" />
@@ -144,7 +144,7 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
             value={`${counts.total} opportunities`}
             detail="Received · triage · identity resolution"
             tone="slate"
-            onClick={() => onNavigate("/decisions")}
+            onClick={() => onNavigate("/investigated")}
           />
           <VerticalArrowConnector label="assess" />
           <WorkflowNode
@@ -154,7 +154,7 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
             value={`${counts.scored} scored`}
             detail={`Founder · Market · Idea × Market · ${counts.pending} pending`}
             tone="green"
-            onClick={() => onNavigate("/decisions")}
+            onClick={() => onNavigate("/investigated")}
           />
           <VerticalArrowConnector label="memo" />
           <WorkflowNode
