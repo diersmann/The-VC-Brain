@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#405875" flood-opacity="0.13"/>
+    </filter>
+    <marker id="blueArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#557DC0"/></marker>
+    <marker id="purpleArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7656A5"/></marker>
+    <style>
+      .kicker{font-family:Arial,sans-serif;font-size:18px;font-weight:700;letter-spacing:3px;fill:#557DC0}.title{font-family:Arial,sans-serif;font-size:48px;font-weight:700;fill:#172337}.sub{font-family:Arial,sans-serif;font-size:21px;font-weight:400;fill:#718097}.lane{font-family:Arial,sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px}.num{font-family:Arial,sans-serif;font-size:11px;font-weight:700}.nodeTitle{font-family:Arial,sans-serif;font-size:14px;font-weight:700;letter-spacing:.7px}.nodeSub{font-family:Arial,sans-serif;font-size:12px;font-weight:600;fill:#344258}.memory{font-family:Arial,sans-serif;font-size:13px;font-weight:700;letter-spacing:.8px;fill:#344258}.stack{font-family:Arial,sans-serif;font-size:11px;font-weight:700}.arrow{fill:none;stroke-width:2.4;marker-end:url(#blueArrow)}
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="#F2F6FB"/>
+  <text x="90" y="88" class="kicker">AGENT ARCHITECTURE</text>
+  <text x="90" y="153" class="title">Two entry paths. One evidence pipeline.</text>
+  <text x="90" y="198" class="sub">Outbound discovers hidden founders. Inbound turns applications and decks into structured evidence.</text>
+
+  <rect x="90" y="235" width="245" height="35" rx="17" fill="#E7EEF9"/><text x="212" y="258" text-anchor="middle" class="lane" fill="#557DC0">OUTBOUND · PROACTIVE</text>
+
+  <g transform="translate(90 290)"><rect width="210" height="116" rx="18" fill="#E7EEF9"/><rect x="16" y="15" width="42" height="28" rx="14" fill="#FFF"/><text x="37" y="34" text-anchor="middle" class="num" fill="#557DC0">01</text><text x="16" y="70" class="nodeTitle" fill="#557DC0">DISCOVER</text><text x="16" y="97" class="nodeSub">Thesis + public signals</text></g>
+  <path d="M303 348 H327" class="arrow" stroke="#557DC0"/>
+  <g transform="translate(335 290)"><rect width="210" height="116" rx="18" fill="#EEE8F8"/><rect x="16" y="15" width="42" height="28" rx="14" fill="#FFF"/><text x="37" y="34" text-anchor="middle" class="num" fill="#7656A5">02</text><text x="16" y="70" class="nodeTitle" fill="#7656A5">SIGNAL SCORE</text><text x="16" y="97" class="nodeSub">Fast triage</text></g>
+  <path d="M548 348 H572" class="arrow" stroke="#7656A5"/>
+  <g transform="translate(580 290)"><rect width="210" height="116" rx="18" fill="#E4F2ED"/><rect x="16" y="15" width="42" height="28" rx="14" fill="#FFF"/><text x="37" y="34" text-anchor="middle" class="num" fill="#2F8B72">03</text><text x="16" y="70" class="nodeTitle" fill="#2F8B72">PROMISING</text><text x="16" y="97" class="nodeSub">Human gate</text></g>
+  <path d="M793 348 H817" class="arrow" stroke="#2F8B72"/>
+  <g transform="translate(825 290)"><rect width="210" height="116" rx="18" fill="#FFF1DF"/><rect x="16" y="15" width="42" height="28" rx="14" fill="#FFF"/><text x="37" y="34" text-anchor="middle" class="num" fill="#B87932">04</text><text x="16" y="70" class="nodeTitle" fill="#B87932">FOOTPRINTS</text><text x="16" y="97" class="nodeSub">Identity + evidence</text></g>
+  <path d="M1038 348 H1062" class="arrow" stroke="#B87932"/>
+  <g transform="translate(1070 290)"><rect width="210" height="116" rx="18" fill="#EEE8F8"/><rect x="16" y="15" width="42" height="28" rx="14" fill="#FFF"/><text x="37" y="34" text-anchor="middle" class="num" fill="#7656A5">05</text><text x="16" y="70" class="nodeTitle" fill="#7656A5">3-AXIS SCORE</text><text x="16" y="97" class="nodeSub">Founder · Market · Fit</text></g>
+  <path d="M1283 348 H1307" class="arrow" stroke="#7656A5"/>
+  <g transform="translate(1315 290)" filter="url(#shadow)"><rect width="210" height="116" rx="18" fill="#E7EEF9"/><rect x="16" y="15" width="42" height="28" rx="14" fill="#FFF"/><text x="37" y="34" text-anchor="middle" class="num" fill="#557DC0">06</text><text x="16" y="70" class="nodeTitle" fill="#557DC0">OUTREACH</text><text x="16" y="97" class="nodeSub">Draft + approve</text></g>
+  <path d="M1525 408 V480" class="arrow" stroke="#557DC0"/>
+
+  <rect x="1275" y="438" width="250" height="35" rx="17" fill="#E4F2ED"/><text x="1400" y="461" text-anchor="middle" class="lane" fill="#2F8B72">INBOUND · RESPONSE</text>
+  <g transform="translate(1266 500)"><rect width="250" height="116" rx="18" fill="#E4F2ED"/><rect x="16" y="15" width="42" height="28" rx="14" fill="#FFF"/><text x="37" y="34" text-anchor="middle" class="num" fill="#2F8B72">07</text><text x="16" y="70" class="nodeTitle" fill="#2F8B72">INBOUND</text><text x="16" y="97" class="nodeSub">Application + pitch deck</text></g>
+  <path d="M1262 558 H1230" class="arrow" stroke="#2F8B72"/>
+  <g transform="translate(972 500)"><rect width="250" height="116" rx="18" fill="#FFF1DF"/><rect x="16" y="15" width="42" height="28" rx="14" fill="#FFF"/><text x="37" y="34" text-anchor="middle" class="num" fill="#B87932">08</text><text x="16" y="70" class="nodeTitle" fill="#B87932">DECK AGENT</text><text x="16" y="97" class="nodeSub">Extract + challenge</text></g>
+  <path d="M968 558 H936" class="arrow" stroke="#B87932"/>
+  <g transform="translate(678 500)"><rect width="250" height="116" rx="18" fill="#E7EEF9"/><rect x="16" y="15" width="42" height="28" rx="14" fill="#FFF"/><text x="37" y="34" text-anchor="middle" class="num" fill="#557DC0">09</text><text x="16" y="70" class="nodeTitle" fill="#557DC0">EVIDENCE GRAPH</text><text x="16" y="97" class="nodeSub">Claims + provenance</text></g>
+  <path d="M674 558 H642" class="arrow" stroke="#557DC0"/>
+  <g transform="translate(384 500)"><rect width="250" height="116" rx="18" fill="#EEE8F8"/><rect x="16" y="15" width="42" height="28" rx="14" fill="#FFF"/><text x="37" y="34" text-anchor="middle" class="num" fill="#7656A5">10</text><text x="16" y="70" class="nodeTitle" fill="#7656A5">RE-SCORE</text><text x="16" y="97" class="nodeSub">Axes + SWOT + trend</text></g>
+  <path d="M380 558 H348" class="arrow" stroke="#7656A5"/>
+  <g transform="translate(90 500)" filter="url(#shadow)"><rect width="250" height="116" rx="18" fill="#E4F2ED"/><rect x="16" y="15" width="42" height="28" rx="14" fill="#FFF"/><text x="37" y="34" text-anchor="middle" class="num" fill="#2F8B72">11</text><text x="16" y="70" class="nodeTitle" fill="#2F8B72">RECOMMEND</text><text x="16" y="97" class="nodeSub">Proceed · Hold · Decline</text></g>
+
+  <rect x="90" y="654" width="1470" height="58" rx="16" fill="#E9F0F8"/><text x="115" y="690" class="memory">HUMAN DECISIONS + OUTCOMES  →  <tspan fill="#557DC0">MEMORY</tspan>  →  SHARPER THESIS + FUTURE SCORING</text>
+  <g class="stack"><rect x="90" y="742" width="195" height="35" rx="17" fill="#FFF"/><text x="187" y="765" text-anchor="middle" fill="#557DC0">React + TypeScript</text><rect x="300" y="742" width="125" height="35" rx="17" fill="#FFF"/><text x="362" y="765" text-anchor="middle" fill="#7656A5">FastAPI</text><rect x="440" y="742" width="145" height="35" rx="17" fill="#FFF"/><text x="512" y="765" text-anchor="middle" fill="#B87932">ARQ + Redis</text><rect x="600" y="742" width="215" height="35" rx="17" fill="#FFF"/><text x="707" y="765" text-anchor="middle" fill="#2F8B72">Postgres + pgvector</text><rect x="830" y="742" width="180" height="35" rx="17" fill="#FFF"/><text x="920" y="765" text-anchor="middle" fill="#344258">MinIO + Docker</text></g>
+  <text x="90" y="842" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#172337">FirstCheck<tspan fill="#557DC0">24</tspan></text><text x="1510" y="842" text-anchor="end" font-family="Arial,sans-serif" font-size="15" font-weight="700" letter-spacing="2" fill="#94A3B8">08</text>
+</svg>
