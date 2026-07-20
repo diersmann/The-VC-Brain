@@ -14,6 +14,8 @@ Snapshot contents (2026-07-20):
 
 The snapshot contains public-source demo/research data. Credentials, API keys, database passwords, Docker volumes, and Alembic's internal version row are not included.
 
+The seed is generated against the current Alembic head and includes explicit values for all required thesis discovery fields, including `discovery_queries` and `source_freshness_days`.
+
 ## Restore
 
 Start the stack and apply migrations:
