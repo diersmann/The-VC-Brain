@@ -249,6 +249,7 @@ async def _compute_and_store_signal(
 
     score_snapshot = ScoreSnapshot(
         subject_id=person.id,
+        subject_type="person",
         rubric_version="signal-v1",
         components=components,
         evidence_ids=[],
@@ -902,6 +903,7 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
         session.add(
             ScoreSnapshot(
                 subject_id=person.id,
+                subject_type="person",
                 rubric_version="founder-tavily-v1",
                 components=score_components,
                 confidence_interval={

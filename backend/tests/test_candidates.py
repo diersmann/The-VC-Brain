@@ -51,10 +51,12 @@ def _make_score_snapshot(
     subject_id: uuid.UUID,
     components: dict[str, object] | None = None,
     rubric_version: str = "founder-v1",
+    subject_type: str = "person",
 ) -> ScoreSnapshot:
     return ScoreSnapshot(
         id=uuid.uuid4(),
         subject_id=subject_id,
+        subject_type=subject_type,
         rubric_version=rubric_version,
         components=components or {},
         confidence_interval=None,

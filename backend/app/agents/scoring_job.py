@@ -122,6 +122,7 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
         session.add(
             ScoreSnapshot(
                 subject_id=person.id,
+                subject_type="person",
                 rubric_version="founder-agent-v1",
                 components=score_components,
                 confidence_interval={

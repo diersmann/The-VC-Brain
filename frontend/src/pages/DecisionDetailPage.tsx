@@ -1,18 +1,16 @@
 import {
   AlertTriangle,
   ArrowLeft,
-  BarChart3,
   Building2,
-  Check,
   CheckCircle2,
   Clock3,
   ExternalLink,
   FileText,
-  Lightbulb,
+  Loader2,
   Mail,
   MapPin,
   Minus,
-  Scale,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   Target,
@@ -21,7 +19,13 @@ import {
   Users,
 } from "lucide-react";
 import { Link, useParams } from "react-router";
-import { useCandidate } from "../api/candidates";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  fetchCandidateMemo,
+  generateCandidateMemo,
+  useCandidate,
+} from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { DecisionActionDock } from "../components/decision/DecisionActionDock";
@@ -51,12 +55,34 @@ type DecisionMeta = {
 export function DecisionDetailPage() {
   const { founderId } = useParams();
   const { data: candidate, isLoading, error, refetch } = useCandidate(founderId);
+  const {
+    data: memo,
+    isLoading: memoLoading,
+    refetch: refetchMemo,
+  } = useQuery({
+    queryKey: ["candidate-memo", founderId],
+    queryFn: ({ signal }) => fetchCandidateMemo(founderId!, signal),
+    enabled: Boolean(founderId),
+    staleTime: 30_000,
+  });
+  const [memoGenState, setMemoGenState] = useState<"idle" | "queued" | "error">("idle");
 
   if (isLoading) return <div className="py-20 text-center text-sm text-muted">Loading investment evidence…</div>;
   if (error || !candidate) return <div className="py-20 text-center"><div className="text-sm font-bold">Decision candidate not found</div><Link to="/decisions" className="mt-3 inline-block text-xs font-bold text-accent">Back to decision queue</Link></div>;
 
   const profile = buildFounderProfile(candidate);
   const meta = createDecisionMeta(profile, candidate);
+
+  const generateMemo = async () => {
+    setMemoGenState("queued");
+    try {
+      await generateCandidateMemo(founderId!);
+      // Poll for the memo after a short delay
+      window.setTimeout(() => void refetchMemo(), 5_000);
+    } catch {
+      setMemoGenState("error");
+    }
+  };
 
   return (
     <div className="mx-auto max-w-[1240px] pb-28">
@@ -79,7 +105,12 @@ export function DecisionDetailPage() {
           <AiSummary profile={profile} meta={meta} />
           <DealMetrics profile={profile} meta={meta} />
           <AxisScreening profile={profile} />
-          <InvestmentMemo profile={profile} meta={meta} />
+          <InvestmentMemo
+            memo={memo}
+            memoLoading={memoLoading}
+            memoGenState={memoGenState}
+            onGenerate={generateMemo}
+          />
 
           <div className="grid gap-5 xl:grid-cols-2">
             <ListCard
@@ -360,7 +391,19 @@ function AxisTrendChart({ values, color, label }: { values: number[]; color: str
   );
 }
 
-function InvestmentMemo({ profile, meta }: { profile: FounderProfile; meta: DecisionMeta }) {
+function InvestmentMemo({
+  memo,
+  memoLoading,
+  memoGenState,
+  onGenerate,
+}: {
+  memo: import("../api/candidates").CandidateMemo | null | undefined;
+  memoLoading: boolean;
+  memoGenState: "idle" | "queued" | "error";
+  onGenerate: () => void;
+}) {
+  const hasMemo = memo && memo.sections.length > 0;
+
   return (
     <section className="panel rounded-lg p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gradient-to-r from-[#edf3fb] to-[#eef6f3] px-4 py-3.5">
@@ -368,46 +411,70 @@ function InvestmentMemo({ profile, meta }: { profile: FounderProfile; meta: Deci
           <div className="eyebrow mb-2 flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" /> Investment memo</div>
           <h2 className="text-lg font-bold">Detailed IC report</h2>
         </div>
-        <span className="status-pill bg-surface-2 text-muted">Draft · AI assisted</span>
-      </div>
-
-      <div className="mt-5 grid gap-x-7 gap-y-6 xl:grid-cols-2">
-        <MemoSection icon={Lightbulb} title="Investment thesis" text={meta.thesis} />
-        <MemoSection icon={Building2} title="Company & product" text={meta.product} />
-        <MemoSection icon={BarChart3} title="Market assessment" text={meta.market} />
-        <MemoSection icon={Scale} title="Competition & moat" text={meta.competition} />
-
-        <div>
-          <MemoHeading icon={TrendingUp} title="Traction & KPIs" />
-          <ul className="mt-3 space-y-2">
-            {meta.traction.map((item) => (
-              <li key={item} className="flex gap-2 text-xs leading-5 text-ink-2">
-                <Check className="mt-1 h-3 w-3 shrink-0 text-[#347c67]" /> {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div>
-          <MemoHeading icon={Users} title="Founder & team" />
-          <p className="mt-3 text-xs leading-6 text-ink-2">{profile.summary}</p>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {meta.strengths.map((item) => (
-              <span key={item} className="rounded bg-[#e4f2ed] px-2 py-1 text-[10px] font-semibold text-[#347c67]">{item}</span>
-            ))}
-          </div>
+        <div className="flex items-center gap-2">
+          {hasMemo && (
+            <span className="status-pill bg-surface-2 text-muted">
+              {memo.generation_mode === "agent" ? "AI generated" : "Template"} · {memo.model_version ?? "unknown"}
+            </span>
+          )}
+          {!hasMemo && !memoLoading && (
+            <button
+              onClick={onGenerate}
+              disabled={memoGenState === "queued"}
+              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-[10px] font-bold text-white disabled:opacity-60"
+            >
+              {memoGenState === "queued" ? (
+                <><Loader2 className="h-3 w-3 animate-spin" /> Generating…</>
+              ) : memoGenState === "error" ? (
+                <><RefreshCw className="h-3 w-3" /> Retry</>
+              ) : (
+                <><Sparkles className="h-3.5 w-3.5" /> Generate memo</>
+              )}
+            </button>
+          )}
         </div>
       </div>
+
+      {memoLoading && (
+        <div className="mt-5 flex items-center justify-center gap-2 py-10 text-xs text-muted">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading memo…
+        </div>
+      )}
+
+      {!memoLoading && hasMemo && (
+        <div className="mt-5 grid gap-x-7 gap-y-6 xl:grid-cols-2">
+          {memo.sections.map((section) => (
+            <div key={section.title}>
+              <MemoHeading icon={FileText} title={section.title} />
+              <p className="mt-3 text-xs leading-6 text-ink-2">{section.text}</p>
+              {section.evidence_ids.length > 0 && (
+                <p className="mt-2 text-[10px] text-muted-2">
+                  {section.evidence_ids.length} evidence reference{section.evidence_ids.length === 1 ? "" : "s"}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!memoLoading && !hasMemo && memoGenState === "idle" && (
+        <div className="mt-5 rounded-md bg-surface-2 p-4 text-center text-xs text-muted">
+          No investment memo has been generated yet. Click "Generate memo" to create one from the available evidence.
+        </div>
+      )}
+
+      {!memoLoading && !hasMemo && memoGenState === "queued" && (
+        <div className="mt-5 rounded-md bg-surface-2 p-4 text-center text-xs text-muted">
+          Memo generation has been queued. It will appear here once complete.
+        </div>
+      )}
+
+      {!memoLoading && !hasMemo && memoGenState === "error" && (
+        <div className="mt-5 rounded-md bg-[#fff1df] p-4 text-center text-xs text-[#a96e2d]">
+          Memo generation failed. Please retry.
+        </div>
+      )}
     </section>
-  );
-}
-
-function MemoSection({ icon, title, text }: { icon: React.ElementType; title: string; text: string }) {
-  return (
-    <div>
-      <MemoHeading icon={icon} title={title} />
-      <p className="mt-3 text-xs leading-6 text-ink-2">{text}</p>
-    </div>
   );
 }
 

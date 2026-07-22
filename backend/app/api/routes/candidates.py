@@ -3,11 +3,6 @@
 Provides a read-only list endpoint that maps Person rows to a candidate
 DTO suitable for the Sourcing feed. Score fields are null when no
 ScoreSnapshot exists for that person.
-
-TODO: Add cursor-based pagination when the dataset grows beyond ~200 rows.
-TODO: Add a `subject_type` column to ScoreSnapshot to make the join
-      unambiguous. Currently we filter by rubric_version LIKE 'founder%'
-      as a heuristic (subject_id is polymorphic — see models.py:279).
 """
 
 from __future__ import annotations
@@ -327,15 +322,8 @@ def map_person_to_candidate(
 # Query helpers
 # ---------------------------------------------------------------------------
 
-# Heuristic: founder-score rubrics start with "founder" or "person".
-# TODO: Replace with a proper subject_type column on ScoreSnapshot.
-_CANDIDATE_RUBRIC_PATTERNS = ("founder%", "person%", "signal%", "thesis%", "founder-agent%")
-
-
 def _candidate_rubric_filter() -> Any:
-    return or_(
-        *(ScoreSnapshot.rubric_version.like(pattern) for pattern in _CANDIDATE_RUBRIC_PATTERNS)
-    )
+    return ScoreSnapshot.subject_type == "person"
 
 
 async def _fetch_score_snapshots(

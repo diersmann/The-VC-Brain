@@ -302,6 +302,9 @@ class ScoreSnapshot(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    subject_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="person", index=True
+    )
     rubric_version: Mapped[str] = mapped_column(String(64), nullable=False)
     components: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     confidence_interval: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)

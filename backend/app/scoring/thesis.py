@@ -361,6 +361,7 @@ async def score_all_candidates(session: AsyncSession, thesis: InvestmentThesis) 
         session.add(
             ScoreSnapshot(
                 subject_id=person.id,
+                subject_type="person",
                 rubric_version=f"thesis-match-v1:{thesis.version}",
                 components={
                     "thesis_fit": result.score,
