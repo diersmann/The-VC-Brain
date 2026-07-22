@@ -13,7 +13,7 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.contact_job import contact_outbound_job, mock_inbound_reply_job
+from app.agents.contact_job import contact_outbound_job
 from app.agents.inbound_job import process_inbound_pitch_job
 from app.agents.lifecycle_job import advance_pipeline_job
 from app.agents.memo_job import generate_memo_job
@@ -88,7 +88,6 @@ class WorkerSettings:
         process_candidate_job,
         advance_pipeline_job,
         contact_outbound_job,
-        mock_inbound_reply_job,
         auto_discovery_job,
         process_inbound_pitch_job,
     ]

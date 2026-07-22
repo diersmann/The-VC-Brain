@@ -286,11 +286,12 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                         priority=10.0,
                     )
 
-            # --- contacted: waits for the separate inbound opportunity ---
+            # --- contacted: waits for the founder to submit via /submit ---
             elif state == "contacted":
-                # The mock reply creates a new inbound opportunity at
-                # "received". Keep this outbound opportunity at "contacted"
-                # for conversion tracking and audit history.
+                # The founder's actual submission via /submit creates a new
+                # inbound opportunity at "received". Keep this outbound
+                # opportunity at "contacted" for conversion tracking and
+                # audit history.
                 continue
 
             # --- received -> memo_ready ---

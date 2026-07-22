@@ -1,4 +1,4 @@
-"""Tests for contact and mock reply jobs."""
+"""Tests for the contact outbound job."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.agents.contact_job import contact_outbound_job, mock_inbound_reply_job
+from app.agents.contact_job import contact_outbound_job
 
 _PERSON_ID = uuid.uuid4()
 _OPP_ID = uuid.uuid4()
@@ -51,7 +51,7 @@ def _make_session() -> AsyncMock:
 async def test_contact_outbound_writes_observation() -> None:
     """contact_outbound_job should write an outreach observation and transition."""
     mock_ctx = {
-        "settings": MagicMock(llm_api_key="", llm_model="gpt-4o", mock_reply_delay_seconds=120),
+        "settings": MagicMock(llm_api_key="", llm_model="gpt-4o"),
         "redis": AsyncMock(),
         "session_factory": MagicMock(),
     }
@@ -92,54 +92,3 @@ async def test_contact_outbound_person_not_found() -> None:
         result = await contact_outbound_job(mock_ctx, str(_PERSON_ID))
 
     assert "error" in result
-
-
-@pytest.mark.asyncio
-async def test_mock_inbound_reply_creates_opportunity() -> None:
-    """mock_inbound_reply_job should create an inbound opportunity."""
-    mock_ctx = {
-        "settings": MagicMock(),
-        "redis": AsyncMock(),
-        "session_factory": MagicMock(),
-    }
-    session = _make_session()
-    session.get = AsyncMock(return_value=_mock_person())
-
-    no_inbound = MagicMock()
-    no_inbound.scalar_one_or_none = MagicMock(return_value=None)
-    session.execute = AsyncMock(return_value=no_inbound)
-
-    with (
-        patch("app.agents.contact_job._session_ctx") as mock_ctx_mgr,
-        patch(
-            "app.agents.contact_job.put_snapshot",
-            new=AsyncMock(return_value=("hash", "mock_inbound/hash")),
-        ),
-    ):
-        mock_ctx_mgr.return_value.__aenter__.return_value = session
-        result = await mock_inbound_reply_job(mock_ctx, str(_PERSON_ID))
-
-    assert "error" not in result
-    assert "inbound_opportunity_id" in result
-
-
-@pytest.mark.asyncio
-async def test_mock_inbound_reply_idempotent() -> None:
-    """mock_inbound_reply_job should skip if inbound already exists."""
-    mock_ctx = {
-        "settings": MagicMock(),
-        "redis": AsyncMock(),
-        "session_factory": MagicMock(),
-    }
-    session = _make_session()
-    session.get = AsyncMock(return_value=_mock_person())
-
-    has_inbound = MagicMock()
-    has_inbound.scalar_one_or_none = MagicMock(return_value=True)
-    session.execute = AsyncMock(return_value=has_inbound)
-
-    with patch("app.agents.contact_job._session_ctx") as mock_ctx_mgr:
-        mock_ctx_mgr.return_value.__aenter__.return_value = session
-        result = await mock_inbound_reply_job(mock_ctx, str(_PERSON_ID))
-
-    assert "skipped" in result

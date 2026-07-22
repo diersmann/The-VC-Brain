@@ -55,7 +55,6 @@ class Settings(BaseSettings):
 
     # Deal lifecycle
     contact_threshold: float = 0.65
-    mock_reply_delay_seconds: int = 120
     pipeline_stuck_after_minutes: int = 30
     pipeline_batch_size: int = 5
 

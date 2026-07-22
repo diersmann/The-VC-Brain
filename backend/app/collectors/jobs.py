@@ -1010,11 +1010,6 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
             "contact_outbound_job",
             task.get("person_id", ""),
         )
-    elif job_type == "mock_inbound_reply":
-        await pool.enqueue_job(
-            "mock_inbound_reply_job",
-            task.get("person_id", ""),
-        )
     else:
         await pool.enqueue_job(
             "collect_job",

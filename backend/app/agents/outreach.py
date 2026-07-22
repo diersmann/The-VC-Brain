@@ -106,12 +106,13 @@ def _template_draft(
         "founder_intro": (
             f"Exploring {company_name}",
             "I came across your work and would enjoy learning what you are building, what has "
-            "changed recently, and where the company is heading next.",
+            "changed recently, and where the company is heading next. If you are open to it, "
+            "you can share your pitch deck here: https://thevcbrain.com/submit",
         ),
         "request_deck": (
             f"A closer look at {company_name}",
             "We would like to understand the company in more detail. If you are open to it, "
-            "could you share a current deck or a short product overview?",
+            "please share your deck at https://thevcbrain.com/submit.",
         ),
         "diligence": (
             f"A few follow-up questions on {company_name}",
