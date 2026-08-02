@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, ExternalLink, FileQuestion, Mail, MessageSquareText, Send, Sparkles, X } from "lucide-react";
 
 import { draftCandidateOutreach, type OutreachDraft, type OutreachEmailType } from "../../api/candidates";
@@ -13,12 +13,48 @@ const emailTypes: { value: OutreachEmailType; label: string; description: string
 ];
 
 export function OutreachComposer({ candidate, onClose }: { candidate: Candidate; onClose: () => void }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
   const [emailType, setEmailType] = useState<OutreachEmailType>("founder_intro");
   const [brief, setBrief] = useState("");
   const [draft, setDraft] = useState<OutreachDraft | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [status, setStatus] = useState<"idle" | "drafting" | "error" | "copied">("idle");
+
+  useEffect(() => {
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), textarea:not([disabled]), a[href]",
+      ));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      restoreFocusRef.current?.focus();
+    };
+  }, [onClose]);
 
   const generateDraft = async () => {
     setStatus("drafting");
@@ -46,6 +82,7 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
   return (
     <div className="fixed inset-0 z-[70] flex justify-end bg-[#172235]/25 p-3 backdrop-blur-sm sm:p-5" role="presentation" onMouseDown={onClose}>
       <section
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={`Draft outreach to ${candidate.display_name ?? "founder"}`}
@@ -60,7 +97,7 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
               <h2 className="truncate text-base font-bold">Write to {candidate.display_name ?? candidate.stable_id}</h2>
             </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close outreach composer" className="rounded-md bg-white/65 p-2 text-muted hover:text-ink"><X className="h-4 w-4" /></button>
+          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close outreach composer" className="rounded-md bg-white/65 p-2 text-muted hover:text-ink"><X className="h-4 w-4" /></button>
         </header>
 
         <div className="flex-1 overflow-y-auto p-5">
