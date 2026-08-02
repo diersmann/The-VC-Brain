@@ -30,7 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collectors.avatars import fetch_and_store_avatar
-from app.collectors.base import Collected, Seed
+from app.collectors.base import Collected, Seed, classify_connector_failure
 from app.collectors.priority import info_gain
 from app.collectors.priority import priority as compute_priority
 from app.collectors.queue import (
@@ -604,10 +604,13 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
             try:
                 collected = await seed_connector.collect(seed, depth="light")
             except Exception as exc:
+                failure_kind, retryable = classify_connector_failure(exc)
                 logger.error(
                     "collect_light_failed",
                     source=collection_source,
                     handle=seed.handle,
+                    failure_kind=failure_kind,
+                    retryable=retryable,
                     error=str(exc),
                 )
                 continue
@@ -704,13 +707,21 @@ async def collect_job(
         try:
             collected = await connector.collect(seed, depth=depth)  # type: ignore[arg-type]
         except Exception as exc:
+            failure_kind, retryable = classify_connector_failure(exc)
             logger.error(
                 "collect_deep_failed",
                 person_id=person_id,
                 source=source,
+                failure_kind=failure_kind,
+                retryable=retryable,
                 error=str(exc),
             )
-            return {"error": str(exc)}
+            return {
+                "status": "failed",
+                "error": str(exc),
+                "failure_kind": failure_kind,
+                "retryable": retryable,
+            }
 
         snapshot = await _write_snapshot(session, collected)
         await _write_observations(session, snapshot, collected.observations, person.id)

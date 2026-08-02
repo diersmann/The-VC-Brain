@@ -129,7 +129,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-049 - Make connectors async-safe and block SSRF.** Observed: multiple async connectors called synchronous Tavily SDKs; `website.py` followed arbitrary redirects and buffered arbitrary URLs without private-IP/size checks. **Partial completion:** website collection now accepts only HTTP(S), rejects credentials/local and reserved IP targets, resolves hostnames before connecting, validates every manual redirect, streams up to `APP_WEBSITE_MAX_BYTES`, and runs Tavily extraction in a worker thread. **Blocked:** the same async/thread and SSRF contract remains to be applied and tested across the other Tavily-backed connectors; this checkpoint covers the highest-risk generic web path.
 
-- [ ] **VCB-050 - Classify connector failures for retries and operator action.** Observed: collect_job converts exceptions into successful result dictionaries and several connectors return empty lists on upstream errors. Done when transient/rate-limit/permanent failures are persisted distinctly, retry with backoff/jitter, and end in a visible DLQ when exhausted.
+- [blocked] **VCB-050 - Classify connector failures for retries and operator action.** Observed: `collect_job` converted exceptions into successful result dictionaries and several connectors return empty lists on upstream errors. **Partial completion:** collector failures now return explicit `status=failed`, `failure_kind` (`transient`, `rate_limited`, or `permanent`), and `retryable` metadata, with structured logs and classification regression tests. **Blocked:** durable failure persistence, backoff/jitter scheduling, and an operator-visible DLQ require the VCB-051 job ledger.
 
 - [ ] **VCB-051 - Add a durable job ledger with real job IDs.** Missing: durable status/progress/error/result for collection, research, scoring, memo, parsing, and identity work. Done when trigger endpoints return a job ID and UI can resume polling/subscription after navigation with phase, attempt, progress, last error, and cancel/retry.
 
@@ -261,7 +261,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - Frontend TypeScript: passed.
 - Frontend Vitest: 34 tests passed.
 - Frontend production build: passed; 349.50 kB JavaScript, 105.16 kB gzip.
-- Backend pytest: 159 tests passed with one Starlette/httpx deprecation warning.
+- Backend pytest: 160 tests passed with one Starlette/httpx deprecation warning.
 - Backend Ruff: passed after formatting two pre-existing E501 violations in migrations/versions/e093be299381_add_discovery_config_to_thesis.py.
 - Backend mypy: passed with no issues in 63 source files.
 - Alembic: one head, revision 016; local Docker database migrated successfully from e093be299381 through 016.
@@ -278,6 +278,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-045 focused and full backend validation passed with 151 tests. Tavily URL seeds route through the web collector, while entity leads remain discovery-only; provider-backed end-to-end verification remains blocked without credentials.
 - 2026-08-02: VCB-048 focused and full backend validation passed with 152 tests. Uncited recent arXiv authors remain discoverable; citation metadata is explicitly non-gating. Cold-start coverage metrics remain blocked on durable discovery-event measurement.
 - 2026-08-02: VCB-049 focused and full backend validation passed with 159 tests. Website collection now has SSRF, redirect, async Tavily, and byte-limit guardrails; remaining connector hardening is explicitly blocked as follow-up scope.
+- 2026-08-02: VCB-050 focused and full backend validation passed with 160 tests. Collector errors now expose retry classification; durable retry/DLQ behavior remains blocked on VCB-051.
 
 ## First practical milestone
 

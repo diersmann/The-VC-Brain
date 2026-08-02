@@ -1,4 +1,4 @@
-from app.collectors.base import Seed
+from app.collectors.base import Seed, classify_connector_failure
 from app.collectors.jobs import _collection_source_for_seed, _rating, score_research_axis
 
 
@@ -8,6 +8,21 @@ def test_tavily_url_seeds_route_to_web_and_entity_leads_are_not_collected() -> N
 
     assert _collection_source_for_seed("tavily_search", url_seed) == "web"
     assert _collection_source_for_seed("tavily_search", entity_seed) is None
+
+
+def test_connector_failures_are_classified_for_retry() -> None:
+    assert classify_connector_failure(RuntimeError("HTTP 429 rate limit")) == (
+        "rate_limited",
+        True,
+    )
+    assert classify_connector_failure(TimeoutError("request timed out")) == (
+        "transient",
+        True,
+    )
+    assert classify_connector_failure(RuntimeError("404 user not found")) == (
+        "permanent",
+        False,
+    )
 
 
 def test_research_axis_without_results_is_low_confidence() -> None:

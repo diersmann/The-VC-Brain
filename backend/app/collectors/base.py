@@ -91,3 +91,27 @@ class Connector(Protocol):
 
 class ConnectorError(Exception):
     """Base exception for connector failures."""
+
+
+FailureKind = Literal["transient", "rate_limited", "permanent"]
+
+
+def classify_connector_failure(exc: BaseException) -> tuple[FailureKind, bool]:
+    """Classify an upstream failure for retry and operator-facing state."""
+    message = str(exc).lower()
+    if any(token in message for token in ("429", "rate limit", "rate_limited", "throttl")):
+        return "rate_limited", True
+    if any(
+        token in message
+        for token in (
+            "timeout",
+            "timed out",
+            "connection reset",
+            "temporarily unavailable",
+            "502",
+            "503",
+            "504",
+        )
+    ):
+        return "transient", True
+    return "permanent", False
