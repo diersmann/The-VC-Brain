@@ -225,6 +225,7 @@ def map_person_to_candidate(
     latest_score: ScoreSnapshot | None = None,
     origin: str | None = None,
     score_snapshots: list[ScoreSnapshot] | None = None,
+    opportunity_score: ScoreSnapshot | None = None,
     profile: CandidateProfileSummary | None = None,
     lifecycle_stage: str | None = None,
 ) -> CandidateResponse:
@@ -243,13 +244,22 @@ def map_person_to_candidate(
         reverse=True,
     )
 
-    # A signal recomputation must not hide the independently researched
-    # Founder/Market/Idea-Market axes. Merge the newest value for every
-    # component across rubric versions instead of selecting one snapshot.
+    # Only person-scoped snapshots contribute to the persistent Founder Score,
+    # sourcing signal, and thesis alignment. Opportunity axes are attached
+    # separately below so a repeat founder's company cannot inherit another
+    # opportunity's Market or Idea-vs-Market value.
     components: dict[str, Any] = {}
     for snapshot in snapshots:
         for key, value in (snapshot.components or {}).items():
+            if key in {"market", "idea_market"}:
+                continue
             components.setdefault(key, value)
+
+    if opportunity_score is not None:
+        for key in ("market", "idea_market"):
+            value = (opportunity_score.components or {}).get(key)
+            if isinstance(value, (int, float)):
+                components[key] = value
 
     if components:
         scores = CandidateScores(
@@ -357,6 +367,47 @@ async def _fetch_score_snapshots(
     for snapshot in result.scalars().all():
         grouped[snapshot.subject_id].append(snapshot)
     return dict(grouped)
+
+
+async def _fetch_opportunity_scores(
+    session: AsyncSession,
+    person_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, ScoreSnapshot]:
+    """Return the latest canonical opportunity-axis score per current opportunity."""
+    if not person_ids:
+        return {}
+
+    latest_opp = (
+        select(
+            OpportunityFounder.person_id,
+            func.max(Opportunity.created_at).label("max_created"),
+        )
+        .select_from(OpportunityFounder)
+        .join(Opportunity, Opportunity.id == OpportunityFounder.opportunity_id)
+        .where(OpportunityFounder.person_id.in_(person_ids))
+        .group_by(OpportunityFounder.person_id)
+        .subquery()
+    )
+    result = await session.execute(
+        select(OpportunityFounder.person_id, ScoreSnapshot)
+        .select_from(OpportunityFounder)
+        .join(Opportunity, Opportunity.id == OpportunityFounder.opportunity_id)
+        .join(ScoreSnapshot, ScoreSnapshot.subject_id == Opportunity.id)
+        .join(
+            latest_opp,
+            (OpportunityFounder.person_id == latest_opp.c.person_id)
+            & (Opportunity.created_at == latest_opp.c.max_created),
+        )
+        .where(
+            ScoreSnapshot.subject_type == "opportunity",
+            ScoreSnapshot.rubric_version == "opportunity-axes-v1",
+        )
+        .order_by(ScoreSnapshot.created_at.desc())
+    )
+    grouped: dict[uuid.UUID, ScoreSnapshot] = {}
+    for person_id, snapshot in result.tuples().all():
+        grouped.setdefault(person_id, snapshot)
+    return grouped
 
 
 async def _fetch_candidate_profiles(
@@ -538,8 +589,9 @@ async def list_candidates(
     origins_task = _fetch_origin(session, person_ids)
     profiles_task = _fetch_candidate_profiles(session, person_ids)
     stages_task = _fetch_lifecycle_stages(session, person_ids)
-    score_snapshots, origins, profiles, lifecycle_stages = await asyncio.gather(
-        scores_task, origins_task, profiles_task, stages_task
+    opportunity_scores_task = _fetch_opportunity_scores(session, person_ids)
+    score_snapshots, origins, profiles, lifecycle_stages, opportunity_scores = await asyncio.gather(
+        scores_task, origins_task, profiles_task, stages_task, opportunity_scores_task
     )
 
     return [
@@ -547,6 +599,7 @@ async def list_candidates(
             person=p,
             origin=origins.get(p.id) or ("outbound" if p.handles else None),
             score_snapshots=score_snapshots.get(p.id),
+            opportunity_score=opportunity_scores.get(p.id),
             profile=profiles.get(p.id),
             lifecycle_stage=lifecycle_stages.get(p.id),
         )
@@ -565,6 +618,7 @@ async def get_candidate(
         raise HTTPException(status_code=404, detail="Candidate not found")
 
     score_snapshots = await _fetch_score_snapshots(session, [person.id])
+    opportunity_scores = await _fetch_opportunity_scores(session, [person.id])
     origins = await _fetch_origin(session, [person.id])
     profiles = await _fetch_candidate_profiles(session, [person.id])
     lifecycle_stages = await _fetch_lifecycle_stages(session, [person.id])
@@ -572,6 +626,7 @@ async def get_candidate(
         person,
         origin=origins.get(person.id) or ("outbound" if person.handles else None),
         score_snapshots=score_snapshots.get(person.id),
+        opportunity_score=opportunity_scores.get(person.id),
         profile=profiles.get(person.id),
         lifecycle_stage=lifecycle_stages.get(person.id),
     )

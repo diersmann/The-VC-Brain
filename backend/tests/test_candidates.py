@@ -117,15 +117,15 @@ class TestMapPersonToCandidate:
         assert result.scores.thesis_fit is None
         assert result.scores.evidence_confidence is None
 
-    def test_merges_multi_axis_and_discovery_snapshots(self) -> None:
+    def test_keeps_opportunity_axes_on_the_current_opportunity(self) -> None:
         person = _make_person()
-        multi_axis = _make_score_snapshot(
+        person_score = _make_score_snapshot(
             subject_id=person.id,
             rubric_version="founder-tavily-v1",
             components={
                 "founder": 0.81,
-                "market": 0.74,
-                "idea_market": 0.69,
+                "market": 0.11,
+                "idea_market": 0.12,
                 "evidence_confidence": 0.72,
             },
         )
@@ -134,10 +134,17 @@ class TestMapPersonToCandidate:
             rubric_version="signal-v1",
             components={"composite": 0.42, "github_signal": 0.8},
         )
+        opportunity_score = _make_score_snapshot(
+            subject_id=uuid.uuid4(),
+            subject_type="opportunity",
+            rubric_version="opportunity-axes-v1",
+            components={"market": 0.74, "idea_market": 0.69},
+        )
 
         result = map_person_to_candidate(
             person,
-            score_snapshots=[discovery, multi_axis],
+            score_snapshots=[discovery, person_score],
+            opportunity_score=opportunity_score,
         )
 
         assert result.scores is not None
@@ -153,6 +160,10 @@ class TestMapPersonToCandidate:
             "idea_market": 0.69,
             "evidence_confidence": 0.72,
         }
+        person_only = map_person_to_candidate(person, score_snapshots=[discovery, person_score])
+        assert person_only.scores is not None
+        assert person_only.scores.market is None
+        assert person_only.scores.idea_market is None
 
     def test_person_with_origin(self) -> None:
         person = _make_person()

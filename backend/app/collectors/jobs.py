@@ -750,11 +750,28 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
         company = _candidate_company(existing_observations, person)
         queries = _research_queries(person, company)
 
+        opportunity_result = await session.execute(
+            select(Opportunity)
+            .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
+            .where(OpportunityFounder.person_id == person.id)
+            .order_by(Opportunity.created_at.desc())
+            .limit(1)
+        )
+        opportunity = opportunity_result.scalar_one_or_none()
+        if opportunity is None:
+            from app.opportunity_service import get_or_create_opportunity
+
+            opportunity = await get_or_create_opportunity(
+                session, person, source_kind="outbound", lifecycle_state="investigating",
+                company_name=company,
+            )
+
         previous_result = await session.execute(
             select(ScoreSnapshot)
             .where(
-                ScoreSnapshot.subject_id == person.id,
-                ScoreSnapshot.rubric_version == "founder-tavily-v1",
+                ScoreSnapshot.subject_id == opportunity.id,
+                ScoreSnapshot.subject_type == "opportunity",
+                ScoreSnapshot.rubric_version == "opportunity-axes-v1",
             )
             .order_by(ScoreSnapshot.created_at.desc())
             .limit(1)
@@ -856,22 +873,6 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
 
             axis_evidence[axis] = evidence_ids
 
-        opportunity_result = await session.execute(
-            select(Opportunity)
-            .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
-            .where(OpportunityFounder.person_id == person.id)
-            .order_by(Opportunity.created_at.desc())
-            .limit(1)
-        )
-        opportunity = opportunity_result.scalar_one_or_none()
-        if opportunity is None:
-            from app.opportunity_service import get_or_create_opportunity
-
-            opportunity = await get_or_create_opportunity(
-                session, person, source_kind="outbound", lifecycle_state="investigating",
-                company_name=company,
-            )
-
         for axis, scored in axis_scores.items():
             previous_value = previous_components.get(axis)
             previous = float(previous_value) if isinstance(previous_value, (int, float)) else None
@@ -902,9 +903,9 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
         }
         session.add(
             ScoreSnapshot(
-                subject_id=person.id,
-                subject_type="person",
-                rubric_version="founder-tavily-v1",
+                subject_id=opportunity.id,
+                subject_type="opportunity",
+                rubric_version="opportunity-axes-v1",
                 components=score_components,
                 confidence_interval={
                     axis: {

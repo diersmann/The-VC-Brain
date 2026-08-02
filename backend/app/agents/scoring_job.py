@@ -11,27 +11,12 @@ from sqlalchemy import select
 from app.agents.scoring import build_evidence_text, score_candidate
 from app.collectors.jobs import _session_ctx
 from app.db.models import (
-    Assessment,
     Observation,
     Person,
     ScoreSnapshot,
 )
 
 logger = structlog.get_logger(__name__)
-
-_RATING_BUCKETS = [
-    (67.0, "bullish"),
-    (34.0, "neutral"),
-    (0.0, "bear"),
-]
-
-
-def _rating(score: float) -> str:
-    for threshold, label in _RATING_BUCKETS:
-        if score >= threshold:
-            return label
-    return "bear"
-
 
 async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, Any]:
     """Run the multi-agent scoring committee for one candidate.
@@ -78,36 +63,9 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
             concurrency=settings.agent_concurrency,
         )
 
-        # Find or create an Opportunity for this person
-        from app.opportunity_service import get_or_create_opportunity
-
-        opportunity = await get_or_create_opportunity(
-            session, person, source_kind="outbound", lifecycle_state="investigating",
-        )
-
-        # Write 3 Assessment rows (one per axis)
-        for dim_name, score_val in [
-            ("execution", scorecard.execution),
-            ("technical", scorecard.technical),
-            ("commercial", scorecard.commercial),
-        ]:
-            agent_assessment = scorecard.agents.get(dim_name)
-            if agent_assessment is None:
-                continue
-            session.add(
-                Assessment(
-                    opportunity_id=opportunity.id,
-                    axis=dim_name,
-                    rating=_rating(score_val),
-                    trend="stable",
-                    confidence=agent_assessment.confidence,
-                    evidence_ids=agent_assessment.evidence,
-                    counter_evidence_ids=agent_assessment.counter_evidence,
-                    unknowns=agent_assessment.unknowns,
-                )
-            )
-
-        # Write the final ScoreSnapshot
+        # Specialist dimensions remain inputs to the persistent person-scoped
+        # Founder Score. Opportunity assessments are written only by the
+        # canonical Founder/Market/Idea-Market research job.
         score_components: dict[str, object] = {
             "founder": scorecard.composite / 100.0,  # 0-1 scale for candidates API
             "execution": scorecard.execution,

@@ -54,8 +54,8 @@ Core entities are:
 | Observation | Extracted source statement before reconciliation | Subject, predicate, object/value, observed time, extractor version, snapshot |
 | Claim | Reconciled assertion used by scoring and memos | Observation references, status, confidence, valid time, supersession link |
 | Relationship | Typed graph edge | Endpoints, relationship type, evidence, confidence, observed/valid time |
-| ScoreSnapshot | Reproducible score at a point in time | Subject, rubric/model version, components, confidence interval, evidence IDs |
-| Assessment | Per-opportunity Founder, Market, or Idea-vs-Market result | Axis, rating, trend, confidence, evidence and counter-evidence |
+| ScoreSnapshot | Reproducible score at a point in time | Person-scoped Founder Score/sourcing/thesis or opportunity-scoped axis snapshot, rubric/model version, components, confidence interval, evidence IDs |
+| Assessment | Per-opportunity Founder, Market, or Idea-vs-Market result | Exactly three canonical axes, rating, trend, confidence, evidence and counter-evidence |
 | DecisionEvent | Auditable lifecycle transition | Opportunity, prior/new state, actor, reason, timestamp, SLA metadata |
 | InboundSubmission | Idempotent application envelope | Idempotency key, person/opportunity/deck references, accepted status, timestamps |
 | OutboxEvent | Durable handoff from PostgreSQL to workers | Dedupe key, event payload, dispatch status, retry count, availability, error metadata |
