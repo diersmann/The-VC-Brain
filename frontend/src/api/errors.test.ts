@@ -4,6 +4,8 @@ import { ApiError, apiFailureCopy, apiFailureKind } from "./errors";
 
 describe("API failure states", () => {
   it("distinguishes permission and server failures", () => {
+    expect(apiFailureKind(new ApiError("missing", 404))).toBe("not-found");
+    expect(apiFailureCopy(new ApiError("missing", 404)).title).toBe("Record not found");
     expect(apiFailureKind(new ApiError("forbidden", 403))).toBe("permission");
     expect(apiFailureKind(new ApiError("server error", 503))).toBe("server");
     expect(apiFailureCopy(new ApiError("server error", 503)).message).toMatch(/no investment conclusion/i);

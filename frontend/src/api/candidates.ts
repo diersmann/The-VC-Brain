@@ -171,7 +171,7 @@ export type CandidateMemo = {
 export async function fetchCandidateMemo(candidateId: string, opportunityId: string, signal?: AbortSignal): Promise<CandidateMemo> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/memo?opportunity_id=${encodeURIComponent(opportunityId)}`, { signal });
   if (response.status === 404) return { sections: [], status: "missing", generation_mode: null, model_version: null, created_at: null };
-  if (!response.ok) throw new Error(`Memo request failed with status ${response.status}`);
+  if (!response.ok) throw new ApiError(`Memo request failed with status ${response.status}`, response.status);
   return (await response.json()) as CandidateMemo;
 }
 

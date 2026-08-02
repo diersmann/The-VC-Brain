@@ -8,10 +8,11 @@ export class ApiError extends Error {
   }
 }
 
-export type ApiFailureKind = "permission" | "offline" | "server" | "request";
+export type ApiFailureKind = "not-found" | "permission" | "offline" | "server" | "request";
 
 export function apiFailureKind(error: unknown): ApiFailureKind {
   if (error instanceof ApiError) {
+    if (error.status === 404) return "not-found";
     if (error.status === 401 || error.status === 403) return "permission";
     if (error.status >= 500) return "server";
     return "request";
@@ -26,6 +27,11 @@ export function apiFailureKind(error: unknown): ApiFailureKind {
 
 export function apiFailureCopy(error: unknown): { title: string; message: string } {
   switch (apiFailureKind(error)) {
+    case "not-found":
+      return {
+        title: "Record not found",
+        message: "This investment record is no longer available. Return to the queue and choose another record.",
+      };
     case "permission":
       return {
         title: "Permission required",

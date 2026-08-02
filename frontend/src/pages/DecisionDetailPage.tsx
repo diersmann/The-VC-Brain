@@ -27,6 +27,7 @@ import {
   useCandidate,
 } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
+import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { DecisionActionDock } from "../components/decision/DecisionActionDock";
 import { buildFounderProfile, formatPredicate } from "../data/candidateProfile";
@@ -58,6 +59,7 @@ export function DecisionDetailPage() {
   const [memoGenState, setMemoGenState] = useState<"idle" | "queued" | "error">("idle");
   const {
     data: memo,
+    error: memoError,
     isLoading: memoLoading,
     refetch: refetchMemo,
   } = useQuery({
@@ -74,8 +76,9 @@ export function DecisionDetailPage() {
     }
   }, [memo?.status]);
 
-  if (isLoading) return <div className="py-20 text-center text-sm text-muted">Loading investment evidence…</div>;
-  if (error || !candidate) return <div className="py-20 text-center"><div className="text-sm font-bold">Decision candidate not found</div><Link to="/decisions" className="mt-3 inline-block text-xs font-bold text-accent">Back to decision queue</Link></div>;
+  if (isLoading && !candidate) return <div className="py-20 text-center text-sm text-muted">Loading investment evidence…</div>;
+  if (error && !candidate) return <div className="mx-auto max-w-[680px] py-20"><ApiStateNotice error={error} onRetry={() => void refetch()} label="decision evidence" /><Link to="/decisions" className="mt-4 inline-block text-xs font-bold text-accent">Back to decision queue</Link></div>;
+  if (!candidate) return <div className="py-20 text-center"><div className="text-sm font-bold">Decision record unavailable</div><Link to="/decisions" className="mt-3 inline-block text-xs font-bold text-accent">Back to decision queue</Link></div>;
 
   const profile = buildFounderProfile(candidate);
   const meta = createDecisionMeta(profile, candidate);
@@ -93,6 +96,7 @@ export function DecisionDetailPage() {
 
   return (
     <div className="mx-auto max-w-[1240px] pb-28">
+      {error && <div className="mb-5"><ApiStateNotice error={error} onRetry={() => void refetch()} label="decision evidence" /></div>}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <Link
           to="/decisions"
@@ -114,9 +118,11 @@ export function DecisionDetailPage() {
           <AxisScreening profile={profile} />
           <InvestmentMemo
             memo={memo}
+            memoError={memoError}
             memoLoading={memoLoading}
             memoGenState={memoGenState}
             onGenerate={generateMemo}
+            onRetryMemo={() => void refetchMemo()}
           />
 
           <div className="grid gap-5 xl:grid-cols-2">
@@ -401,14 +407,18 @@ function AxisTrendChart({ values, color, label }: { values: number[]; color: str
 
 function InvestmentMemo({
   memo,
+  memoError,
   memoLoading,
   memoGenState,
   onGenerate,
+  onRetryMemo,
 }: {
   memo: import("../api/candidates").CandidateMemo | null | undefined;
+  memoError: unknown;
   memoLoading: boolean;
   memoGenState: "idle" | "queued" | "error";
   onGenerate: () => void;
+  onRetryMemo: () => void;
 }) {
   const hasMemo = memo?.status === "succeeded" && memo.sections.length > 0;
   const hasDraft = Boolean(memo && memo.status !== "missing" && memo.status !== "pending" && memo.sections.length > 0);
@@ -452,6 +462,8 @@ function InvestmentMemo({
         </div>
       )}
 
+      {memoError != null && <div className="mt-5"><ApiStateNotice error={memoError} onRetry={onRetryMemo} label="investment memo" /></div>}
+
       {!memoLoading && memoStatus && (
         <div role="alert" className="mt-5 rounded-md border border-warn/25 bg-[#fff8ed] p-4 text-xs text-[#8d5e2b]">
           {memoStatus}. It cannot advance the opportunity to memo-ready until a validated memo succeeds.
@@ -474,7 +486,7 @@ function InvestmentMemo({
         </div>
       )}
 
-      {!memoLoading && !hasMemo && memo?.status !== "pending" && memoGenState === "idle" && (
+      {!memoLoading && !memoError && !hasMemo && memo?.status !== "pending" && memoGenState === "idle" && (
         <div className="mt-5 rounded-md bg-surface-2 p-4 text-center text-xs text-muted">
           No investment memo has been generated yet. Click "Generate memo" to create one from the available evidence.
         </div>

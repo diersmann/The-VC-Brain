@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { fetchResearchStatus, researchCandidate, useCandidate } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
+import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { buildFounderProfile } from "../data/candidateProfile";
 import { candidateExternalLinks, type CandidateLinkKind } from "../data/candidateLinks";
@@ -75,8 +76,9 @@ export function FounderProfilePage() {
     }
   }, [researchStatus.data?.status, refetch]);
 
-  if (isLoading) return <div className="py-20 text-center text-sm text-muted">Loading source evidence…</div>;
-  if (error || !founder) return <div className="py-20 text-center"><div className="text-sm font-bold">Founder not found</div><button onClick={() => navigate("/sourcing")} className="mt-3 text-xs font-bold text-accent">Back to discover</button></div>;
+  if (isLoading && !founder) return <div className="py-20 text-center text-sm text-muted">Loading source evidence…</div>;
+  if (error && !founder) return <div className="mx-auto max-w-[680px] py-20"><ApiStateNotice error={error} onRetry={() => void refetch()} label="founder evidence" /><button onClick={() => navigate("/sourcing")} className="mt-4 block text-xs font-bold text-accent">Back to discover</button></div>;
+  if (!founder) return <div className="py-20 text-center"><div className="text-sm font-bold">Founder record unavailable</div><button onClick={() => navigate("/sourcing")} className="mt-3 text-xs font-bold text-accent">Back to discover</button></div>;
 
   const profile = buildFounderProfile(founder);
   const externalLinks = candidateExternalLinks(founder);
@@ -92,6 +94,7 @@ export function FounderProfilePage() {
 
   return (
     <div className="mx-auto max-w-[1180px] pb-10">
+      {error && <div className="mb-5"><ApiStateNotice error={error} onRetry={() => void refetch()} label="founder evidence" /></div>}
       <button onClick={() => navigate("/sourcing")} className="mb-5 flex items-center gap-2 text-xs font-semibold text-muted hover:text-accent">
         <ArrowLeft className="h-4 w-4" /> Back to discover
       </button>
