@@ -65,7 +65,9 @@ async def test_interesting_candidate_pauses_when_budget_exhausted() -> None:
 
     with (
         patch("app.agents.lifecycle_job._session_ctx") as context,
-        patch("app.agents.lifecycle_job._has_score", new=AsyncMock(return_value=False)),
+        patch(
+            "app.agents.lifecycle_job._has_opportunity_axes", new=AsyncMock(return_value=False)
+        ),
         patch(
             "app.agents.lifecycle_job.get_agent_budget_remaining",
             new=AsyncMock(return_value=0),
@@ -111,7 +113,9 @@ async def test_investigated_candidate_above_threshold_queues_contact() -> None:
 
     with (
         patch("app.agents.lifecycle_job._session_ctx") as context,
-        patch("app.agents.lifecycle_job._has_score", new=AsyncMock(return_value=True)),
+        patch(
+            "app.agents.lifecycle_job._has_opportunity_axes", new=AsyncMock(return_value=True)
+        ),
         patch(
             "app.agents.lifecycle_job.get_agent_budget_remaining",
             new=AsyncMock(return_value=50),

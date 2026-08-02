@@ -137,7 +137,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-053 - Correct provider/model budget accounting.** Observed: worker startup reset a monthly budget on every restart; tasks are charged rather than actual calls/tokens; manual routes bypass caps. **Partial completion:** Tavily budget initialization is now idempotent across worker restarts, with a regression test. **Blocked:** billing-period reset ownership, actual provider/token usage reconciliation, reservation/refund across every entry point, and visible confidence changes for skipped work require the broader budget ledger design.
 
-- [ ] **VCB-054 - Prevent historical scores from stalling or satisfying a new opportunity.** Observed: lifecycle_job.py:77-87 and 177-268 checks any person-wide founder-agent score and can leave interesting opportunities stuck or reuse stale results. Done when stage outputs are keyed by opportunity/run while historical Founder Score remains only a versioned input.
+- [blocked] **VCB-054 - Prevent historical scores from stalling or satisfying a new opportunity.** Observed: lifecycle used any person-wide `founder-agent-v1` score as the investigation completion gate. **Partial completion:** lifecycle now gates investigation completion on the current opportunity’s `opportunity-axes-v1` snapshot, while treating Founder Score as a person-scoped historical input for the later threshold. **Blocked:** the full contract still needs per-opportunity/run score outputs and deterministic run IDs for research, scoring, and processing.
 
 - [ ] **VCB-055 - Schedule pipeline work by SLA risk and fairness.** Observed: lifecycle_job.py:126-136 repeatedly selects the oldest five; budget-blocked rows can starve later work. Done when decision_due_at, stage budget, fair pagination, SKIP LOCKED/concurrency, and needs-attention queues drive priority.
 
@@ -282,6 +282,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-051 foundation validation passed with 162 tests; local migration 017 adds the durable job ledger and discovery triggers now return status-trackable job IDs. Remaining job integrations and cancel/retry semantics are explicitly blocked scope.
 - 2026-08-02: VCB-052 focused and full backend validation passed with 163 tests. Dispatcher enqueue failures now requeue work with preserved priority and refund Tavily reservations; crash-safe leases and atomic orchestration remain blocked scope.
 - 2026-08-02: VCB-053 focused and full backend validation passed with 164 tests. Tavily budget state now survives worker restarts; actual usage reconciliation remains blocked scope.
+- 2026-08-02: VCB-054 focused and full backend validation passed with 164 tests. Investigation gating now requires opportunity-scoped axes instead of any historical founder score; full per-run output identity remains blocked scope.
 
 ## First practical milestone
 

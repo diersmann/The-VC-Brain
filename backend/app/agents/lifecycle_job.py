@@ -74,13 +74,14 @@ async def _has_recent_pipeline_event(
     return result.scalar_one_or_none() is not None
 
 
-async def _has_score(session: AsyncSession, person_id: Any) -> bool:
-    """Check if a person has a founder-agent-v1 score."""
+async def _has_opportunity_axes(session: AsyncSession, opportunity_id: Any) -> bool:
+    """Check for current opportunity-scoped axes, not a historical person score."""
     result = await session.execute(
         select(ScoreSnapshot.id)
         .where(
-            ScoreSnapshot.subject_id == person_id,
-            ScoreSnapshot.rubric_version == "founder-agent-v1",
+            ScoreSnapshot.subject_id == opportunity_id,
+            ScoreSnapshot.subject_type == "opportunity",
+            ScoreSnapshot.rubric_version == "opportunity-axes-v1",
         )
         .limit(1)
     )
@@ -179,8 +180,8 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
 
             # --- interesting -> investigating ---
             elif state == "interesting":
-                if await _has_score(session, person.id):
-                    # Already scored — skip
+                if await _has_opportunity_axes(session, opp.id):
+                    # Current opportunity research already exists — skip.
                     continue
                 budget = await get_agent_budget_remaining(redis)
                 if budget < _INVESTIGATION_AGENT_CALLS:
@@ -215,7 +216,7 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
 
             # --- investigating -> outreach draft (if above contact threshold) ---
             elif state == "investigating":
-                if not await _has_score(session, person.id):
+                if not await _has_opportunity_axes(session, opp.id):
                     # Still being scored — retry only after the configured
                     # stuck interval, preventing duplicate in-flight jobs.
                     cutoff = datetime.now(UTC) - timedelta(
@@ -263,7 +264,8 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                         opp.updated_at = datetime.now(UTC)
                     continue
 
-                # Check the agent score composite
+                # Founder Score is a historical person-scoped input here; the
+                # investigation gate above remains opportunity-scoped.
                 score_result = await session.execute(
                     select(ScoreSnapshot)
                     .where(
