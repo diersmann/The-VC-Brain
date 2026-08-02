@@ -14,10 +14,21 @@ collection priority.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, runtime_checkable
 
 Depth = Literal["light", "deep"]
+
+
+def canonical_json_bytes(value: object) -> bytes:
+    """Serialize JSON snapshots deterministically and without Python repr syntax."""
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
 
 
 @dataclass(frozen=True)

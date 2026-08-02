@@ -30,7 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collectors.avatars import fetch_and_store_avatar
-from app.collectors.base import Collected, Seed, classify_connector_failure
+from app.collectors.base import Collected, Seed, canonical_json_bytes, classify_connector_failure
 from app.collectors.priority import info_gain
 from app.collectors.priority import priority as compute_priority
 from app.collectors.queue import (
@@ -1076,7 +1076,7 @@ async def research_candidate_job(
                 url = str(result.get("url", ""))
                 if not url:
                     continue
-                content = json.dumps(result, ensure_ascii=False).encode("utf-8")
+                content = canonical_json_bytes(result)
                 relevance = result.get("score", 0.5)
                 confidence = float(relevance) if isinstance(relevance, (int, float)) else 0.5
                 collected = Collected(
@@ -1107,9 +1107,7 @@ async def research_candidate_job(
                 evidence_ids.extend(str(item) for item in ids)
 
             if answer:
-                summary_content = json.dumps(
-                    {"query": query, "answer": answer}, ensure_ascii=False
-                ).encode("utf-8")
+                summary_content = canonical_json_bytes({"query": query, "answer": answer})
                 summary_collected = Collected(
                     content=summary_content,
                     content_type="application/json",

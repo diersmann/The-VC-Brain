@@ -11,7 +11,14 @@ from datetime import UTC, datetime
 import httpx
 import structlog
 
-from app.collectors.base import Collected, Connector, ConnectorError, Depth, Seed
+from app.collectors.base import (
+    Collected,
+    Connector,
+    ConnectorError,
+    Depth,
+    Seed,
+    canonical_json_bytes,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -226,7 +233,7 @@ class ProductHuntConnector(Connector):
             }
         )
 
-        raw_bytes = str(data).encode("utf-8")
+        raw_bytes = canonical_json_bytes(data)
         return Collected(
             content=raw_bytes,
             content_type="application/json",

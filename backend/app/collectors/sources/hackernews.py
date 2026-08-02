@@ -14,7 +14,14 @@ from typing import Any
 import httpx
 import structlog
 
-from app.collectors.base import Collected, Connector, ConnectorError, Depth, Seed
+from app.collectors.base import (
+    Collected,
+    Connector,
+    ConnectorError,
+    Depth,
+    Seed,
+    canonical_json_bytes,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -216,7 +223,7 @@ class HackerNewsConnector(Connector):
                             }
                         )
 
-        raw_bytes = str({"user": user_data, "stories": stories}).encode("utf-8")
+        raw_bytes = canonical_json_bytes({"user": user_data, "stories": stories})
         return Collected(
             content=raw_bytes,
             content_type="application/json",

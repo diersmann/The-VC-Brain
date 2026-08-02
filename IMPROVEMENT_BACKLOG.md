@@ -229,7 +229,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-098 - Finish evidence-aware source depth.** Observed: arXiv PDF extraction contains pass; podcasts/YouTube lack transcript-level citations; generic/Tavily wrappers mostly capture snippets/metadata. Done when licensed primary content, page/timestamp coordinates, speaker/author identity confidence, incremental cursors, and source-specific tests exist before scoring.
 
-- [ ] **VCB-099 - Store valid deterministic JSON for JSON snapshots.** Observed: GitHub, arXiv, Product Hunt, HN, and YouTube use Python str(dict/list) while declaring application/json. Done when canonical json serialization round-trips, hashes deterministically, and MIME matches bytes.
+- [x] **VCB-099 - Store valid deterministic JSON for JSON snapshots.** Observed: GitHub, arXiv, Product Hunt, HN, and YouTube used Python `str(dict/list)` while declaring `application/json`. **Completed:** all five connectors and research snapshot writers now use one shared canonical JSON serializer with UTF-8, sorted keys, compact separators, and valid JSON round-trip coverage; MIME remains `application/json`.
 
 - [ ] **VCB-100 - Replace or govern committed public-profile demo data.** Observed: seed README describes 112 public people and includes pending-consent profile content/avatar bytes; importer labels non-submitted demos as inbound and mutates evidence. Done when fixtures are synthetic/anonymized or have a source-by-source license/legal manifest, unnecessary PII/avatar data is removed, and demo/reference data is excluded from operational metrics.
 
@@ -289,6 +289,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-089 migration/seed wiring passed Compose config validation and focused demo-fixture tests. The migration service is ordered before API/worker readiness, and `make seed-demo` is documented as opt-in synthetic data; clean-volume acceptance remains blocked to avoid destroying the existing local database volume.
 - 2026-08-02: VCB-090 configuration validation passed Compose config, six focused settings tests, live API startup, mypy, and full `make check` with 180 backend and 42 frontend tests. Backend settings now use `APP_*` consistently across `.env.example`, local settings, and the API/worker Compose environment; deployment secret injection and a full environment matrix remain blocked scope.
 - 2026-08-02: VCB-092 focused lifecycle cleanup tests passed for API and worker shutdown; full shared AI/Redis ownership remains explicitly blocked pending a client-lifecycle design.
+- 2026-08-02: VCB-099 canonical JSON serialization passed focused round-trip/stability coverage and source audit; all `application/json` snapshot writers now emit valid deterministic UTF-8 JSON.
 
 ## First practical milestone
 

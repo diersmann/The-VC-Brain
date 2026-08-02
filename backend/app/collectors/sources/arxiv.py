@@ -16,7 +16,14 @@ from typing import Any
 import httpx
 import structlog
 
-from app.collectors.base import Collected, Connector, ConnectorError, Depth, Seed
+from app.collectors.base import (
+    Collected,
+    Connector,
+    ConnectorError,
+    Depth,
+    Seed,
+    canonical_json_bytes,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -240,7 +247,7 @@ class ArxivConnector(Connector):
             except Exception:
                 logger.warning("arxiv_pdf_download_failed", arxiv_id=top_paper["arxiv_id"])
 
-        raw_bytes = str(papers).encode("utf-8")
+        raw_bytes = canonical_json_bytes(papers)
         return Collected(
             content=raw_bytes,
             content_type="application/json",
