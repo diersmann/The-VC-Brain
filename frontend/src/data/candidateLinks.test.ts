@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { candidateExternalLinks } from "./candidateLinks";
+import { candidateExternalLinks, safeExternalUrl, safeHttpUrl } from "./candidateLinks";
 import type { CandidateDetail } from "../types/candidate";
 
 function detail(): CandidateDetail {
@@ -63,5 +63,12 @@ describe("candidateExternalLinks", () => {
       { kind: "deck", label: "Pitch deck", url: "https://company.example/deck" },
       { kind: "x", label: "X / Twitter", url: "https://x.com/founder_x" },
     ]);
+  });
+
+  it("rejects unsafe schemes and non-http claim sources", () => {
+    expect(safeExternalUrl("javascript:alert(1)")).toBeNull();
+    expect(safeExternalUrl("data:text/html,unsafe")).toBeNull();
+    expect(safeHttpUrl("Tavily search result")).toBeNull();
+    expect(safeHttpUrl("https://safe.example/source")).toBe("https://safe.example/source");
   });
 });

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { formatPredicate } from "../../data/candidateProfile";
+import { safeExternalUrl } from "../../data/candidateLinks";
 import { recordCandidateFeedback } from "../../api/candidates";
 import type { Candidate } from "../../types/candidate";
 import { CandidateAvatar } from "../common/CandidateAvatar";
@@ -36,6 +37,7 @@ export function CandidateCard({ candidate, onViewFounder, onOutreach }: Props) {
   if (dismissed) return null;
 
   const profile = candidate.profile;
+  const websiteUrl = safeExternalUrl(profile?.website);
   const source = Object.keys(candidate.handles ?? {})[0] ?? candidate.origin ?? "database";
   const handle = Object.values(candidate.handles ?? {})[0];
   const evidence = candidate.scores?.evidence_confidence;
@@ -130,9 +132,9 @@ export function CandidateCard({ candidate, onViewFounder, onOutreach }: Props) {
             {formatPredicate(tag)}
           </span>
         ))}
-        {profile?.website && (
+        {websiteUrl && (
           <a
-            href={profile.website}
+            href={websiteUrl}
             target="_blank"
             rel="noreferrer"
             onClick={(event) => event.stopPropagation()}

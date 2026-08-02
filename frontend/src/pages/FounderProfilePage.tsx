@@ -30,7 +30,7 @@ import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { buildFounderProfile } from "../data/candidateProfile";
-import { candidateExternalLinks, type CandidateLinkKind } from "../data/candidateLinks";
+import { candidateExternalLinks, safeHttpUrl, type CandidateLinkKind } from "../data/candidateLinks";
 import type { FounderAssessment, FounderProfile } from "../types/profile";
 
 const axisDetails = {
@@ -174,7 +174,7 @@ export function FounderProfilePage() {
           <div><div className="eyebrow mb-2">Source-backed research</div><h2 className="section-title">Tavily evidence & claims</h2><p className="supporting-text mt-1">Public sources used by the three independent assessments.</p></div>
           <span className="status-pill numeric bg-accent-soft text-accent">{profile.claims.length} records</span>
         </div>
-        {profile.claims.length === 0 ? <div className="mt-4 rounded-md bg-surface-2 p-4 text-xs text-muted">No research claims stored yet. Run Tavily research to populate this section.</div> : <div className="mt-4 grid gap-2 lg:grid-cols-2">{profile.claims.map((claim, index) => <div key={`${claim.claim}-${index}`} className="rounded-md bg-surface-2/80 p-3.5"><div className="flex items-start justify-between gap-3"><p className="text-xs font-semibold leading-5 text-ink-2">{claim.claim}</p><span className="numeric shrink-0 rounded bg-white px-2 py-1 text-[10px] font-bold text-muted">{claim.trust}% trust</span></div><div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted"><span>{claim.status}</span>{claim.source.startsWith("http") ? <a href={claim.source} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-accent">Open source <ExternalLink className="h-3 w-3" /></a> : <span>{claim.source}</span>}</div></div>)}</div>}
+        {profile.claims.length === 0 ? <div className="mt-4 rounded-md bg-surface-2 p-4 text-xs text-muted">No research claims stored yet. Run Tavily research to populate this section.</div> : <div className="mt-4 grid gap-2 lg:grid-cols-2">{profile.claims.map((claim, index) => { const sourceUrl = safeHttpUrl(claim.source); return <div key={`${claim.claim}-${index}`} className="rounded-md bg-surface-2/80 p-3.5"><div className="flex items-start justify-between gap-3"><p className="text-xs font-semibold leading-5 text-ink-2">{claim.claim}</p><span className="numeric shrink-0 rounded bg-white px-2 py-1 text-[10px] font-bold text-muted">{claim.trust}% trust</span></div><div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted"><span>{claim.status}</span>{sourceUrl ? <a href={sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-accent">Open source <ExternalLink className="h-3 w-3" /></a> : <span>{claim.source}</span>}</div></div>; })}</div>}
       </section>
 
       <div className="mt-5 flex items-start gap-3 rounded-lg bg-white/70 px-5 py-4 shadow-[0_12px_34px_rgba(70,91,120,.08)] backdrop-blur-xl">

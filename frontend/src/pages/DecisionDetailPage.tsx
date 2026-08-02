@@ -31,6 +31,7 @@ import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { DecisionActionDock } from "../components/decision/DecisionActionDock";
 import { buildFounderProfile, formatPredicate } from "../data/candidateProfile";
+import { safeExternalUrl } from "../data/candidateLinks";
 import type { CandidateDetail } from "../types/candidate";
 import type { FounderAssessment, FounderProfile } from "../types/profile";
 
@@ -197,16 +198,16 @@ function FounderSidebar({
           ))}
         </div>
 
-        {candidate.profile?.deck_url && (
+        {safeExternalUrl(candidate.profile?.deck_url) && (
           <a
-            href={candidate.profile.deck_url}
+            href={safeExternalUrl(candidate.profile?.deck_url) ?? undefined}
             target="_blank"
             rel="noreferrer"
             className="mt-5 flex w-full items-center justify-between rounded-md bg-[#e7eef9] px-3 py-2.5 text-xs font-bold text-[#5074a8] transition-all hover:-translate-y-0.5 hover:shadow-md"
           >
             <span className="flex min-w-0 items-center gap-2">
               <FileText className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{candidate.profile.deck_stage ?? "Open pitch deck"}</span>
+              <span className="truncate">{candidate.profile?.deck_stage ?? "Open pitch deck"}</span>
             </span>
             <ExternalLink className="h-3.5 w-3.5 shrink-0" />
           </a>
