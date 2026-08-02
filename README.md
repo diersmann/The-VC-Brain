@@ -6,7 +6,7 @@ Evidence-backed founder intelligence platform. Sources, profiles, and scores fou
 
 Working local product foundation. The repository contains a Docker-first Vite/React frontend, FastAPI API, Arq worker, PostgreSQL/pgvector, Redis, and MinIO stack. Migrations run before API and worker readiness; the local demo seed is synthetic and opt-in.
 
-Implemented foundations include PDF-only inbound submission with idempotency and durable outbox handoff, provenance-linked observations and source snapshots, deterministic scoring/rubric helpers, collector guardrails, explicit failure states, and tested sourcing/inbound/decision views. Authentication and tenant scoping, the complete triage-to-decision lifecycle, real SLA clocks, production telemetry, and several external-provider integrations remain partial or proposed. See [`IMPROVEMENT_BACKLOG.md`](IMPROVEMENT_BACKLOG.md) for the evidence-backed status of each capability.
+Implemented foundations include PDF-only inbound submission with idempotency and durable outbox handoff, provenance-linked observations and source snapshots, deterministic scoring/rubric helpers, collector guardrails, explicit failure states, tested sourcing/inbound/decision views, and a Docker-first operations runbook. Authentication and tenant scoping, the complete triage-to-decision lifecycle, real SLA clocks, production telemetry, and several external-provider integrations remain partial or proposed. See [`IMPROVEMENT_BACKLOG.md`](IMPROVEMENT_BACKLOG.md) for the evidence-backed status of each capability.
 
 ## Stack
 

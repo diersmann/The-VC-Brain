@@ -219,7 +219,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-093 - Harden production images and network defaults.** Observed: backend image runs as root and copies broadly; Compose publishes DB/Redis/MinIO with development credentials and uses minio:latest. Done when non-root minimal pinned images, internal-only data ports, secrets/TLS/auth, read-only FS/capability drops, resource limits, and separate dev/prod profiles exist.
 
-- [ ] **VCB-094 - Add backup, restore, migration, rollback, and incident runbooks.** Missing: production RPO/RTO and tested recovery. Done when PostgreSQL/object-storage backups, scheduled restore drills, forward-fix/rollback policy, rolling worker compatibility, and incident ownership are documented and exercised.
+- [blocked] **VCB-094 - Add backup, restore, migration, rollback, and incident runbooks.** Missing: production RPO/RTO and tested recovery. **Partial completion:** `docs/OPERATIONS_RUNBOOK.md` now documents local PostgreSQL/MinIO backup and restore commands, migration/forward-fix policy, rolling-worker compatibility expectations, readiness checks, evidence-preserving incident response, ownership placeholders, and explicit recovery-drill acceptance criteria. **Blocked:** production RPO/RTO, scheduled encrypted backups, disposable restore drills, cloud-object retention, rollback rehearsal, and named incident ownership remain deployment-specific and unexercised.
 
 - [x] **VCB-095 - Rewrite stale README and architecture status.** Observed: README said Boilerplate phase and still described adding a router despite implemented routes/features. **Completed:** README and architecture status now distinguish implemented foundations from partial/proposed capabilities, document provider/auth/SLA limitations, provide clean start, opt-in synthetic demo, destructive reset, troubleshooting, and the current workflow route map.
 
@@ -300,6 +300,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-03: VCB-083 candidate-card split passed its 9-test behavior suite, ESLint, and TypeScript; all four oversized frontend modules now have feature-local containers/components and the item is complete pending the full checkpoint gate.
 - 2026-08-03: VCB-096 demo workflow seed passed fixture tests and live Docker verification: reruns reused two demo IDs, candidates exposed investigating/memo-ready states, two scores/thesis matches, six assessments, one contradiction, and one succeeded five-section template memo; clean-volume and rendered browser walkthrough coverage remain blocked scope.
 - 2026-08-03: VCB-097 connector contract slice passed 10 focused tests, Ruff, and mypy; all 10 registry entries now have readiness metadata and the persistence boundary validates connector output shape, while provider-specific fixtures and last-success telemetry remain blocked scope.
+- 2026-08-03: VCB-094 operations runbook added with local PostgreSQL/MinIO backup-restore procedure, migration and worker-compatibility guidance, readiness checks, incident checklist, and production-drill acceptance criteria; production RPO/RTO and exercised recovery remain blocked scope.
 
 ## First practical milestone
 
