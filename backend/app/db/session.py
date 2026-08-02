@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from functools import lru_cache
 
 from sqlalchemy.ext.asyncio import (
@@ -20,9 +22,18 @@ def _get_session_factory() -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(get_engine(), expire_on_commit=False)
 
 
-async def get_session() -> AsyncSession:
-    """FastAPI dependency that returns an async DB session.
+@asynccontextmanager
+async def session_context() -> AsyncIterator[AsyncSession]:
+    """Yield one session and always close it, rolling back failed work."""
+    async with _get_session_factory()() as session:
+        try:
+            yield session
+        except BaseException:
+            await session.rollback()
+            raise
 
-    The session is closed when the engine is disposed in the app lifespan.
-    """
-    return _get_session_factory()()
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    """FastAPI dependency with deterministic close and rollback semantics."""
+    async with session_context() as session:
+        yield session

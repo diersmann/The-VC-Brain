@@ -15,7 +15,7 @@ from app.db.models import (  # registers models on Base.metadata
     ScoreSnapshot,
     SourceSnapshot,
 )
-from app.db.session import get_engine, get_session
+from app.db.session import get_engine, get_session, session_context
 
 __all__ = [
     "Assessment",
@@ -35,4 +35,5 @@ __all__ = [
     "SourceSnapshot",
     "get_engine",
     "get_session",
+    "session_context",
 ]

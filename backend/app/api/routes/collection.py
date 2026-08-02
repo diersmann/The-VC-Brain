@@ -362,11 +362,10 @@ async def trigger_identity_resolve(
 @router.get("/identity/matches", response_model=PersonMatchListResponse)
 async def list_pending_matches() -> PersonMatchListResponse:
     """List all pending PersonMatch records for review."""
-    from app.db import get_session
+    from app.db import session_context
     from app.db.models import PersonMatch
 
-    session = await get_session()
-    try:
+    async with session_context() as session:
         from sqlalchemy import select
 
         result = await session.execute(
@@ -390,19 +389,14 @@ async def list_pending_matches() -> PersonMatchListResponse:
                 for m in matches
             ]
         )
-    finally:
-        await session.close()
-
-
 @router.post("/identity/matches/{match_id}/approve", response_model=PersonMatchActionResponse)
 async def approve_match(match_id: str) -> PersonMatchActionResponse:
     """Approve a PersonMatch and merge the two persons."""
-    from app.db import get_session
+    from app.db import session_context
     from app.db.models import Person, PersonMatch
     from app.identity.merge import merge_persons
 
-    session = await get_session()
-    try:
+    async with session_context() as session:
         from sqlalchemy import select
 
         result = await session.execute(select(PersonMatch).where(PersonMatch.id == match_id))
@@ -449,18 +443,13 @@ async def approve_match(match_id: str) -> PersonMatchActionResponse:
             duplicate=str(duplicate_id),
         )
         return PersonMatchActionResponse(message="Match approved and persons merged")
-    finally:
-        await session.close()
-
-
 @router.post("/identity/matches/{match_id}/reject", response_model=PersonMatchActionResponse)
 async def reject_match(match_id: str) -> PersonMatchActionResponse:
     """Reject a PersonMatch (persons are not the same)."""
-    from app.db import get_session
+    from app.db import session_context
     from app.db.models import PersonMatch
 
-    session = await get_session()
-    try:
+    async with session_context() as session:
         from sqlalchemy import select
 
         result = await session.execute(select(PersonMatch).where(PersonMatch.id == match_id))
@@ -481,10 +470,6 @@ async def reject_match(match_id: str) -> PersonMatchActionResponse:
 
         logger.info("identity_match_rejected", match_id=match_id)
         return PersonMatchActionResponse(message="Match rejected")
-    finally:
-        await session.close()
-
-
 # ---------------------------------------------------------------------------
 # Multi-agent scoring routes
 # ---------------------------------------------------------------------------
