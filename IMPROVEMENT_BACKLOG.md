@@ -183,7 +183,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-075 - Render real nullable deadlines and SLA risk.** Observed: DecisionDetail says Decision due in Not scheduled. Done when no deadline renders plainly, real countdown/overdue/pause state comes from persisted SLA fields, and the queue sorts/alerts by risk.
 
-- [ ] **VCB-076 - Show identity verification only when verified.** Observed: FounderProfile always shows a green check next to the founder name. Done when marker, label, method, source, and time come from explicit identity-verification state; otherwise it is omitted.
+- [blocked] **VCB-076 - Show identity verification only when verified.** Observed: FounderProfile always showed a green check next to the founder name. **Partial completion:** the unsupported marker is now omitted. **Blocked:** the API and persistence model expose no explicit identity-verification state, method, source, or timestamp to render when verification is actually complete.
 
 - [ ] **VCB-077 - Fix misleading workflow navigation.** Observed: Decision feedback/Memory navigates to thesis; Home View all uses every candidate but routes to Investigated only. Done when nodes route to the exact workspace/result set, or are visibly disabled with an explanation until implemented.
 

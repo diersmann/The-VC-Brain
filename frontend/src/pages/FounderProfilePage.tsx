@@ -110,7 +110,6 @@ export function FounderProfilePage() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-[1.75rem] font-bold leading-tight tracking-[-0.03em]">{founder.display_name}</h1>
-                <CheckCircle2 className="h-4 w-4 text-success" />
               </div>
               <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-ink-2">
                 <Building2 className="h-3.5 w-3.5 text-accent-muted" /> {profile.role} · {profile.company}
