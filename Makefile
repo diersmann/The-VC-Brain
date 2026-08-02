@@ -60,7 +60,8 @@ test: ## Run all unit tests
 check: lint typecheck test ## Run all validation
 
 build: ## Build production images
-	$(COMPOSE) build api frontend
+	docker build --target production --tag vc-brain-backend:local ./backend
+	docker build --target production --tag vc-brain-frontend:local ./frontend
 
 clean: ## Stop stack and remove local data volumes
 	$(COMPOSE) down --volumes --remove-orphans
