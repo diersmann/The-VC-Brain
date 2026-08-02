@@ -15,6 +15,7 @@ from app.agents.scoring import build_evidence_text
 from app.collectors.jobs import _session_ctx
 from app.db.models import (
     Assessment,
+    Claim,
     InvestmentMemo,
     InvestmentThesis,
     Observation,
@@ -25,6 +26,39 @@ from app.db.models import (
 )
 
 logger = structlog.get_logger(__name__)
+
+_ACCEPTED_CLAIM_STATUSES = frozenset({"supported", "tavily_synthesized"})
+
+
+def _claim_observation_ids(claim: Claim) -> list[uuid.UUID] | None:
+    """Return valid observation IDs, rejecting malformed claim references."""
+    raw_ids = claim.observation_ids if isinstance(claim.observation_ids, list) else []
+    try:
+        return [uuid.UUID(str(item)) for item in raw_ids]
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def _claim_context(claims: list[Claim]) -> str:
+    """Format accepted claims as explicit, bounded memo input context."""
+    lines = ["--- accepted claims ---"]
+    for claim in claims:
+        observation_ids = ", ".join(claim.observation_ids)
+        lines.append(
+            f"[{claim.id}] {claim.predicate}: {claim.object_value[:500]} "
+            f"(observations: {observation_ids})"
+        )
+    return "\n".join(lines)
+
+
+def _contradiction_context(claims: list[Claim]) -> str:
+    """Format contradicted claims as warnings, never accepted facts."""
+    if not claims:
+        return "Contradictions: none recorded for this opportunity."
+    lines = ["Contradictions (excluded from accepted facts; resolve in diligence):"]
+    for claim in claims:
+        lines.append(f"- [{claim.id}] {claim.predicate}: {claim.object_value}")
+    return "\n".join(lines)
 
 
 async def generate_memo_job(
@@ -63,21 +97,58 @@ async def generate_memo_job(
         if opportunity is None:
             return {"error": "opportunity_not_found", "person_id": person_id}
 
-        # Fetch observations
+        # Only claims accepted by reconciliation may enter a memo. Their
+        # observation references must also resolve to this exact opportunity.
+        claims_result = await session.execute(
+            select(Claim)
+            .where(
+                Claim.subject_id == person.id,
+                Claim.opportunity_id == opportunity.id,
+                Claim.status.in_(_ACCEPTED_CLAIM_STATUSES),
+                Claim.supersession_id.is_(None),
+            )
+            .order_by(Claim.created_at.asc(), Claim.id.asc())
+        )
+        candidate_claims: list[Claim] = list(claims_result.scalars().all())
+        claim_observation_ids = {
+            observation_id
+            for claim in candidate_claims
+            for observation_id in (_claim_observation_ids(claim) or [])
+        }
+        if not claim_observation_ids:
+            logger.warning("memo_no_accepted_claims", person_id=person_id)
+            return {"error": "no_accepted_claims", "person_id": person_id}
+
         obs_result = await session.execute(
             select(Observation)
-            .where(Observation.subject_id == person.id)
-            .order_by(Observation.observed_at.desc())
-            .limit(500)
+            .where(
+                Observation.id.in_(claim_observation_ids),
+                Observation.subject_id == person.id,
+                Observation.opportunity_id == opportunity.id,
+            )
+            .order_by(Observation.observed_at.asc(), Observation.id.asc())
         )
-        observations: list[Observation] = list(obs_result.scalars().all())
+        observations_by_id = {observation.id: observation for observation in obs_result.scalars()}
+        claims: list[Claim] = []
+        for claim in candidate_claims:
+            observation_ids = _claim_observation_ids(claim)
+            if observation_ids and all(item in observations_by_id for item in observation_ids):
+                claims.append(claim)
 
-        if not observations:
-            logger.warning("memo_no_observations", person_id=person_id)
-            return {"error": "no_observations"}
+        if not claims:
+            logger.warning("memo_no_scoped_claim_evidence", person_id=person_id)
+            return {"error": "no_accepted_claim_evidence", "person_id": person_id}
 
-        # Build evidence text
+        claim_ids = [str(claim.id) for claim in claims]
+        observations = [
+            observations_by_id[observation_id]
+            for claim in claims
+            for observation_id in (_claim_observation_ids(claim) or [])
+        ]
+        # Preserve first occurrence while keeping the input deterministic.
+        observations = list({observation.id: observation for observation in observations}.values())
         evidence_text, obs_ids = build_evidence_text(observations, person)
+        evidence_text = _claim_context(claims) + "\n\n" + evidence_text
 
         # Fetch the latest agent scorecard
         score_result = await session.execute(
@@ -99,39 +170,70 @@ async def generate_memo_job(
         # Fetch assessments
         assessment_result = await session.execute(
             select(Assessment)
-            .join(Opportunity, Opportunity.id == Assessment.opportunity_id)
-            .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
-            .where(OpportunityFounder.person_id == person.id)
-            .order_by(Assessment.created_at.desc())
+            .where(Assessment.opportunity_id == opportunity.id)
+            .order_by(Assessment.created_at.asc(), Assessment.id.asc())
         )
-        assessments = assessment_result.scalars().all()
+        assessments = list(assessment_result.scalars().all())
+        assessment_ids = [str(assessment.id) for assessment in assessments]
         if assessments:
             scorecard_summary += "\n\nAssessments:\n" + "\n".join(
                 f"- {a.axis}: {a.rating} (conf {a.confidence}) — {a.unknowns}"
-                for a in assessments[:6]
+                for a in assessments
             )
+        else:
+            scorecard_summary += "\n\nAssessments: unavailable for this opportunity."
 
-        # Fetch active thesis
-        thesis_result = await session.execute(
-            select(InvestmentThesis)
-            .where(InvestmentThesis.is_active.is_(True))
-            .order_by(InvestmentThesis.created_at.desc())
-            .limit(1)
+        contradiction_result = await session.execute(
+            select(Claim)
+            .where(
+                Claim.subject_id == person.id,
+                Claim.opportunity_id == opportunity.id,
+                Claim.status == "contradicted",
+                Claim.supersession_id.is_(None),
+            )
+            .order_by(Claim.created_at.asc(), Claim.id.asc())
         )
+        contradictions = list(contradiction_result.scalars().all())
+        scorecard_summary += "\n\n" + _contradiction_context(contradictions)
+
+        # Pin the thesis to the opportunity before generation. A later active
+        # thesis change must not alter this memo's input package.
+        if opportunity.thesis_version:
+            thesis_result = await session.execute(
+                select(InvestmentThesis).where(
+                    InvestmentThesis.version == opportunity.thesis_version
+                )
+            )
+        else:
+            thesis_result = await session.execute(
+                select(InvestmentThesis)
+                .where(InvestmentThesis.is_active.is_(True))
+                .order_by(InvestmentThesis.created_at.desc())
+                .limit(1)
+            )
         thesis = thesis_result.scalar_one_or_none()
+        if thesis is None:
+            logger.warning(
+                "memo_no_pinned_thesis",
+                person_id=person_id,
+                opportunity_id=opportunity_id,
+            )
+            return {"error": "no_pinned_thesis", "person_id": person_id}
+        if opportunity.thesis_version is None:
+            opportunity.thesis_version = thesis.version
         thesis_summary = (
             f"{thesis.name} ({thesis.version}) — stages: {thesis.stages}, "
             f"sectors: {thesis.sectors}, regions: {thesis.regions}"
-            if thesis
-            else "No active thesis."
         )
 
         # Persist a pending run before calling the external model. If the
         # worker crashes, the pipeline retains an honest in-progress state.
         memo_record = InvestmentMemo(
             opportunity_id=opportunity.id,
-            thesis_version=thesis.version if thesis else "none",
+            thesis_version=thesis.version,
             status="pending",
+            claim_ids=claim_ids,
+            assessment_ids=assessment_ids,
             sections={"sections": [], "generation_mode": "pending"},
             evidence_ids=sorted(obs_ids),
             model_version=settings.agent_model,
@@ -162,17 +264,14 @@ async def generate_memo_job(
             logger.exception("memo_generation_failed", person_id=person_id, error=str(exc))
             return {"person_id": person_id, "status": "failed"}
 
-        # Write InvestmentMemo
-        all_evidence_ids = set(obs_ids)
-        for section in memo.sections:
-            all_evidence_ids.update(section.evidence_ids)
-
         memo_record.status = memo.status
         memo_record.sections = {
             "sections": [s.model_dump() for s in memo.sections],
             "generation_mode": memo.generation_mode,
         }
-        memo_record.evidence_ids = sorted(all_evidence_ids)[:100]
+        # Keep the durable evidence package limited to observations belonging
+        # to the accepted claims. Citation validation is a separate contract.
+        memo_record.evidence_ids = obs_ids
         memo_record.model_version = memo.model_version or settings.agent_model
         await session.commit()
 

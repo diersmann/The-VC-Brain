@@ -132,6 +132,7 @@ async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str,
             Observation(
                 snapshot_id=snapshot.id,
                 subject_id=person.id,
+                opportunity_id=opportunity.id,
                 predicate="outreach_email_draft",
                 object_value=f"Subject: {draft.subject}\n\n{draft.body}",
                 observed_at=now,

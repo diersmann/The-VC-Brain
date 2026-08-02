@@ -158,6 +158,7 @@ async def _write_observations(
     snapshot: SourceSnapshot,
     observations: list[dict[str, object]],
     subject_id: uuid.UUID | None,
+    opportunity_id: uuid.UUID | None = None,
 ) -> list[uuid.UUID]:
     """Write Observation rows linked to a SourceSnapshot."""
     now = datetime.now(UTC)
@@ -175,6 +176,7 @@ async def _write_observations(
         observation = Observation(
             snapshot_id=snapshot.id,
             subject_id=subject_id,
+            opportunity_id=opportunity_id,
             predicate=str(obs.get("predicate", "")),
             object_value=str(obs.get("object_value", "")),
             observed_at=observed_at,
@@ -836,7 +838,11 @@ async def research_candidate_job(
                 )
                 snapshot = await _write_snapshot(session, collected)
                 ids = await _write_observations(
-                    session, snapshot, collected.observations, person.id
+                    session,
+                    snapshot,
+                    collected.observations,
+                    person.id,
+                    opportunity.id,
                 )
                 evidence_ids.extend(str(item) for item in ids)
 
@@ -861,13 +867,18 @@ async def research_candidate_job(
                 )
                 summary_snapshot = await _write_snapshot(session, summary_collected)
                 summary_ids = await _write_observations(
-                    session, summary_snapshot, summary_collected.observations, person.id
+                    session,
+                    summary_snapshot,
+                    summary_collected.observations,
+                    person.id,
+                    opportunity.id,
                 )
                 evidence_ids.extend(str(item) for item in summary_ids)
                 session.add(
                     Claim(
                         observation_ids=evidence_ids,
                         subject_id=person.id,
+                        opportunity_id=opportunity.id,
                         predicate=f"research_{axis}_summary",
                         object_value=answer,
                         status="tavily_synthesized",

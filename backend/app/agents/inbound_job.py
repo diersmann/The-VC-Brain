@@ -64,6 +64,7 @@ async def process_inbound_pitch_job(
             Observation(
                 snapshot_id=snapshot.id,
                 subject_id=uuid.UUID(person_id),
+                opportunity_id=uuid.UUID(opportunity_id),
                 predicate="pitch_deck_text",
                 object_value=text_content[:50000], # truncate to 50k chars
                 observed_at=now,
@@ -77,6 +78,7 @@ async def process_inbound_pitch_job(
             Observation(
                 snapshot_id=snapshot.id,
                 subject_id=uuid.UUID(person_id),
+                opportunity_id=uuid.UUID(opportunity_id),
                 predicate="company_name",
                 object_value=company_name,
                 observed_at=now,

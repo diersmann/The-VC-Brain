@@ -47,20 +47,23 @@ async def reconcile_observations(
     if not observations:
         return 0
 
-    # Group by predicate
-    by_predicate: dict[str, list[Observation]] = {}
+    # Group by predicate and opportunity. Evidence without an opportunity is
+    # kept in its own explicit provenance gap and cannot cross-contaminate an
+    # opportunity-scoped claim.
+    by_predicate: dict[tuple[str, uuid.UUID | None], list[Observation]] = {}
     for obs in observations:
-        by_predicate.setdefault(obs.predicate, []).append(obs)
+        by_predicate.setdefault((obs.predicate, obs.opportunity_id), []).append(obs)
 
     claims_created = 0
 
-    for predicate, group in by_predicate.items():
+    for (predicate, opportunity_id), group in by_predicate.items():
         if len(group) == 1:
             # Single observation → unverified claim
             obs = group[0]
             claim = Claim(
                 observation_ids=[str(obs.id)],
                 subject_id=person_id,
+                opportunity_id=opportunity_id,
                 predicate=predicate,
                 object_value=obs.object_value,
                 status="unverified",
@@ -79,6 +82,7 @@ async def reconcile_observations(
                 claim = Claim(
                     observation_ids=[str(o.id) for o in group],
                     subject_id=person_id,
+                    opportunity_id=opportunity_id,
                     predicate=predicate,
                     object_value=strongest.object_value,
                     status="supported",
@@ -99,6 +103,7 @@ async def reconcile_observations(
                     select(Claim).where(
                         Claim.subject_id == person_id,
                         Claim.predicate == predicate,
+                        Claim.opportunity_id == opportunity_id,
                     ).order_by(Claim.created_at.desc()).limit(1)
                 )
                 existing = existing_result.scalar_one_or_none()
@@ -106,6 +111,7 @@ async def reconcile_observations(
                 claim = Claim(
                     observation_ids=[str(winner.id)],
                     subject_id=person_id,
+                    opportunity_id=opportunity_id,
                     predicate=predicate,
                     object_value=winner.object_value,
                     status="contradicted",
@@ -121,6 +127,7 @@ async def reconcile_observations(
                     counter_claim = Claim(
                         observation_ids=[str(loser.id)],
                         subject_id=person_id,
+                        opportunity_id=opportunity_id,
                         predicate=predicate,
                         object_value=loser.object_value,
                         status="contradicted",

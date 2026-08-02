@@ -51,8 +51,8 @@ Core entities are:
 | Organization | Company, institution, accelerator, or fund | Stable ID, names, type, locations |
 | Opportunity | A company and idea evaluated at a point in time | Company, founders, source kind, lifecycle state, thesis version |
 | SourceSnapshot | Immutable copy or reference to collected material | URI, source type, content hash, collected time, license/access metadata |
-| Observation | Extracted source statement before reconciliation | Subject, predicate, object/value, observed time, extractor version, snapshot |
-| Claim | Reconciled assertion used by scoring and memos | Observation references, status, confidence, valid time, supersession link |
+| Observation | Extracted source statement before reconciliation | Subject, opportunity when known, predicate, object/value, observed time, extractor version, snapshot |
+| Claim | Reconciled assertion used by scoring and memos | Subject, opportunity when known, observation references, status, confidence, valid time, supersession link |
 | Relationship | Typed graph edge | Endpoints, relationship type, evidence, confidence, observed/valid time |
 | ScoreSnapshot | Reproducible score at a point in time | Person-scoped Founder Score/sourcing/thesis or opportunity-scoped axis snapshot, rubric/model version, components, confidence interval, evidence IDs |
 | Assessment | Per-opportunity Founder, Market, or Idea-vs-Market result | Exactly three canonical axes, rating, trend, confidence, evidence and counter-evidence |
@@ -352,7 +352,7 @@ For an MVP, use three specialist agents, one critic, and one deterministic aggre
 
 ## Investment Memo and Decision Contracts
 
-The memo is generated from accepted claims and assessment snapshots, not directly from raw model prose. Every factual sentence links to one or more claim IDs and exposes its Trust Score. Contradictions and unavailable information appear inline rather than being silently omitted or guessed.
+The memo is generated from accepted claims and assessment snapshots, not directly from raw model prose. For the current contract, accepted claims are supported or explicitly synthesized claims that are not superseded; every referenced observation must resolve to the same person and opportunity. Each memo persists the exact claim IDs, assessment IDs, evidence IDs, and pinned thesis version used for generation, so later collection or thesis changes cannot silently change its input package. Every factual sentence links to one or more claim IDs and exposes its Trust Score. Contradictions and unavailable information appear inline rather than being silently omitted or guessed.
 
 Required memo sections are:
 

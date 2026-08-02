@@ -290,6 +290,12 @@ class Observation(TimestampMixin, Base):
     subject_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
+    opportunity_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("opportunities.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     predicate: Mapped[str] = mapped_column(String(128), nullable=False)
     object_value: Mapped[str] = mapped_column(Text, nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -312,6 +318,12 @@ class Claim(TimestampMixin, Base):
     observation_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     subject_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
+    )
+    opportunity_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("opportunities.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
     )
     predicate: Mapped[str] = mapped_column(String(128), nullable=False)
     object_value: Mapped[str] = mapped_column(Text, nullable=False)
@@ -485,6 +497,8 @@ class InvestmentMemo(TimestampMixin, Base):
     )
     thesis_version: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    claim_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    assessment_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     sections: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     model_version: Mapped[str] = mapped_column(String(64), nullable=False)

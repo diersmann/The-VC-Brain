@@ -76,6 +76,8 @@ async def deduplicate_claims(
                 continue
             if claim_b.predicate != claim_a.predicate:
                 continue
+            if claim_b.opportunity_id != claim_a.opportunity_id:
+                continue
 
             emb_b = claim_embeddings.get(claim_b.id)
             if not emb_b:
