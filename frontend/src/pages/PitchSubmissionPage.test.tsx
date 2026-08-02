@@ -31,13 +31,16 @@ describe("PitchSubmissionPage", () => {
     });
 
     render(<PitchSubmissionPage />);
-    fireEvent.input(screen.getByPlaceholderText("Founder Name"), { target: { value: "Alice Example" } });
-    fireEvent.input(screen.getByPlaceholderText("Email Address"), { target: { value: "alice@example.com" } });
-    fireEvent.input(screen.getByPlaceholderText("Company Name"), { target: { value: "Example AI" } });
+    expect(screen.getByLabelText(/Founder name/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Email address/)).toBeInTheDocument();
+    expect(screen.getByText(/used only for investment review/i)).toBeInTheDocument();
+    fireEvent.input(screen.getByPlaceholderText("Your full name"), { target: { value: "Alice Example" } });
+    fireEvent.input(screen.getByPlaceholderText("you@company.com"), { target: { value: "alice@example.com" } });
+    fireEvent.input(screen.getByPlaceholderText("Your company or project"), { target: { value: "Example AI" } });
     chooseDeck();
-    fireEvent.submit(screen.getByRole("button", { name: "Submit Pitch" }).closest("form")!);
+    fireEvent.submit(screen.getByRole("button", { name: "Submit application" }).closest("form")!);
 
-    expect(await screen.findByText("Pitch Received")).toBeInTheDocument();
+    expect(await screen.findByText("Application received")).toBeInTheDocument();
     expect(screen.getByTestId("submission-id")).toHaveTextContent("opportunity-1");
   });
 
@@ -45,15 +48,15 @@ describe("PitchSubmissionPage", () => {
     mockedSubmitPitch.mockRejectedValue(new Error("network failure"));
 
     render(<PitchSubmissionPage />);
-    fireEvent.input(screen.getByPlaceholderText("Founder Name"), { target: { value: "Alice Example" } });
-    fireEvent.input(screen.getByPlaceholderText("Email Address"), { target: { value: "alice@example.com" } });
-    fireEvent.input(screen.getByPlaceholderText("Company Name"), { target: { value: "Example AI" } });
+    fireEvent.input(screen.getByPlaceholderText("Your full name"), { target: { value: "Alice Example" } });
+    fireEvent.input(screen.getByPlaceholderText("you@company.com"), { target: { value: "alice@example.com" } });
+    fireEvent.input(screen.getByPlaceholderText("Your company or project"), { target: { value: "Example AI" } });
     chooseDeck();
-    fireEvent.submit(screen.getByRole("button", { name: "Submit Pitch" }).closest("form")!);
+    fireEvent.submit(screen.getByRole("button", { name: "Submit application" }).closest("form")!);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("could not submit");
-    expect(screen.queryByText("Pitch Received")).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByPlaceholderText("Company Name")).toHaveValue("Example AI"));
+    expect(screen.queryByText("Application received")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByPlaceholderText("Your company or project")).toHaveValue("Example AI"));
   });
 
   it("resets all form fields and the deck when starting another application", async () => {
@@ -64,16 +67,19 @@ describe("PitchSubmissionPage", () => {
     });
 
     render(<PitchSubmissionPage />);
-    fireEvent.input(screen.getByPlaceholderText("Founder Name"), { target: { value: "Alice Example" } });
-    fireEvent.input(screen.getByPlaceholderText("Email Address"), { target: { value: "alice@example.com" } });
-    fireEvent.input(screen.getByPlaceholderText("Company Name"), { target: { value: "Example AI" } });
+    fireEvent.input(screen.getByPlaceholderText("Your full name"), { target: { value: "Alice Example" } });
+    fireEvent.input(screen.getByPlaceholderText("you@company.com"), { target: { value: "alice@example.com" } });
+    fireEvent.input(screen.getByPlaceholderText("Your company or project"), { target: { value: "Example AI" } });
     chooseDeck();
-    fireEvent.submit(screen.getByRole("button", { name: "Submit Pitch" }).closest("form")!);
+    fireEvent.submit(screen.getByRole("button", { name: "Submit application" }).closest("form")!);
 
     fireEvent.click(await screen.findByRole("button", { name: "Submit Another" }));
-    expect(screen.getByPlaceholderText("Founder Name")).toHaveValue("");
-    expect(screen.getByPlaceholderText("Email Address")).toHaveValue("");
-    expect(screen.getByPlaceholderText("Company Name")).toHaveValue("");
+    expect(screen.getByPlaceholderText("Your full name")).toHaveValue("");
+    expect(screen.getByPlaceholderText("you@company.com")).toHaveValue("");
+    expect(screen.getByPlaceholderText("Your company or project")).toHaveValue("");
     expect(screen.getByText("Upload Pitch Deck")).toBeInTheDocument();
+    const input = document.querySelector('input[type="file"]');
+    expect(input).toHaveProperty("files");
+    expect((input as HTMLInputElement).files).toHaveLength(0);
   });
 });
