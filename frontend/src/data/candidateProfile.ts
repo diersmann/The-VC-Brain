@@ -152,7 +152,9 @@ export function formatPredicate(value: string): string {
 
 export function formatDate(value: string | null): string {
   if (!value) return "Unknown date";
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return "Unknown date";
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(timestamp));
 }
 
 function observationValue(observations: CandidateObservation[], predicates: string[]): string | null {

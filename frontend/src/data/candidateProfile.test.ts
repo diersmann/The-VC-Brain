@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { buildFounderProfile } from "./candidateProfile";
+import { buildFounderProfile, formatDate } from "./candidateProfile";
 import type { CandidateDetail } from "../types/candidate";
 
 describe("buildFounderProfile", () => {
+  it("does not throw or invent a date for malformed timestamps", () => {
+    expect(formatDate("not-a-date")).toBe("Unknown date");
+    expect(formatDate(null)).toBe("Unknown date");
+  });
+
   it("keeps unassessed axes unknown instead of turning them into zero scores", () => {
     const candidate: CandidateDetail = {
       id: "candidate-1",

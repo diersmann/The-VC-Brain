@@ -10,6 +10,7 @@ import { InboundInboxPage } from "./pages/InboundInboxPage";
 import { InvestigatedPage } from "./pages/InvestigatedPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { PitchSubmissionPage } from "./pages/PitchSubmissionPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 
 export default function App() {
   return (
@@ -29,7 +30,7 @@ export default function App() {
           <Route path="memos" element={<PlaceholderPage label="Memos" />} />
           <Route path="thesis" element={<OnboardingPage />} />
           <Route path="settings" element={<PlaceholderPage label="Settings" />} />
-          <Route path="*" element={<PlaceholderPage label="Not Found" />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
