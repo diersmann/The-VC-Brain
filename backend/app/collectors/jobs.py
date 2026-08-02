@@ -30,7 +30,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collectors.avatars import fetch_and_store_avatar
-from app.collectors.base import Collected, Seed, canonical_json_bytes, classify_connector_failure
+from app.collectors.base import (
+    Collected,
+    Seed,
+    canonical_json_bytes,
+    classify_connector_failure,
+    validate_collected,
+)
 from app.collectors.priority import info_gain
 from app.collectors.priority import priority as compute_priority
 from app.collectors.queue import (
@@ -622,6 +628,7 @@ async def discover_job(
             # Light collect: get metadata
             try:
                 collected = await seed_connector.collect(seed, depth="light")
+                validate_collected(collected)
             except Exception as exc:
                 failure_kind, retryable = classify_connector_failure(exc)
                 logger.error(
@@ -739,6 +746,7 @@ async def collect_job(
 
         try:
             collected = await connector.collect(seed, depth=depth)  # type: ignore[arg-type]
+            validate_collected(collected)
         except Exception as exc:
             failure_kind, retryable = classify_connector_failure(exc)
             logger.error(
