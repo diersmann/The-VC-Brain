@@ -29,7 +29,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 ## P0 - Product truth, security, and data integrity
 
-- [ ] **VCB-001 - Remove the fake application path and keep one real submission flow.** Observed: App.tsx:19 exposes /apply; InboundPage.tsx:5-20 discards all form values, does not require a deck, and shows success for hard-coded Aperture AI. Done when /apply redirects to or shares the real /submit implementation, a failed request can never show success, and an integration test verifies the persisted opportunity ID and uploaded deck.
+- [x] **VCB-001 - Remove the fake application path and keep one real submission flow.** Observed: App.tsx:19 exposes /apply; InboundPage.tsx:5-20 discards all form values, does not require a deck, and shows success for hard-coded Aperture AI. Done when /apply redirects to or shares the real /submit implementation, a failed request can never show success, and an integration test verifies the persisted opportunity ID and uploaded deck.
 
 - [ ] **VCB-002 - Add authentication, fund/tenant scoping, and RBAC.** Observed: main.py:22-32 mounts all routers without auth; candidates.py:95-115 exposes email, handles, and consent; unauthenticated callers can decide, contact, collect, merge identities, and change the active thesis. Done when only health and a rate-limited public submission endpoint are anonymous, every internal route enforces role and tenant scope, and 401/403 coverage exists.
 

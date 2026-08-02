@@ -1,10 +1,9 @@
-import { BrowserRouter, Route, Routes } from "react-router";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { RootLayout } from "./components/layout/RootLayout";
 import { SourcingPage } from "./components/sourcing/SourcingPage";
 import { FounderProfilePage } from "./pages/FounderProfilePage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { HomePage } from "./pages/HomePage";
-import { InboundPage } from "./pages/InboundPage";
 import { DecisionQueuePage } from "./pages/DecisionQueuePage";
 import { DecisionDetailPage } from "./pages/DecisionDetailPage";
 import { InboundInboxPage } from "./pages/InboundInboxPage";
@@ -16,7 +15,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="apply" element={<InboundPage />} />
+        <Route path="apply" element={<Navigate to="/submit" replace />} />
         <Route path="submit" element={<PitchSubmissionPage />} />
         <Route element={<RootLayout />}>
           <Route index element={<HomePage />} />

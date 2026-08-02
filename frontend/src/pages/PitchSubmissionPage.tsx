@@ -1,29 +1,31 @@
-import { useState, useRef } from "react";
+import { useRef, useState } from "react";
 import { UploadCloud, CheckCircle, FileText, X, ArrowRight, Building2, UserCircle, Mail, Sparkles } from "lucide-react";
 import { submitPitch } from "../api/inbound";
 
 export function PitchSubmissionPage() {
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
+  const [submission, setSubmission] = useState<{ opportunityId: string } | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return;
-    
+
     setIsSubmitting(true);
+    setErrorMessage(null);
     
     const formElement = e.currentTarget as HTMLFormElement;
     const formData = new FormData(formElement);
     formData.append("file", file);
-    
+
     try {
-      await submitPitch(formData);
-      setIsSuccess(true);
+      const response = await submitPitch(formData);
+      setSubmission({ opportunityId: response.opportunity_id });
     } catch (error) {
       console.error("Failed to submit pitch", error);
-      alert("There was an error submitting your pitch. Please try again.");
+      setErrorMessage("We could not submit your application. Your information is still here; please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -40,7 +42,15 @@ export function PitchSubmissionPage() {
     }
   };
 
-  if (isSuccess) {
+  const resetForm = () => {
+    setSubmission(null);
+    setErrorMessage(null);
+    setFile(null);
+    fileInputRef.current?.form?.reset();
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  if (submission) {
     return (
       <div className="min-h-screen bg-neutral-950 text-white flex items-center justify-center p-6 font-sans relative overflow-hidden">
         {/* Decorative background blobs */}
@@ -55,8 +65,11 @@ export function PitchSubmissionPage() {
           <p className="text-neutral-400 mb-8 leading-relaxed">
             Thank you for sharing your vision with us. Our investment team will review your deck and get back to you shortly.
           </p>
+          <p className="text-sm text-neutral-500" data-testid="submission-id">
+            Application ID: <span className="font-mono text-neutral-300">{submission.opportunityId}</span>
+          </p>
           <button 
-            onClick={() => setIsSuccess(false)}
+            onClick={resetForm}
             className="w-full py-3.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition-colors border border-white/5 cursor-pointer"
           >
             Submit Another
@@ -113,6 +126,11 @@ export function PitchSubmissionPage() {
           <div className="absolute inset-0 rounded-3xl border border-white/5 pointer-events-none mix-blend-overlay" />
           
           <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
+            {errorMessage && (
+              <div role="alert" className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {errorMessage}
+              </div>
+            )}
             <div className="space-y-4">
               {/* Founder Name */}
               <div className="relative group">

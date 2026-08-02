@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import structlog
 from arq import create_pool
-from arq.connections import RedisSettings
+from arq.connections import ArqRedis, RedisSettings
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,7 @@ from app.storage import put_snapshot
 router = APIRouter(prefix="/inbound", tags=["inbound"])
 logger = structlog.get_logger(__name__)
 
-async def _get_redis():
+async def _get_redis() -> ArqRedis:
     settings = get_settings()
     return await create_pool(RedisSettings.from_dsn(settings.redis_url))
 
@@ -27,7 +27,7 @@ async def submit_pitch(
     company_name: str = Form(...),
     file: UploadFile = File(...),  # noqa: B008
     db: AsyncSession = Depends(get_session)  # noqa: B008
-):
+) -> dict[str, str]:
     logger.info("inbound_pitch_received", email=founder_email, company=company_name)
     
     # 1. Read file and save to MinIO
