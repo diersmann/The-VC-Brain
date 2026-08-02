@@ -271,6 +271,27 @@ class JobRun(TimestampMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class CandidateFeedback(TimestampMixin, Base):
+    """Append-only analyst feedback kept separate from investment outcomes."""
+
+    __tablename__ = "candidate_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("persons.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    action: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    feedback_metadata: Mapped[dict[str, object] | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class OutreachMessage(TimestampMixin, Base):
     """Human-reviewed outreach message and provider delivery state."""
 

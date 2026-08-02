@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { formatPredicate } from "../../data/candidateProfile";
+import { recordCandidateFeedback } from "../../api/candidates";
 import type { Candidate } from "../../types/candidate";
 import { CandidateAvatar } from "../common/CandidateAvatar";
 
@@ -29,6 +30,9 @@ const percentage = (value: number | null | undefined) =>
 
 export function CandidateCard({ candidate, onViewFounder, onOutreach }: Props) {
   const [dismissed, setDismissed] = useState(false);
+  const [dismissReason, setDismissReason] = useState("");
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackState, setFeedbackState] = useState<"idle" | "saving" | "error">("idle");
   if (dismissed) return null;
 
   const profile = candidate.profile;
@@ -78,7 +82,7 @@ export function CandidateCard({ candidate, onViewFounder, onOutreach }: Props) {
           aria-label="Dismiss"
           onClick={(event) => {
             event.stopPropagation();
-            setDismissed(true);
+            setFeedbackOpen(true);
           }}
           className="rounded-md p-1.5 text-muted-2 hover:bg-surface-2"
         >
@@ -154,7 +158,7 @@ export function CandidateCard({ candidate, onViewFounder, onOutreach }: Props) {
         <button
           onClick={(event) => {
             event.stopPropagation();
-            setDismissed(true);
+            setFeedbackOpen(true);
           }}
           className="text-xs font-semibold text-muted hover:text-danger"
         >
@@ -164,6 +168,40 @@ export function CandidateCard({ candidate, onViewFounder, onOutreach }: Props) {
           {"View Founder"}<ArrowUpRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
         </button>
       </div>
+      {feedbackOpen && (
+        <div className="mt-3 rounded-md border border-line bg-white p-3" onClick={(event) => event.stopPropagation()}>
+          <label htmlFor={`dismiss-reason-${candidate.id}`} className="text-xs font-semibold text-ink-2">
+            Why dismiss this candidate?
+          </label>
+          <textarea
+            id={`dismiss-reason-${candidate.id}`}
+            value={dismissReason}
+            onChange={(event) => setDismissReason(event.target.value)}
+            className="mt-2 min-h-16 w-full rounded-md border border-line bg-surface-2 p-2 text-xs outline-none focus:border-accent-muted"
+            placeholder="Record a review reason"
+          />
+          {feedbackState === "error" && <p className="mt-1 text-xs font-semibold text-danger">Unable to save feedback. Try again.</p>}
+          <div className="mt-2 flex justify-end gap-2">
+            <button type="button" onClick={() => setFeedbackOpen(false)} className="rounded-md px-3 py-1.5 text-xs font-semibold text-muted">Cancel</button>
+            <button
+              type="button"
+              disabled={feedbackState === "saving" || dismissReason.trim().length < 3}
+              onClick={async () => {
+                setFeedbackState("saving");
+                try {
+                  await recordCandidateFeedback(candidate.id, "dismiss", dismissReason.trim());
+                  setDismissed(true);
+                } catch {
+                  setFeedbackState("error");
+                }
+              }}
+              className="rounded-md bg-accent px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
+            >
+              {feedbackState === "saving" ? "Saving…" : "Save dismissal"}
+            </button>
+          </div>
+        </div>
+      )}
     </article>
   );
 }

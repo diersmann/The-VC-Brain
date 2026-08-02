@@ -48,6 +48,21 @@ export async function contactCandidate(candidateId: string): Promise<void> {
   if (!response.ok) throw new ApiError(`Contact request failed with status ${response.status}`, response.status);
 }
 
+export type CandidateFeedbackAction = "dismiss" | "save" | "defer" | "assign";
+
+export async function recordCandidateFeedback(
+  candidateId: string,
+  action: CandidateFeedbackAction,
+  reason: string,
+): Promise<void> {
+  const response = await fetch(`/api/v1/candidates/${candidateId}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, reason }),
+  });
+  if (!response.ok) throw new Error(`Feedback request failed with status ${response.status}`);
+}
+
 export async function fetchCandidate(candidateId: string, signal?: AbortSignal): Promise<CandidateDetail> {
   const response = await fetch(`/api/v1/candidates/${candidateId}`, { signal });
 

@@ -23,6 +23,7 @@ from app.config import get_settings
 from app.db import get_session
 from app.db.models import (
     Assessment,
+    CandidateFeedback,
     Claim,
     DecisionEvent,
     InvestmentMemo,
@@ -220,6 +221,23 @@ class CandidateDecisionResponse(BaseModel):
     new_state: str
     action: DecisionAction
     reason: str
+    created_at: datetime
+
+
+FeedbackAction = Literal["dismiss", "save", "defer", "assign"]
+
+
+class CandidateFeedbackRequest(BaseModel):
+    action: FeedbackAction
+    reason: str = Field(min_length=3, max_length=2000)
+
+
+class CandidateFeedbackResponse(BaseModel):
+    id: uuid.UUID
+    person_id: uuid.UUID
+    action: FeedbackAction
+    reason: str
+    actor: str
     created_at: datetime
 
 
@@ -895,6 +913,34 @@ async def record_candidate_decision(
         action=payload.action,
         reason=reason,
         created_at=event.created_at,
+    )
+
+
+@router.post("/{candidate_id}/feedback", response_model=CandidateFeedbackResponse)
+async def record_candidate_feedback(
+    candidate_id: uuid.UUID,
+    payload: CandidateFeedbackRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CandidateFeedbackResponse:
+    """Persist analyst workflow feedback separately from investment outcomes."""
+    person = await session.get(Person, candidate_id)
+    if person is None or not person.canonical:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    feedback = CandidateFeedback(
+        person_id=person.id,
+        action=payload.action,
+        reason=payload.reason.strip(),
+        actor="vc-ui:unattributed",
+    )
+    session.add(feedback)
+    await session.commit()
+    return CandidateFeedbackResponse(
+        id=feedback.id,
+        person_id=feedback.person_id,
+        action=payload.action,
+        reason=feedback.reason,
+        actor=feedback.actor,
+        created_at=feedback.created_at,
     )
 
 

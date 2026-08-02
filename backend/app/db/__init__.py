@@ -1,6 +1,7 @@
 from app.db.base import Base
 from app.db.models import (  # registers models on Base.metadata
     Assessment,
+    CandidateFeedback,
     Claim,
     DecisionEvent,
     InboundSubmission,
@@ -24,6 +25,7 @@ from app.db.session import get_engine, get_session, session_context
 __all__ = [
     "Assessment",
     "Base",
+    "CandidateFeedback",
     "Claim",
     "DecisionEvent",
     "InboundSubmission",

@@ -149,7 +149,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-059 - Preserve channel attribution and measure conversion quality.** Missing: first-touch, contributing source/query, outreach, application, and decision conversion are not connected. Done when multi-touch events support funnel latency, evidence yield, false positives, cost, and conversion by channel without treating correlation as merit.
 
-- [ ] **VCB-060 - Persist analyst feedback instead of local dismissals.** Observed: CandidateCard.tsx:30-32 and 77-87 hides a card only in component state. Done when dismiss/save/assign/defer include structured reason, audit, undo, prior-feedback visibility, and are kept separate from investment outcome labels.
+- [blocked] **VCB-060 - Persist analyst feedback instead of local dismissals.** Observed: `CandidateCard.tsx` hid dismissed cards only in component state. **Partial completion:** dismissal now requires a structured reason, persists append-only `CandidateFeedback` with a separate actor/action audit, and hides the card only after the API succeeds. **Blocked:** save/assign/defer controls, undo/prior-feedback visibility, and authenticated actor identity remain to be integrated.
 
 ## P2 - Investor-grade UX, engineering quality, and production readiness
 
@@ -264,7 +264,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - Backend pytest: 164 tests passed with one Starlette/httpx deprecation warning.
 - Backend Ruff: passed after formatting two pre-existing E501 violations in migrations/versions/e093be299381_add_discovery_config_to_thesis.py.
 - Backend mypy: passed with no issues in 63 source files.
-- Alembic: one head, revision 016; local Docker database migrated successfully from e093be299381 through 016.
+- Alembic: one head, revision 018; local Docker database migrated successfully from e093be299381 through 018.
 - git diff --check: passed.
 - Docker Compose `make check`: passed (Ruff, ESLint, mypy, TypeScript, backend pytest, and frontend Vitest).
 - Live browser QA: reproduced false-zero outage state, silent failed submission, and missing mobile navigation. Temporary evidence was kept outside the repository.
@@ -283,6 +283,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-052 focused and full backend validation passed with 163 tests. Dispatcher enqueue failures now requeue work with preserved priority and refund Tavily reservations; crash-safe leases and atomic orchestration remain blocked scope.
 - 2026-08-02: VCB-053 focused and full backend validation passed with 164 tests. Tavily budget state now survives worker restarts; actual usage reconciliation remains blocked scope.
 - 2026-08-02: VCB-054 focused and full backend validation passed with 164 tests. Investigation gating now requires opportunity-scoped axes instead of any historical founder score; full per-run output identity remains blocked scope.
+- 2026-08-02: VCB-060 backend/frontend validation passed with 164 backend and 34 frontend tests; migration 018 adds append-only candidate feedback and dismissal now persists a required reason before hiding the card. Save/assign/defer/undo and authenticated actor identity remain blocked scope.
 
 ## First practical milestone
 
