@@ -1,4 +1,5 @@
 import type { Candidate } from "../types/candidate";
+import { DECISION_RUBRIC } from "./rubric";
 
 export type DecisionReadiness = "ready" | "investigate" | "evidence-gap";
 
@@ -38,11 +39,11 @@ export function hasDecisionScore(candidate: Candidate): boolean {
 }
 
 export function isThesisAligned(candidate: Candidate): boolean {
-  return (candidateThesisPercent(candidate) ?? -1) >= 75;
+  return (candidateThesisPercent(candidate) ?? -1) >= DECISION_RUBRIC.thesisAlignment;
 }
 
 export function isEvidenceReady(candidate: Candidate): boolean {
-  return (candidateEvidencePercent(candidate) ?? -1) >= 60;
+  return (candidateEvidencePercent(candidate) ?? -1) >= DECISION_RUBRIC.evidenceConfidence;
 }
 
 export function decisionReadiness(candidate: Candidate): DecisionReadiness {

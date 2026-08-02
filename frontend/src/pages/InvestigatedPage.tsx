@@ -6,6 +6,7 @@ import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { candidateEvidencePercent, candidateThesisPercent, displayScore, ratioPercent } from "../data/portfolioMetrics";
+import { DECISION_RUBRIC } from "../data/rubric";
 
 export function InvestigatedPage() {
   const navigate = useNavigate();
@@ -24,7 +25,7 @@ export function InvestigatedPage() {
     }
   };
 
-  const strongThesis = data.filter((item) => (candidateThesisPercent(item) ?? -1) >= 70).length;
+  const strongThesis = data.filter((item) => (candidateThesisPercent(item) ?? -1) >= DECISION_RUBRIC.thesisAlignment).length;
   const evidenceReady = data.filter((item) => (candidateEvidencePercent(item) ?? -1) >= 60).length;
 
   return (
@@ -37,8 +38,8 @@ export function InvestigatedPage() {
 
       {dataAvailable && !isLoading && <div className="mb-5 grid gap-3 sm:grid-cols-3">
         <KeyMetricCard icon={SearchCheck} label="Investigated" value={data.length} detail="Completed research and scoring" progress={100} progressLabel={`${data.length} profiles`} tone="blue" />
-        <KeyMetricCard icon={Target} label="Strong thesis fit" value={strongThesis} detail="At least 70% thesis alignment" progress={ratioPercent(strongThesis, data.length)} progressLabel={`${strongThesis} of ${data.length}`} tone="purple" />
-        <KeyMetricCard icon={ShieldCheck} label="Evidence ready" value={evidenceReady} detail="At least 60% evidence confidence" progress={ratioPercent(evidenceReady, data.length)} progressLabel={`${evidenceReady} of ${data.length}`} tone="green" />
+        <KeyMetricCard icon={Target} label="Thesis aligned" value={strongThesis} detail={`At least ${DECISION_RUBRIC.thesisAlignment}% thesis alignment`} progress={ratioPercent(strongThesis, data.length)} progressLabel={`${strongThesis} of ${data.length}`} tone="purple" />
+        <KeyMetricCard icon={ShieldCheck} label="Evidence ready" value={evidenceReady} detail={`At least ${DECISION_RUBRIC.evidenceConfidence}% evidence confidence`} progress={ratioPercent(evidenceReady, data.length)} progressLabel={`${evidenceReady} of ${data.length}`} tone="green" />
       </div>}
 
       {isLoading && !dataAvailable && <ApiStateNotice loading label="investigated candidates" />}

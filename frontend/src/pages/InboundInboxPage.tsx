@@ -7,6 +7,7 @@ import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { formatDate, formatPredicate, percentage } from "../data/candidateProfile";
 import { hasDecisionScore, isThesisAligned, ratioPercent } from "../data/portfolioMetrics";
 import type { Candidate } from "../types/candidate";
+import { DECISION_RUBRIC } from "../data/rubric";
 
 export function InboundInboxPage() {
   const navigate = useNavigate();
@@ -36,7 +37,7 @@ export function InboundInboxPage() {
 
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         <KeyMetricCard icon={Inbox} label="Applications" value={inboundRecords.length} detail="Founder-submitted opportunities in the live inbox" progress={ratioPercent(inboundRecords.length, data.length)} progressLabel={`${inboundRecords.length} of ${data.length} pipeline records`} tone="purple" />
-        <KeyMetricCard icon={Target} label="Thesis aligned" value={thesisAligned} detail="Applications clearing the 75% strategy-fit threshold" progress={ratioPercent(thesisAligned, inboundRecords.length)} progressLabel={`${thesisAligned} of ${inboundRecords.length} applications`} tone="green" />
+        <KeyMetricCard icon={Target} label="Thesis aligned" value={thesisAligned} detail={`Applications clearing the ${DECISION_RUBRIC.thesisAlignment}% strategy-fit threshold`} progress={ratioPercent(thesisAligned, inboundRecords.length)} progressLabel={`${thesisAligned} of ${inboundRecords.length} applications`} tone="green" />
         <KeyMetricCard icon={AlertTriangle} label="Needs assessment" value={needsAttention} detail="Applications without a usable decision score" progress={ratioPercent(needsAttention, inboundRecords.length)} progressLabel={`${needsAttention} of ${inboundRecords.length} applications`} tone="amber" />
       </div>
 

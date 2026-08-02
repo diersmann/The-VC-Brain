@@ -5,6 +5,7 @@ import { triggerDiscovery, useCandidates } from "../../api/candidates";
 import { KeyMetricCard } from "../common/KeyMetricCard";
 import { isEvidenceReady, isThesisAligned, ratioPercent } from "../../data/portfolioMetrics";
 import { hasHighMultiAxisSignal } from "../../data/sourcingSignals";
+import { DECISION_RUBRIC } from "../../data/rubric";
 import type { Candidate } from "../../types/candidate";
 import { CandidateCard } from "./CandidateCard";
 import { OutreachComposer } from "./OutreachComposer";
@@ -31,7 +32,7 @@ export function SourcingPage() {
     <div className="mb-6 grid gap-3 sm:grid-cols-3">
       <KeyMetricCard icon={Radar} label="High multi-axis" value={highSignal} detail="Founder, Market and Idea × Market all score ≥67%" progress={ratioPercent(highSignal, candidates.length)} progressLabel={`${highSignal} of ${candidates.length} verified profiles`} tone="green" />
       <KeyMetricCard icon={Target} label="Thesis aligned" value={thesisAligned} detail="Candidates clearing the active thesis threshold" progress={ratioPercent(thesisAligned, candidates.length)} progressLabel={`${thesisAligned} of ${candidates.length} verified profiles`} tone="purple" />
-      <KeyMetricCard icon={ShieldCheck} label="Evidence ready" value={evidenceReady} detail="Profiles with at least 60% evidence confidence" progress={ratioPercent(evidenceReady, candidates.length)} progressLabel={`${evidenceReady} of ${candidates.length} verified profiles`} tone="blue" />
+      <KeyMetricCard icon={ShieldCheck} label="Evidence ready" value={evidenceReady} detail={`Profiles with at least ${DECISION_RUBRIC.evidenceConfidence}% evidence confidence`} progress={ratioPercent(evidenceReady, candidates.length)} progressLabel={`${evidenceReady} of ${candidates.length} verified profiles`} tone="blue" />
     </div>
 
     <section className="panel mb-6 rounded-lg p-5">

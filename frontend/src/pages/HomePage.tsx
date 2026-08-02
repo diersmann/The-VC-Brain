@@ -8,6 +8,7 @@ import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { InvestmentWorkflowTree } from "../components/overview/InvestmentWorkflowTree";
 import { formatDate, formatPredicate, percentage } from "../data/candidateProfile";
 import { candidateThesisPercent, decisionReadiness, hasDecisionScore, median, ratioPercent } from "../data/portfolioMetrics";
+import { DECISION_RUBRIC } from "../data/rubric";
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -62,7 +63,7 @@ export function HomePage() {
       />}
 
       {candidateDashboardReady && <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <KeyMetricCard icon={ShieldCheck} label="Review ready" value={reviewReady.length} detail="Thesis fit ≥75% with sufficient evidence" progress={ratioPercent(reviewReady.length, data.length)} progressLabel={`${reviewReady.length} of ${data.length} opportunities`} tone="green" />
+        <KeyMetricCard icon={ShieldCheck} label="Review ready" value={reviewReady.length} detail={`Thesis fit ≥${DECISION_RUBRIC.thesisAlignment}% and evidence ≥${DECISION_RUBRIC.evidenceConfidence}%`} progress={ratioPercent(reviewReady.length, data.length)} progressLabel={`${reviewReady.length} of ${data.length} opportunities`} tone="green" />
         <KeyMetricCard icon={Target} label="Median thesis fit" value={medianThesis} suffix="%" detail="Central strategy-fit score across assessed deals" progress={medianThesis} progressLabel={`${measuredThesisScores.length} opportunities measured`} tone="purple" />
         <KeyMetricCard icon={CircleGauge} label="Scoring coverage" value={scoringCoverage} suffix="%" detail="Share of the pipeline with a decision signal" progress={scoringCoverage} progressLabel={`${scored.length} of ${data.length} profiles`} tone="blue" />
       </div>}

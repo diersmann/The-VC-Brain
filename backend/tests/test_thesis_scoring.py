@@ -5,7 +5,9 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.api.routes.theses import ThesisResponse
 from app.db.models import InvestmentThesis, Observation
+from app.scoring.rubric import RUBRIC_THRESHOLDS, RUBRIC_VERSION, rubric_config
 from app.scoring.thesis import DEFAULT_WEIGHTS, score_thesis_alignment
 
 NOW = datetime.now(UTC)
@@ -26,6 +28,8 @@ def _thesis() -> InvestmentThesis:
         ownership_target_pct=10,
         risk_appetite="balanced",
         scoring_weights=DEFAULT_WEIGHTS,
+        discovery_queries=[],
+        source_freshness_days={},
     )
 
 
@@ -82,3 +86,17 @@ def test_missing_evidence_is_neutral_with_low_confidence() -> None:
     assert result.hard_eligible is True
     assert result.failed == []
     assert result.unknown == ["Stage", "Sector", "Geography", "Check size"]
+
+
+def test_decision_rubric_is_versioned_and_returns_a_copy() -> None:
+    config = rubric_config()
+
+    assert config == {"version": RUBRIC_VERSION, "thresholds": RUBRIC_THRESHOLDS}
+    assert config["thresholds"] is not RUBRIC_THRESHOLDS
+
+
+def test_thesis_response_exposes_rubric_contract() -> None:
+    response = ThesisResponse.model_validate(_thesis())
+
+    assert response.rubric_version == RUBRIC_VERSION
+    assert response.rubric_thresholds == RUBRIC_THRESHOLDS
