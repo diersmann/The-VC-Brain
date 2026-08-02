@@ -215,7 +215,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-091 - Add production-grade health, telemetry, and PII-safe logs.** Observed: readiness checks only PostgreSQL; collection health means registered; logs include founder email; no end-to-end correlation. Done when migration/DB/Redis/MinIO/worker heartbeat are checked appropriately and request-job-source-model IDs, queue latency, cost, SLA, connector health, and redacted errors feed dashboards/alerts.
 
-- [ ] **VCB-092 - Close shared clients cleanly.** Observed: storage.close_client exists but neither API nor worker lifecycle calls it; inbound creates Redis pools per request. Done when DB, Redis, HTTP, AI, and object-storage clients have bounded initialization/shutdown and leak tests cover repeated startup.
+- [blocked] **VCB-092 - Close shared clients cleanly.** Observed: `storage.close_client` existed but neither API nor worker lifecycle called it; Redis queue connections are currently created per request and closed in `finally`, while AI clients are created per invocation without a shared lifecycle. **Partial completion:** API and worker shutdown now close MinIO and database resources, with lifecycle regression tests; existing HTTP clients use context managers and request-scoped Redis clients close deterministically. **Blocked:** full completion requires shared async AI/Redis client ownership and repeated-startup leak tests across all worker and API paths.
 
 - [ ] **VCB-093 - Harden production images and network defaults.** Observed: backend image runs as root and copies broadly; Compose publishes DB/Redis/MinIO with development credentials and uses minio:latest. Done when non-root minimal pinned images, internal-only data ports, secrets/TLS/auth, read-only FS/capability drops, resource limits, and separate dev/prod profiles exist.
 
@@ -288,6 +288,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-069 frontend validation passed with 35 tests, lint, typecheck, and production build. Investigated now distinguishes null scores from measured zero; remaining profile/decision audit remains blocked scope.
 - 2026-08-02: VCB-089 migration/seed wiring passed Compose config validation and focused demo-fixture tests. The migration service is ordered before API/worker readiness, and `make seed-demo` is documented as opt-in synthetic data; clean-volume acceptance remains blocked to avoid destroying the existing local database volume.
 - 2026-08-02: VCB-090 configuration validation passed Compose config, six focused settings tests, live API startup, mypy, and full `make check` with 180 backend and 42 frontend tests. Backend settings now use `APP_*` consistently across `.env.example`, local settings, and the API/worker Compose environment; deployment secret injection and a full environment matrix remain blocked scope.
+- 2026-08-02: VCB-092 focused lifecycle cleanup tests passed for API and worker shutdown; full shared AI/Redis ownership remains explicitly blocked pending a client-lifecycle design.
 
 ## First practical milestone
 

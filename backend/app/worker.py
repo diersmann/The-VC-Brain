@@ -33,6 +33,7 @@ from app.collectors.queue import initialize_agent_budget, initialize_tavily_budg
 from app.config import get_settings
 from app.db.session import _get_session_factory, get_engine
 from app.processing.pipeline_job import process_candidate_job
+from app.storage import close_client
 
 logger = structlog.get_logger(__name__)
 
@@ -52,7 +53,8 @@ async def startup(ctx: dict[str, Any]) -> None:
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
-    """Arq shutdown hook — dispose DB engine."""
+    """Arq shutdown hook — close object storage and dispose DB engine."""
+    await close_client()
     engine = get_engine()
     await engine.dispose()
     logger.info("worker_shutdown")
