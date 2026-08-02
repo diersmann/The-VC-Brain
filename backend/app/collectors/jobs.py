@@ -63,6 +63,7 @@ from app.db.models import (
     ScoreSnapshot,
     SourceSnapshot,
 )
+from app.job_ledger import update_job
 from app.storage import put_snapshot
 
 logger = structlog.get_logger(__name__)
@@ -476,7 +477,9 @@ async def _compute_and_store_signal(
 # ---------------------------------------------------------------------------
 
 
-async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str, Any]:
+async def discover_job(
+    ctx: dict[str, Any], query: str, source: str, job_id: str | None = None
+) -> dict[str, Any]:
     """Run a connector's discover phase.
 
     Args:
@@ -496,7 +499,21 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
     page = await get_discovery_page(ctx["redis"], source, query)
     logger.info("discover_job_page", source=source, query=query, page=page)
 
-    seeds = await connector.discover(query, page=page)
+    try:
+        seeds = await connector.discover(query, page=page)
+    except Exception as exc:
+        if job_id:
+            async with _session_ctx(ctx) as status_session:
+                await update_job(
+                    status_session,
+                    job_id,
+                    status="failed",
+                    phase="discover",
+                    attempt=1,
+                    last_error=str(exc),
+                )
+                await status_session.commit()
+        raise
     logger.info("discover_job_seeds", source=source, seed_count=len(seeds))
 
     above_count = 0
@@ -506,6 +523,8 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
     threshold = settings.signal_threshold
 
     async with _session_ctx(ctx) as session:
+        if job_id:
+            await update_job(session, job_id, status="running", phase="collect", attempt=1)
         for seed in seeds:
             collection_source = _collection_source_for_seed(source, seed)
             if collection_source is None:
@@ -658,10 +677,24 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                 )
                 await queue_enqueue(ctx["redis"], task, p)
 
+        result = {
+            "query": query,
+            "source": source,
+            "seeds": len(seeds),
+            "above_threshold": above_count,
+        }
+        if job_id:
+            await update_job(
+                session,
+                job_id,
+                status="succeeded",
+                phase="complete",
+                result=result,
+            )
         await session.commit()
 
     logger.info("discover_job_completed", query=query, source=source, above=above_count)
-    return {"query": query, "source": source, "seeds": len(seeds), "above_threshold": above_count}
+    return result
 
 
 async def collect_job(
@@ -1209,6 +1242,7 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
             "discover_job",
             task.get("query", ""),
             task.get("source", ""),
+            task.get("job_id"),
         )
     elif job_type == "resolve_identities":
         await pool.enqueue_job("resolve_identities_job")

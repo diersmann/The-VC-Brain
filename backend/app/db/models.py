@@ -248,6 +248,29 @@ class OutboxEvent(TimestampMixin, Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+# ---------------------------------------------------------------------------
+# Durable job ledger
+# ---------------------------------------------------------------------------
+
+
+class JobRun(TimestampMixin, Base):
+    """Durable lifecycle record for an asynchronous worker job."""
+
+    __tablename__ = "job_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    job_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued", index=True)
+    phase: Mapped[str] = mapped_column(String(64), nullable=False, default="queued")
+    attempt: Mapped[int] = mapped_column(nullable=False, default=0)
+    progress: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(nullable=False, default=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class OutreachMessage(TimestampMixin, Base):
     """Human-reviewed outreach message and provider delivery state."""
 

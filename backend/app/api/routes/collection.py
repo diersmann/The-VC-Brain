@@ -18,7 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.collectors.queue import queue_depth
 from app.collectors.registry import all_connectors
 from app.db import get_session
-from app.db.models import Observation, Opportunity, OpportunityFounder, Person, ScoreSnapshot
+from app.db.models import (
+    JobRun,
+    Observation,
+    Opportunity,
+    OpportunityFounder,
+    Person,
+    ScoreSnapshot,
+)
+from app.job_ledger import create_job
 
 logger = structlog.get_logger(__name__)
 
@@ -38,6 +46,20 @@ class DiscoverRequest(BaseModel):
 class DiscoverResponse(BaseModel):
     job_id: str | None = None
     message: str
+
+
+class JobStatusResponse(BaseModel):
+    id: str
+    job_type: str
+    status: str
+    phase: str
+    attempt: int
+    progress: float
+    last_error: str | None = None
+    result: dict[str, object] | None = None
+    cancel_requested: bool
+    started_at: str | None = None
+    finished_at: str | None = None
 
 
 class HealthResponse(BaseModel):
@@ -137,6 +159,7 @@ async def get_redis() -> Any:
 async def trigger_discover(
     body: DiscoverRequest,
     redis: Annotated[Any, Depends(get_redis)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> DiscoverResponse:
     """Trigger a discovery job for a given source and query.
 
@@ -151,6 +174,9 @@ async def trigger_discover(
     except KeyError as err:
         raise HTTPException(status_code=400, detail=f"Unknown source: {body.source}") from err
 
+    job = await create_job(session, "discover")
+    await session.commit()
+
     # Enqueue as a discovery task
     from app.collectors.queue import enqueue as queue_enqueue
 
@@ -158,12 +184,37 @@ async def trigger_discover(
         "job_type": "discover",
         "query": body.query,
         "source": body.source,
+        "job_id": str(job.id),
     }
     await queue_enqueue(redis, task, priority=10.0)
 
     logger.info("discover_triggered", query=body.query, source=body.source)
     msg = f"Discovery enqueued for source={body.source} query={body.query}"
-    return DiscoverResponse(message=msg)
+    return DiscoverResponse(job_id=str(job.id), message=msg)
+
+
+@router.get("/jobs/{job_id}", response_model=JobStatusResponse)
+async def get_job_status(
+    job_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> JobStatusResponse:
+    """Return durable status for a queued or completed asynchronous job."""
+    job = await session.get(JobRun, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JobStatusResponse(
+        id=str(job.id),
+        job_type=job.job_type,
+        status=job.status,
+        phase=job.phase,
+        attempt=job.attempt,
+        progress=job.progress,
+        last_error=job.last_error,
+        result=job.result,
+        cancel_requested=job.cancel_requested,
+        started_at=job.started_at.isoformat() if job.started_at else None,
+        finished_at=job.finished_at.isoformat() if job.finished_at else None,
+    )
 
 
 @router.get("/health", response_model=HealthResponse)
