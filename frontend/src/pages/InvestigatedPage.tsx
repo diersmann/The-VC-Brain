@@ -5,7 +5,7 @@ import { contactCandidate, useCandidates } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
-import { candidateEvidencePercent, candidateThesisPercent, displayScore, ratioPercent } from "../data/portfolioMetrics";
+import { candidateEvidencePercent, candidateThesisPercent, displayScore, isEvidenceReady, isThesisAligned, ratioPercent } from "../data/portfolioMetrics";
 import { DECISION_RUBRIC } from "../data/rubric";
 
 export function InvestigatedPage() {
@@ -25,8 +25,8 @@ export function InvestigatedPage() {
     }
   };
 
-  const strongThesis = data.filter((item) => (candidateThesisPercent(item) ?? -1) >= DECISION_RUBRIC.thesisAlignment).length;
-  const evidenceReady = data.filter((item) => (candidateEvidencePercent(item) ?? -1) >= 60).length;
+  const strongThesis = data.filter(isThesisAligned).length;
+  const evidenceReady = data.filter(isEvidenceReady).length;
 
   return (
     <div className="mx-auto max-w-[1100px] pb-10">

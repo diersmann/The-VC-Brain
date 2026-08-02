@@ -199,7 +199,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-083 - Split oversized React modules by feature responsibility.** Observed: DecisionDetailPage is 594 lines, Onboarding 330, FounderProfile 299, CandidateCard 266, above the 150-line review limit. Done when page containers, query/mutation hooks, domain sections, and pure display components are cohesive, feature-local, and behavior-tested.
 
-- [ ] **VCB-084 - Centralize score, trend, metric, and status display logic.** Observed: similar formatting/fallback/threshold logic is duplicated across cards, profiles, decisions, visuals, and portfolioMetrics. Done when one typed view model owns scale, null semantics, status visuals, confidence, trend compatibility, and accessible explanations.
+- [blocked] **VCB-084 - Centralize score, trend, metric, and status display logic.** Observed: similar formatting/fallback/threshold logic is duplicated across cards, profiles, decisions, visuals, and portfolioMetrics. **Partial completion:** typed `displayMetrics` helpers now own ratio/percentage normalization, null-safe labels, profile/decision score visuals, and accessible normalized values; portfolio metrics, candidate profiles/cards, decision visuals, founder profiles, and investigated-page readiness all consume the shared logic/rubric. **Blocked:** full completion still requires a typed view model for trend/status/confidence explanations and an audit of the remaining decision-detail and metric components.
 
 - [blocked] **VCB-085 - Remove dead code, unused dependencies, and generated config drift.** Observed: unused UI/components and several declared packages; tracked `vite.config.js`/`.d.ts` diverged from `vite.config.ts`. **Partial completion:** removed the two generated Vite drift files so the TypeScript config is canonical. **Blocked:** dependency/export removal still needs a complete usage audit and CI drift/dependency gate; deleting packages based only on declaration-list inspection could break hidden/runtime paths.
 
@@ -293,6 +293,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-095 documentation review passed; README and architecture status now match the current repository, and the clean/demo/reset/troubleshooting/workflow paths are documented.
 - 2026-08-02: VCB-101 security workflow added and locally exercised: npm critical-level audit (two known high advisories reported), pip-audit (no known vulnerabilities), Gitleaks (no leaks), license inventory, and both production image builds passed. The workflow blocks critical dependency/image findings; governance and allowlist decisions remain blocked.
 - 2026-08-02: VCB-091 readiness tests passed for PostgreSQL/Redis/MinIO/worker-heartbeat success and failure paths; structured telemetry and dashboards remain explicitly blocked scope.
+- 2026-08-03: VCB-084 frontend display-metric consolidation passed focused tests (16 tests), ESLint, TypeScript, and production build; remaining trend/status/confidence view-model work and the residual component audit remain explicitly blocked scope.
 
 ## First practical milestone
 

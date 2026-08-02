@@ -31,6 +31,7 @@ import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { buildFounderProfile } from "../data/candidateProfile";
 import { candidateExternalLinks, safeHttpUrl, type CandidateLinkKind } from "../data/candidateLinks";
+import { displayScore } from "../data/displayMetrics";
 import type { FounderAssessment, FounderProfile } from "../types/profile";
 
 const axisDetails = {
@@ -145,8 +146,8 @@ export function FounderProfilePage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="eyebrow mb-2">Thesis alignment</div>
-              <h2 className="text-base font-bold">Why this opportunity received {Math.round(founder.thesis_match.score * 100)}%</h2>
-              <p className="supporting-text mt-1"><span className="numeric">{founder.thesis_match.version} · {Math.round(founder.thesis_match.confidence * 100)}%</span> evidence confidence · {founder.thesis_match.hard_eligible ? "Hard constraints passed" : "Hard constraint failed"}</p>
+              <h2 className="text-base font-bold">Why this opportunity received {displayScore(founder.thesis_match.score)}</h2>
+              <p className="supporting-text mt-1"><span className="numeric">{founder.thesis_match.version} · {displayScore(founder.thesis_match.confidence)}</span> evidence confidence · {founder.thesis_match.hard_eligible ? "Hard constraints passed" : "Hard constraint failed"}</p>
             </div>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">

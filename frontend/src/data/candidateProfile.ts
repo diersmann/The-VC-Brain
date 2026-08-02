@@ -1,5 +1,6 @@
 import type { CandidateDetail, CandidateObservation } from "../types/candidate";
 import type { FounderAssessment, FounderClaim, FounderProfile } from "../types/profile";
+import { scorePercent } from "./displayMetrics";
 
 const axisNames: FounderAssessment["title"][] = ["Founder", "Market", "Idea × Market"];
 
@@ -138,8 +139,7 @@ export function candidateSignal(candidate: CandidateDetail | { scores: Candidate
 }
 
 export function percentage(value: number | null | undefined): number {
-  if (value == null || Number.isNaN(value)) return 0;
-  return Math.round(value <= 1 ? value * 100 : value);
+  return scorePercent(value) ?? 0;
 }
 
 export function initials(name: string | null): string {

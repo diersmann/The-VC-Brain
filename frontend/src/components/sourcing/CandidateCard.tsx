@@ -16,6 +16,7 @@ import {
 
 import { formatPredicate } from "../../data/candidateProfile";
 import { safeExternalUrl } from "../../data/candidateLinks";
+import { scorePercent, scoreVisual } from "../../data/displayMetrics";
 import { recordCandidateFeedback } from "../../api/candidates";
 import type { Candidate } from "../../types/candidate";
 import { CandidateAvatar } from "../common/CandidateAvatar";
@@ -27,7 +28,7 @@ interface Props {
 }
 
 const percentage = (value: number | null | undefined) =>
-  value == null ? "—" : `${toPercent(value)}%`;
+  scorePercent(value) == null ? "—" : `${scorePercent(value)}%`;
 
 export function CandidateCard({ candidate, onViewFounder, onOutreach }: Props) {
   const [dismissed, setDismissed] = useState(false);
@@ -290,17 +291,4 @@ function EvidenceBar({ value }: { value: number | null | undefined }) {
       </div>
     </div>
   );
-}
-
-function scoreVisual(value: number | null | undefined) {
-  if (value == null) return { percent: null, status: "No score", color: "#9aa8ba", soft: "#edf1f5" };
-  const percent = toPercent(value);
-  if (percent >= 70) return { percent, status: "Strong", color: "#2f8b72", soft: "#e4f2ed" };
-  if (percent >= 45) return { percent, status: "Watch", color: "#c6893f", soft: "#fff1df" };
-  return { percent, status: "Risk", color: "#c35f65", soft: "#fbe8e9" };
-}
-
-function toPercent(value: number): number {
-  const normalized = value <= 1 ? value * 100 : value;
-  return Math.max(0, Math.min(100, Math.round(normalized)));
 }

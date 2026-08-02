@@ -1,16 +1,15 @@
 import type { Candidate } from "../types/candidate";
+import { displayScore as formatScore, scorePercent as normalizeScore } from "./displayMetrics";
 import { DECISION_RUBRIC } from "./rubric";
 
 export type DecisionReadiness = "ready" | "investigate" | "evidence-gap";
 
 export function scorePercent(value: number | null | undefined): number | null {
-  if (value == null || Number.isNaN(value)) return null;
-  return Math.max(0, Math.min(100, Math.round(value <= 1 ? value * 100 : value)));
+  return normalizeScore(value);
 }
 
 export function displayScore(value: number | null | undefined, alreadyPercent = false): string {
-  if (value == null) return "Not scored";
-  return `${alreadyPercent ? value : Math.round(value * 100)}%`;
+  return formatScore(value, alreadyPercent);
 }
 
 export function candidateThesisPercent(candidate: Candidate): number | null {
