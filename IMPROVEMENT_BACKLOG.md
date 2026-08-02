@@ -127,7 +127,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-048 - Remove citation count as an arXiv eligibility gate.** Observed: arXiv discovery dropped authors below the configured citation minimum. **Partial completion:** all authors in the relevant query results are now discoverable regardless of citation count; counts remain explicit `context_only` seed metadata and downstream collection already persists aggregate citation observations. **Blocked:** cold-start coverage/advancement metrics and a persisted per-discovery citation observation still require the measurement and durable discovery-event model tracked by VCB-051/VCB-059.
 
-- [ ] **VCB-049 - Make connectors async-safe and block SSRF.** Observed: multiple async connectors call synchronous Tavily SDKs; website.py follows arbitrary redirects and buffers arbitrary URLs without private-IP/size checks. Done when calls have bounded async/thread execution, cancellation/timeouts, redirect-by-redirect IP validation, HTTP(S) allow rules, and streamed byte limits.
+- [blocked] **VCB-049 - Make connectors async-safe and block SSRF.** Observed: multiple async connectors called synchronous Tavily SDKs; `website.py` followed arbitrary redirects and buffered arbitrary URLs without private-IP/size checks. **Partial completion:** website collection now accepts only HTTP(S), rejects credentials/local and reserved IP targets, resolves hostnames before connecting, validates every manual redirect, streams up to `APP_WEBSITE_MAX_BYTES`, and runs Tavily extraction in a worker thread. **Blocked:** the same async/thread and SSRF contract remains to be applied and tested across the other Tavily-backed connectors; this checkpoint covers the highest-risk generic web path.
 
 - [ ] **VCB-050 - Classify connector failures for retries and operator action.** Observed: collect_job converts exceptions into successful result dictionaries and several connectors return empty lists on upstream errors. Done when transient/rate-limit/permanent failures are persisted distinctly, retry with backoff/jitter, and end in a visible DLQ when exhausted.
 
@@ -261,7 +261,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - Frontend TypeScript: passed.
 - Frontend Vitest: 34 tests passed.
 - Frontend production build: passed; 349.50 kB JavaScript, 105.16 kB gzip.
-- Backend pytest: 152 tests passed with one Starlette/httpx deprecation warning.
+- Backend pytest: 159 tests passed with one Starlette/httpx deprecation warning.
 - Backend Ruff: passed after formatting two pre-existing E501 violations in migrations/versions/e093be299381_add_discovery_config_to_thesis.py.
 - Backend mypy: passed with no issues in 63 source files.
 - Alembic: one head, revision 016; local Docker database migrated successfully from e093be299381 through 016.
@@ -277,6 +277,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-044 focused and full backend validation passed with 150 tests. Search-synthesized claims are now excluded from memo inputs; original-page verification remains the explicit blocker.
 - 2026-08-02: VCB-045 focused and full backend validation passed with 151 tests. Tavily URL seeds route through the web collector, while entity leads remain discovery-only; provider-backed end-to-end verification remains blocked without credentials.
 - 2026-08-02: VCB-048 focused and full backend validation passed with 152 tests. Uncited recent arXiv authors remain discoverable; citation metadata is explicitly non-gating. Cold-start coverage metrics remain blocked on durable discovery-event measurement.
+- 2026-08-02: VCB-049 focused and full backend validation passed with 159 tests. Website collection now has SSRF, redirect, async Tavily, and byte-limit guardrails; remaining connector hardening is explicitly blocked as follow-up scope.
 
 ## First practical milestone
 

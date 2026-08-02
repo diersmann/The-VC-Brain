@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     arxiv_min_citations: int = 10
     arxiv_coauthor_cap: int = 20
     website_seed_cap: int = 10
+    website_max_bytes: int = 10 * 1024 * 1024
     persons_created_per_day: int = 200
 
     # Untrusted inbound pitch uploads
