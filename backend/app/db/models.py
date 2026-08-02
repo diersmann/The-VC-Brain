@@ -329,6 +329,11 @@ class Claim(TimestampMixin, Base):
     object_value: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="unverified")
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    trust_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    trust_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trust_interval: Mapped[dict[str, float] | None] = mapped_column(JSONB, nullable=True)
+    trust_components: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    trust_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     valid_time_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     valid_time_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     supersession_id: Mapped[uuid.UUID | None] = mapped_column(

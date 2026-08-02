@@ -131,6 +131,10 @@ class CandidateClaimResponse(BaseModel):
     object_value: str
     status: str
     confidence: float
+    trust_score: float | None = None
+    trust_interval: dict[str, float] | None = None
+    trust_components: dict[str, object] | None = None
+    trust_explanation: str | None = None
     created_at: datetime | None = None
 
 
@@ -674,6 +678,10 @@ async def get_candidate(
             object_value=claim.object_value,
             status=claim.status,
             confidence=claim.confidence,
+            trust_score=claim.trust_score,
+            trust_interval=claim.trust_interval,
+            trust_components=claim.trust_components,
+            trust_explanation=claim.trust_explanation,
             created_at=claim.created_at,
         )
         for claim in claim_result.scalars().all()

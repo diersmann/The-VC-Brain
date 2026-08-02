@@ -10,7 +10,11 @@ import pytest
 
 from app.db.models import Claim
 from app.processing.dedup import _cosine_similarity
-from app.processing.reconcile import _observation_strength, reconcile_observations
+from app.processing.reconcile import (
+    _observation_strength,
+    _trust_for_observations,
+    reconcile_observations,
+)
 
 
 def _scalar_result(rows: list[object]) -> MagicMock:
@@ -99,7 +103,8 @@ async def test_reconcile_keeps_same_predicate_separate_per_opportunity() -> None
         observation.predicate = "company_name"
         observation.object_value = value
         observation.confidence = 1.0
-        observation.observed_at = MagicMock()
+        observation.observed_at = datetime.now(UTC)
+        observation.extractor_version = "inbound-v1"
         observations.append(observation)
 
     session = AsyncMock()
@@ -124,6 +129,7 @@ async def test_reconcile_is_idempotent_for_unchanged_observations() -> None:
         object_value="Example Labs",
         confidence=1.0,
         observed_at=datetime.now(UTC),
+        extractor_version="inbound-v1",
     )
     session = AsyncMock()
     session.execute.side_effect = [
@@ -146,6 +152,24 @@ async def test_reconcile_is_idempotent_for_unchanged_observations() -> None:
     ]
     assert await reconcile_observations(session, person_id) == 0
     assert len(created_claims) == 1
+
+
+def test_claim_trust_has_versioned_components_and_interval() -> None:
+    """Trust exposes its inputs and uncertainty instead of relabeling confidence."""
+    observation = MagicMock(
+        extractor_version="github-v1",
+        confidence=0.8,
+        observed_at=datetime.now(UTC),
+    )
+
+    score, components, interval, explanation = _trust_for_observations(
+        [observation], contradicted=False
+    )
+
+    assert 0.0 <= interval["low"] <= score <= interval["high"] <= 1.0
+    assert components["source_authority"] == 0.7
+    assert components["identity_confidence"] == 0.5
+    assert "unknown identity confidence" in explanation
 
 
 @pytest.mark.asyncio

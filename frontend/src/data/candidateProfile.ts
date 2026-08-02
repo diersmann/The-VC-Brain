@@ -56,7 +56,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
   const reconciledClaims = candidate.claims.map((claim) => ({
         claim: `${formatPredicate(claim.predicate)}: ${claim.object_value}`,
         source: "Reconciled claim",
-        trust: percentage(claim.confidence),
+        trust: percentage(claim.trust_score ?? claim.confidence),
         status: claim.status,
       }));
   const sourceEvidence = observations

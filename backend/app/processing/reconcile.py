@@ -18,6 +18,91 @@ from app.db.models import Claim, Observation
 
 logger = structlog.get_logger(__name__)
 
+_TRUST_VERSION = "claim-trust-v1"
+_SOURCE_AUTHORITY = {
+    "inbound": 0.9,
+    "public": 0.8,
+    "github": 0.7,
+    "producthunt": 0.5,
+    "hackernews": 0.4,
+    "tavily": 0.3,
+}
+
+
+def _trust_for_observations(
+    observations: list[Observation], *, contradicted: bool
+) -> tuple[float, dict[str, object], dict[str, float], str]:
+    """Calculate a versioned, conservative claim Trust artifact."""
+    source_kinds = {
+        (obs.extractor_version or "unknown").split("-", maxsplit=1)[0].lower()
+        for obs in observations
+    }
+    authority = sum(_SOURCE_AUTHORITY.get(kind, 0.5) for kind in source_kinds) / max(
+        1, len(source_kinds)
+    )
+    directness = 0.8 if source_kinds.intersection({"inbound", "github", "public"}) else 0.5
+    independence = min(1.0, len(source_kinds) / 2)
+    corroboration = min(1.0, len(observations) / 3)
+    now = datetime.now(UTC)
+    freshness = sum(
+        max(0.5, 1.0 - max(0, (now - obs.observed_at).days) / 365)
+        for obs in observations
+    ) / max(1, len(observations))
+    extraction = sum(max(0.0, min(1.0, obs.confidence)) for obs in observations) / max(
+        1, len(observations)
+    )
+    identity = 0.5
+    contradiction_penalty = 0.2 if contradicted else 0.0
+    score = max(
+        0.0,
+        min(
+            1.0,
+            0.2 * authority
+            + 0.1 * directness
+            + 0.1 * independence
+            + 0.15 * corroboration
+            + 0.15 * freshness
+            + 0.2 * extraction
+            + 0.1 * identity
+            - contradiction_penalty,
+        ),
+    )
+    width = max(0.1, 0.35 - 0.2 * extraction - 0.1 * corroboration)
+    interval = {
+        "low": round(max(0.0, score - width), 4),
+        "high": round(min(1.0, score + width), 4),
+    }
+    components: dict[str, object] = {
+        "source_authority": round(authority, 4),
+        "directness": round(directness, 4),
+        "independence": round(independence, 4),
+        "corroboration": round(corroboration, 4),
+        "freshness": round(freshness, 4),
+        "extraction_confidence": round(extraction, 4),
+        "identity_confidence": identity,
+        "contradiction_penalty": contradiction_penalty,
+        "observation_count": len(observations),
+    }
+    explanation = (
+        f"Trust {score:.2f} from authority, directness, independence, corroboration, "
+        f"freshness, extraction confidence, and an explicit unknown identity confidence "
+        f"of {identity:.2f}."
+    )
+    if contradicted:
+        explanation += " Contradiction penalty applied; counter-evidence remains visible."
+    return round(score, 4), components, interval, explanation
+
+
+def _apply_trust(claim: Claim, observations: list[Observation], *, contradicted: bool) -> None:
+    score, components, interval, explanation = _trust_for_observations(
+        observations, contradicted=contradicted
+    )
+    claim.trust_version = _TRUST_VERSION
+    claim.trust_score = score
+    claim.trust_components = components
+    claim.trust_interval = interval
+    claim.trust_explanation = explanation
+
 
 def _observation_strength(obs: Observation) -> float:
     """Higher is stronger. Combines confidence and recency."""
@@ -137,6 +222,7 @@ async def reconcile_observations(
                 confidence=obs.confidence,
                 valid_time_start=obs.observed_at,
             )
+            _apply_trust(claim, [obs], contradicted=False)
             session.add(claim)
             await session.flush()
             existing_claims.append(claim)
@@ -165,6 +251,7 @@ async def reconcile_observations(
                 confidence=max(o.confidence for o in group),
                 valid_time_start=strongest.observed_at,
             )
+            _apply_trust(claim, group, contradicted=False)
             session.add(claim)
             await session.flush()
             _close_superseded_claims(scoped_claims, claim, predicate=predicate)
@@ -195,6 +282,7 @@ async def reconcile_observations(
                 confidence=winner.confidence,
                 valid_time_start=winner.observed_at,
             )
+            _apply_trust(winner_claim, [winner], contradicted=True)
             session.add(winner_claim)
             await session.flush()
             _close_superseded_claims(scoped_claims, winner_claim, predicate=predicate)
@@ -222,6 +310,7 @@ async def reconcile_observations(
                 confidence=loser.confidence,
                 valid_time_start=loser.observed_at,
             )
+            _apply_trust(counter_claim, [loser], contradicted=True)
             session.add(counter_claim)
             await session.flush()
             existing_claims.append(counter_claim)

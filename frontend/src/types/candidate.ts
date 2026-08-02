@@ -70,6 +70,10 @@ export interface CandidateClaim {
   object_value: string;
   status: string;
   confidence: number;
+  trust_score?: number | null;
+  trust_interval?: { low: number; high: number } | null;
+  trust_components?: Record<string, unknown> | null;
+  trust_explanation?: string | null;
   created_at: string | null;
 }
 
