@@ -201,7 +201,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-084 - Centralize score, trend, metric, and status display logic.** Observed: similar formatting/fallback/threshold logic is duplicated across cards, profiles, decisions, visuals, and portfolioMetrics. Done when one typed view model owns scale, null semantics, status visuals, confidence, trend compatibility, and accessible explanations.
 
-- [ ] **VCB-085 - Remove dead code, unused dependencies, and generated config drift.** Observed: unused UI/components and several declared packages; tracked vite.config.js/d.ts diverge from vite.config.ts. Done when unused exports/dependencies are removed or intentionally adopted, only canonical config is tracked, and CI detects drift.
+- [blocked] **VCB-085 - Remove dead code, unused dependencies, and generated config drift.** Observed: unused UI/components and several declared packages; tracked `vite.config.js`/`.d.ts` diverged from `vite.config.ts`. **Partial completion:** removed the two generated Vite drift files so the TypeScript config is canonical. **Blocked:** dependency/export removal still needs a complete usage audit and CI drift/dependency gate; deleting packages based only on declaration-list inspection could break hidden/runtime paths.
 
 - [ ] **VCB-086 - Lazy-load routes and set a bundle budget.** Observed: App.tsx eagerly imports every route into a 350.5 kB bundle. Done when public form, admin shell, profiles, and decision pages are route chunks with accessible fallbacks and CI enforces a justified size budget.
 
