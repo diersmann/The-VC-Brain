@@ -35,7 +35,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-003 - Fix FastAPI database-session lifecycle.** Observed: db/session.py:23-28 returns an AsyncSession rather than yielding it from a closing context. Done when requests close sessions deterministically, roll back on exceptions, and a concurrency test proves checked-out connections return to baseline.
 
-- [ ] **VCB-004 - Harden untrusted pitch uploads before storage or parsing.** Observed: inbound.py:23-48 reads the full upload into memory with no byte, MIME-signature, filename, page, encryption, malware, or decompression limits; inbound_job.py:42-53 parses it inside the privileged worker. Done when uploads stream to quarantine, are validated and scanned, parsing is resource-limited/isolated, and abuse tests cover oversized, polyglot, encrypted, malformed, and bomb files.
+- [x] **VCB-004 - Harden untrusted pitch uploads before storage or parsing.** Observed: inbound.py:23-48 read the full upload into memory with no byte, MIME-signature, filename, page, encryption, malware, or decompression limits; inbound_job.py:42-53 parsed it inside the privileged worker. Done when uploads stream to quarantine, are validated and scanned, parsing is resource-limited/isolated, and abuse tests cover oversized, polyglot, encrypted, malformed, and bomb files. Completed with PDF quarantine, configured scanner fail-closed policy, bounded worker extraction, and abuse coverage in `backend/tests/test_inbound_submission.py`.
 
 - [ ] **VCB-005 - Make inbound submission transactional and idempotent.** Observed: inbound.py:74-85 commits before Redis enqueue, leaks a new Redis pool, and has no idempotency key; retries can create duplicate opportunities or persisted work that never runs. Done when one DB transaction writes the application and durable outbox, duplicate client retries resolve to the same submission, and dispatch is recoverable after Redis outages.
 
@@ -75,7 +75,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-022 - Preserve source coordinates end to end.** Observed: inbound_job.py concatenates pages and truncates at 50k; observation/claim DTOs omit page, slide, DOM fragment, or text span. Done when every claim can open the immutable source at its page/slide/timestamp/span and unavailable content still exposes provenance metadata.
 
-- [ ] **VCB-023 - Make advertised deck formats match actual parser support.** Observed: PitchSubmissionPage.tsx:169-175 accepts PDF/PPT/PPTX while inbound_job.py always uses pypdf. Done when the product is PDF-only with server enforcement or safely parses every advertised format with coordinates and format-specific tests.
+- [x] **VCB-023 - Make advertised deck formats match actual parser support.** Observed: PitchSubmissionPage.tsx:169-175 accepted PDF/PPT/PPTX while inbound_job.py always used pypdf. Done when the product is PDF-only with server enforcement or safely parses every advertised format with coordinates and format-specific tests. Completed alongside VCB-004: the form advertises PDF only, the server rejects non-PDF filenames/content, and format rejection is tested.
 
 - [ ] **VCB-024 - Orchestrate inbound through triage, Founder Score, three axes, diligence, memo, and decision.** Observed: inbound_job.py:55-101 reconciles/embeds/deduplicates then queues a memo without scoring or opportunity assessment. Done when every stage has a durable run/output and explicit gap/failure state before a validated memo can be ready.
 

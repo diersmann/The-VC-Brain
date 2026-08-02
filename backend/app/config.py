@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     website_seed_cap: int = 10
     persons_created_per_day: int = 200
 
+    # Untrusted inbound pitch uploads
+    upload_max_bytes: int = 25 * 1024 * 1024
+    upload_max_pages: int = 100
+    upload_max_text_chars: int = 50_000
+    upload_malware_scanner: str = ""
+    upload_scan_timeout_seconds: int = 30
+
     # Scoring agents
     agent_model: str = "gpt-4o"
     agent_concurrency: int = 2

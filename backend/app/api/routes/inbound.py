@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import structlog
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,7 @@ from app.db.models import Person, SourceSnapshot
 from app.db.session import get_session
 from app.opportunity_service import create_inbound_opportunity
 from app.storage import put_snapshot
+from app.uploads import UploadRejected, quarantine_pitch_upload
 
 router = APIRouter(prefix="/inbound", tags=["inbound"])
 logger = structlog.get_logger(__name__)
@@ -28,14 +29,17 @@ async def submit_pitch(
     file: UploadFile = File(...),  # noqa: B008
     db: AsyncSession = Depends(get_session)  # noqa: B008
 ) -> dict[str, str]:
-    logger.info("inbound_pitch_received", email=founder_email, company=company_name)
-    
-    # 1. Read file and save to MinIO
-    content = await file.read()
-    content_type = file.content_type or "application/pdf"
+    logger.info("inbound_pitch_received", company=company_name)
+
+    try:
+        content = await quarantine_pitch_upload(file, get_settings())
+    except UploadRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # 1. Store only after quarantine and validation
     content_hash, storage_path = await put_snapshot(
         content=content,
-        content_type=content_type,
+        content_type="application/pdf",
         source_type="inbound_deck"
     )
     

@@ -127,3 +127,5 @@ npm run build                                  # Production build
 ### Environment variables
 
 See `.env.example` for all configurable values. The `APP_` prefix is used for backend settings (via `pydantic-settings`).
+
+Inbound pitch decks are PDF-only and are streamed into a temporary quarantine before storage. Production/staging requires `APP_UPLOAD_MALWARE_SCANNER` to name a scanner executable; the API rejects uploads when the scanner is unavailable or reports a finding. Local development intentionally permits structural validation without an external scanner.

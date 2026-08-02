@@ -187,7 +187,7 @@ export function PitchSubmissionPage() {
               <input 
                 type="file" 
                 ref={fileInputRef} 
-                accept=".pdf,.ppt,.pptx" 
+                accept=".pdf,application/pdf"
                 className="hidden" 
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
@@ -217,7 +217,7 @@ export function PitchSubmissionPage() {
                     </div>
                     <div>
                       <p className="text-white font-medium">Upload Pitch Deck</p>
-                      <p className="text-xs text-neutral-500 mt-1">Drag & drop or click to browse (PDF, PPT)</p>
+                      <p className="text-xs text-neutral-500 mt-1">Drag & drop or click to browse (PDF up to 25 MB)</p>
                     </div>
                   </div>
                 )}

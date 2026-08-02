@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-import io
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-import pypdf
 import structlog
 
 from app.collectors.jobs import _session_ctx
 from app.collectors.queue import enqueue as queue_enqueue
+from app.config import get_settings
 from app.db.models import Observation, SourceSnapshot
 from app.processing.pipeline_job import process_candidate_job
 from app.storage import get_snapshot
+from app.uploads import UploadRejected, extract_pdf_text
 
 logger = structlog.get_logger(__name__)
 
@@ -42,15 +43,17 @@ async def process_inbound_pitch_job(
         # Fetch PDF content from MinIO
         content = await get_snapshot(snapshot.storage_path)
         
-        # Parse PDF text
-        text_content = ""
         try:
-            reader = pypdf.PdfReader(io.BytesIO(content))
-            for page in reader.pages:
-                text_content += page.extract_text() + "\n"
-        except Exception as e:
-            logger.warning("pdf_extraction_failed", error=str(e))
-            text_content = "(Could not extract text from PDF)"
+            settings = get_settings()
+            text_content = await asyncio.to_thread(
+                extract_pdf_text,
+                content,
+                max_pages=settings.upload_max_pages,
+                max_text_chars=settings.upload_max_text_chars,
+            )
+        except UploadRejected as exc:
+            logger.warning("pdf_extraction_rejected", error=str(exc), snapshot_id=snapshot_id)
+            return {"error": "pdf_rejected", "snapshot_id": snapshot_id}
 
         # Create observations
         now = datetime.now(UTC)
