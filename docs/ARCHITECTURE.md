@@ -61,7 +61,7 @@ Core entities are:
 | OutboxEvent | Durable handoff from PostgreSQL to workers | Dedupe key, event payload, dispatch status, retry count, availability, error metadata |
 | OutreachMessage | Human-reviewed contact and provider state | Draft, approval, send request, provider ID, delivery state, suppression/failure metadata |
 
-Every observation, claim, relationship, score, and recommendation retains provenance, observation time, confidence, and the version of the extractor, rubric, prompt, or model that produced it. Personally identifying data is stored only when necessary and is subject to correction, retention, and deletion controls; audit records retain non-sensitive tombstones where legally permissible.
+Every observation, claim, relationship, score, and recommendation retains provenance, observation time, confidence, and the version of the extractor, rubric, prompt, or model that produced it. Evidence corrections append a new observation rather than mutating the prior statement. Personally identifying data is stored only when necessary and is subject to correction, retention, and deletion controls; audit records retain non-sensitive tombstones where legally permissible.
 
 ### Source Quality and Collection Policy
 

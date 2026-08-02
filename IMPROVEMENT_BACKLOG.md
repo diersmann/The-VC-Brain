@@ -67,7 +67,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 ## P1 - Complete the trustworthy product loop
 
-- [ ] **VCB-019 - Enforce append-only evidence and audit history.** Observed: model FKs cascade-delete snapshots, observations, assessments, events, and memos; import_public_inbound.py:120-136 updates observations in place. Done when normal application roles cannot mutate/delete evidence, corrections append superseding records, and privacy erasure retains lawful non-sensitive tombstones.
+- [blocked] **VCB-019 - Enforce append-only evidence and audit history.** Observed and reverified: evidence/audit FKs still permit cascade deletion and the importer previously updated observations in place. **Partial completion:** `import_public_inbound.py` now preserves existing observations and appends a correction observation with provenance when values change, while linking public observations to their exact opportunity. **Blocked:** full completion requires database roles/triggers that deny normal mutation/deletion across evidence and audit tables plus an approved privacy-erasure/tombstone and retention contract. The current repository has no role-management or lawful-erasure policy to implement safely.
 
 - [ ] **VCB-020 - Implement a real per-claim Trust Score.** Observed: Claim stores a scalar confidence; candidateProfile.ts:53-73 relabels confidence as Trust. Done when versioned inputs include source authority, directness, independence, corroboration, freshness, extraction and identity confidence, contradiction penalties, explanation, status, and calibrated interval.
 

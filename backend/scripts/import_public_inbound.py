@@ -104,6 +104,7 @@ async def _upsert_observation(
     *,
     snapshot_id: uuid.UUID,
     person_id: uuid.UUID,
+    opportunity_id: uuid.UUID,
     predicate: str,
     value: str,
     confidence: float,
@@ -114,26 +115,28 @@ async def _upsert_observation(
             Observation.snapshot_id == snapshot_id,
             Observation.subject_id == person_id,
             Observation.predicate == predicate,
-            Observation.extractor_version == "public-inbound-v1",
-        )
+        ).order_by(Observation.created_at.desc()).limit(1)
     )
     observation = result.scalar_one_or_none()
-    if observation is None:
+    if observation is None or (
+        observation.object_value != value or observation.confidence != confidence
+    ):
         session.add(
             Observation(
                 snapshot_id=snapshot_id,
                 subject_id=person_id,
+                opportunity_id=opportunity_id,
                 predicate=predicate,
                 object_value=value,
                 observed_at=observed_at,
-                extractor_version="public-inbound-v1",
+                extractor_version=(
+                    "public-inbound-v1"
+                    if observation is None
+                    else "public-inbound-v1-correction"
+                ),
                 confidence=confidence,
             )
         )
-    else:
-        observation.object_value = value
-        observation.observed_at = observed_at
-        observation.confidence = confidence
 
 
 async def import_public_inbound() -> list[dict[str, str]]:
@@ -253,6 +256,7 @@ async def import_public_inbound() -> list[dict[str, str]]:
                     session,
                     snapshot_id=snapshot.id,
                     person_id=person.id,
+                    opportunity_id=opportunity.id,
                     predicate=predicate,
                     value=value,
                     confidence=confidence,
