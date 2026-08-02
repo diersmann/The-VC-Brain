@@ -5,6 +5,7 @@ from app.lifecycle import (
     TRANSITIONS,
     advance_reason,
     is_inbound,
+    is_memo_ready,
     is_outbound,
     is_valid_transition,
 )
@@ -79,6 +80,14 @@ def test_advance_reason() -> None:
 
     reason = advance_reason("investigating", "contacted", detail="composite 0.72")
     assert "composite 0.72" in reason
+
+
+def test_only_succeeded_memos_are_ready() -> None:
+    """Degraded, failed, and pending drafts cannot satisfy the lifecycle gate."""
+    assert is_memo_ready("succeeded") is True
+    assert is_memo_ready("degraded") is False
+    assert is_memo_ready("failed") is False
+    assert is_memo_ready("pending") is False
 
 
 def test_legacy_stages() -> None:

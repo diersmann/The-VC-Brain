@@ -52,6 +52,7 @@ async def test_memo_has_all_required_sections() -> None:
     for required in REQUIRED_SECTIONS:
         assert required in titles
     assert memo.generation_mode == "agent"
+    assert memo.status == "succeeded"
 
 
 @pytest.mark.asyncio
@@ -83,6 +84,7 @@ async def test_memo_adds_missing_sections() -> None:
     assert snapshot.text == "Test."
     swot = next(s for s in memo.sections if s.title == "SWOT")
     assert "not available" in swot.text.lower()
+    assert memo.status == "failed"
 
 
 @pytest.mark.asyncio
@@ -100,6 +102,7 @@ async def test_memo_fallback_no_api_key() -> None:
     )
 
     assert memo.generation_mode == "template_fallback"
+    assert memo.status == "degraded"
     assert len(memo.sections) == 5
     for section in memo.sections:
         assert "pending" in section.text.lower() or "not available" in section.text.lower()
@@ -124,6 +127,7 @@ async def test_memo_handles_api_error() -> None:
         )
 
     assert memo.generation_mode == "template_fallback"
+    assert memo.status == "degraded"
     assert len(memo.sections) == 5
 
 

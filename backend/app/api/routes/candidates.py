@@ -951,6 +951,7 @@ class MemoResponse(BaseModel):
     """A generated investment memo."""
 
     sections: list[dict[str, object]]
+    status: Literal["pending", "failed", "degraded", "succeeded"]
     generation_mode: str | None = None
     model_version: str | None = None
     created_at: datetime | None = None
@@ -979,6 +980,7 @@ async def get_candidate_memo(
     sections = memo.sections.get("sections", []) if isinstance(memo.sections, dict) else []
     return MemoResponse(
         sections=sections,
+        status=memo.status,
         generation_mode=(
             memo.sections.get("generation_mode")
             if isinstance(memo.sections, dict) else None

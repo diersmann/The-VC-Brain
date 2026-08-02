@@ -125,6 +125,7 @@ export type MemoSection = {
 
 export type CandidateMemo = {
   sections: MemoSection[];
+  status: "pending" | "failed" | "degraded" | "succeeded" | "missing";
   generation_mode: string | null;
   model_version: string | null;
   created_at: string | null;
@@ -132,7 +133,7 @@ export type CandidateMemo = {
 
 export async function fetchCandidateMemo(candidateId: string, signal?: AbortSignal): Promise<CandidateMemo> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/memo`, { signal });
-  if (response.status === 404) return { sections: [], generation_mode: null, model_version: null, created_at: null };
+  if (response.status === 404) return { sections: [], status: "missing", generation_mode: null, model_version: null, created_at: null };
   if (!response.ok) throw new Error(`Memo request failed with status ${response.status}`);
   return (await response.json()) as CandidateMemo;
 }

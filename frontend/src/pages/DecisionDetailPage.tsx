@@ -402,7 +402,10 @@ function InvestmentMemo({
   memoGenState: "idle" | "queued" | "error";
   onGenerate: () => void;
 }) {
-  const hasMemo = memo && memo.sections.length > 0;
+  const hasMemo = memo?.status === "succeeded" && memo.sections.length > 0;
+  const hasDraft = Boolean(memo && memo.status !== "missing" && memo.status !== "pending" && memo.sections.length > 0);
+  const memoStatus = memo?.status === "degraded" ? "Degraded draft · not decision-ready" : memo?.status === "failed" ? "Generation failed · not decision-ready" : memo?.status === "pending" ? "Generation pending" : null;
+  const renderableMemo = memo && (hasMemo || hasDraft) ? memo : null;
 
   return (
     <section className="panel rounded-lg p-5 sm:p-6">
@@ -412,12 +415,12 @@ function InvestmentMemo({
           <h2 className="text-lg font-bold">Detailed IC report</h2>
         </div>
         <div className="flex items-center gap-2">
-          {hasMemo && (
+          {(hasMemo || hasDraft) && (
             <span className="status-pill bg-surface-2 text-muted">
-              {memo.generation_mode === "agent" ? "AI generated" : "Template"} · {memo.model_version ?? "unknown"}
+              {hasMemo ? `${memo.generation_mode === "agent" ? "AI generated" : "Validated memo"} · ${memo.model_version ?? "unknown"}` : memoStatus}
             </span>
           )}
-          {!hasMemo && !memoLoading && (
+          {!hasMemo && !memoLoading && memo?.status !== "pending" && (
             <button
               onClick={onGenerate}
               disabled={memoGenState === "queued"}
@@ -441,9 +444,15 @@ function InvestmentMemo({
         </div>
       )}
 
-      {!memoLoading && hasMemo && (
+      {!memoLoading && memoStatus && (
+        <div role="alert" className="mt-5 rounded-md border border-warn/25 bg-[#fff8ed] p-4 text-xs text-[#8d5e2b]">
+          {memoStatus}. It cannot advance the opportunity to memo-ready until a validated memo succeeds.
+        </div>
+      )}
+
+      {!memoLoading && renderableMemo && (
         <div className="mt-5 grid gap-x-7 gap-y-6 xl:grid-cols-2">
-          {memo.sections.map((section) => (
+          {renderableMemo.sections.map((section) => (
             <div key={section.title}>
               <MemoHeading icon={FileText} title={section.title} />
               <p className="mt-3 text-xs leading-6 text-ink-2">{section.text}</p>
@@ -457,19 +466,19 @@ function InvestmentMemo({
         </div>
       )}
 
-      {!memoLoading && !hasMemo && memoGenState === "idle" && (
+      {!memoLoading && !hasMemo && memo?.status !== "pending" && memoGenState === "idle" && (
         <div className="mt-5 rounded-md bg-surface-2 p-4 text-center text-xs text-muted">
           No investment memo has been generated yet. Click "Generate memo" to create one from the available evidence.
         </div>
       )}
 
-      {!memoLoading && !hasMemo && memoGenState === "queued" && (
+      {!memoLoading && !hasMemo && memo?.status !== "pending" && memoGenState === "queued" && (
         <div className="mt-5 rounded-md bg-surface-2 p-4 text-center text-xs text-muted">
           Memo generation has been queued. It will appear here once complete.
         </div>
       )}
 
-      {!memoLoading && !hasMemo && memoGenState === "error" && (
+      {!memoLoading && !hasMemo && memo?.status !== "pending" && memoGenState === "error" && (
         <div className="mt-5 rounded-md bg-[#fff1df] p-4 text-center text-xs text-[#a96e2d]">
           Memo generation failed. Please retry.
         </div>

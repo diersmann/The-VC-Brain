@@ -66,6 +66,11 @@ def is_inbound(stage: str) -> bool:
     return stage in _INBOUND_STAGES
 
 
+def is_memo_ready(status: str) -> bool:
+    """Return whether a memo has passed generation validation."""
+    return status == "succeeded"
+
+
 def advance_reason(prior: str, new: str, *, detail: str = "") -> str:
     """Generate a human-readable reason for a DecisionEvent."""
     label_map = {

@@ -363,6 +363,8 @@ Required memo sections are:
 
 Optional sections include team and history, technology and defensibility, market sizing, competition, financials and round structure, cap table, due diligence log, and exit perspective. Missing optional information is explicit, for example, `Cap table: not disclosed`. Memo versions preserve the evidence and thesis versions used to produce them.
 
+Memo runs are persisted with `pending`, `failed`, `degraded`, or `succeeded` status. Only a validated `succeeded` memo may advance an opportunity to `memo_ready`; degraded or fallback drafts remain visibly non-decision-ready.
+
 The decision proposal is a separate structured artifact:
 
 ```json

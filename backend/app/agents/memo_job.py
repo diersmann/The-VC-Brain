@@ -114,36 +114,54 @@ async def generate_memo_job(ctx: dict[str, Any], person_id: str) -> dict[str, An
             session, person, source_kind="outbound", lifecycle_state="investigating",
         )
 
+        # Persist a pending run before calling the external model. If the
+        # worker crashes, the pipeline retains an honest in-progress state.
+        memo_record = InvestmentMemo(
+            opportunity_id=opportunity.id,
+            thesis_version=thesis.version if thesis else "none",
+            status="pending",
+            sections={"sections": [], "generation_mode": "pending"},
+            evidence_ids=sorted(obs_ids),
+            model_version=settings.agent_model,
+        )
+        session.add(memo_record)
+        await session.commit()
+
         # Generate memo
         semaphore = asyncio.Semaphore(settings.agent_concurrency)
-        memo = await generate_memo(
-            evidence_text=evidence_text,
-            scorecard_summary=scorecard_summary,
-            thesis_summary=thesis_summary,
-            person_name=person.display_name or person.stable_id,
-            api_key=settings.llm_api_key,
-            model=settings.agent_model,
-            semaphore=semaphore,
-        )
+        try:
+            memo = await generate_memo(
+                evidence_text=evidence_text,
+                scorecard_summary=scorecard_summary,
+                thesis_summary=thesis_summary,
+                person_name=person.display_name or person.stable_id,
+                api_key=settings.llm_api_key,
+                model=settings.agent_model,
+                semaphore=semaphore,
+            )
+        except Exception as exc:
+            memo_record.status = "failed"
+            memo_record.sections = {
+                "sections": [],
+                "generation_mode": "failed",
+                "error": "memo generation failed",
+            }
+            await session.commit()
+            logger.exception("memo_generation_failed", person_id=person_id, error=str(exc))
+            return {"person_id": person_id, "status": "failed"}
 
         # Write InvestmentMemo
         all_evidence_ids = set(obs_ids)
         for section in memo.sections:
             all_evidence_ids.update(section.evidence_ids)
 
-        session.add(
-            InvestmentMemo(
-                opportunity_id=opportunity.id,
-                thesis_version=thesis.version if thesis else "none",
-                sections={
-                    "sections": [s.model_dump() for s in memo.sections],
-                    "generation_mode": memo.generation_mode,
-                },
-                evidence_ids=list(all_evidence_ids)[:100],
-                model_version=memo.model_version or settings.agent_model,
-            )
-        )
-
+        memo_record.status = memo.status
+        memo_record.sections = {
+            "sections": [s.model_dump() for s in memo.sections],
+            "generation_mode": memo.generation_mode,
+        }
+        memo_record.evidence_ids = sorted(all_evidence_ids)[:100]
+        memo_record.model_version = memo.model_version or settings.agent_model
         await session.commit()
 
     logger.info(
@@ -157,4 +175,5 @@ async def generate_memo_job(ctx: dict[str, Any], person_id: str) -> dict[str, An
         "person_id": person_id,
         "sections": len(memo.sections),
         "generation_mode": memo.generation_mode,
+        "status": memo.status,
     }

@@ -91,7 +91,10 @@ async def _has_memo(session: AsyncSession, opportunity_id: Any) -> bool:
     """Check if an opportunity has an investment memo."""
     result = await session.execute(
         select(InvestmentMemo.id)
-        .where(InvestmentMemo.opportunity_id == opportunity_id)
+        .where(
+            InvestmentMemo.opportunity_id == opportunity_id,
+            InvestmentMemo.status == "succeeded",
+        )
         .limit(1)
     )
     return result.scalar_one_or_none() is not None

@@ -484,6 +484,7 @@ class InvestmentMemo(TimestampMixin, Base):
         index=True,
     )
     thesis_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
     sections: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     model_version: Mapped[str] = mapped_column(String(64), nullable=False)

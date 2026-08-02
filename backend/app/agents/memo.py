@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Literal
 
 import structlog
 from openai import AsyncOpenAI
@@ -36,6 +37,7 @@ class Memo(BaseModel):
     sections: list[MemoSection] = Field(default_factory=list)
     model_version: str = ""
     generation_mode: str = "agent"  # agent | template_fallback
+    status: Literal["pending", "failed", "degraded", "succeeded"] = "succeeded"
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +76,12 @@ _SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 
 
-def _fallback_memo(evidence_text: str, person_name: str) -> Memo:
+def _fallback_memo(
+    evidence_text: str,
+    person_name: str,
+    *,
+    status: Literal["failed", "degraded"] = "degraded",
+) -> Memo:
     """Template memo when no API key is available."""
     sections = []
     for title in REQUIRED_SECTIONS:
@@ -86,7 +93,12 @@ def _fallback_memo(evidence_text: str, person_name: str) -> Memo:
                 evidence_ids=[],
             )
         )
-    return Memo(sections=sections, model_version="template", generation_mode="template_fallback")
+    return Memo(
+        sections=sections,
+        model_version="template",
+        generation_mode="template_fallback",
+        status=status,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +118,7 @@ async def generate_memo(
 ) -> Memo:
     """Generate a structured investment memo using OpenAI."""
     if not api_key:
-        return _fallback_memo(evidence_text, person_name)
+        return _fallback_memo(evidence_text, person_name, status="degraded")
 
     client = AsyncOpenAI(api_key=api_key)
 
@@ -131,14 +143,14 @@ async def generate_memo(
             )
         except Exception as exc:
             logger.warning("memo_call_failed", error=str(exc))
-            return _fallback_memo(evidence_text, person_name)
+            return _fallback_memo(evidence_text, person_name, status="degraded")
 
     content = completion.choices[0].message.content or "{}"
     try:
         payload = json.loads(content)
     except json.JSONDecodeError:
         logger.warning("memo_json_parse_failed")
-        return _fallback_memo(evidence_text, person_name)
+        return _fallback_memo(evidence_text, person_name, status="failed")
 
     sections: list[MemoSection] = []
     for item in payload.get("sections", []):
@@ -154,8 +166,10 @@ async def generate_memo(
 
     # Ensure all required sections are present
     existing_titles = {s.title.lower() for s in sections}
+    validation_failed = False
     for required in REQUIRED_SECTIONS:
         if required.lower() not in existing_titles:
+            validation_failed = True
             sections.append(
                 MemoSection(
                     title=required,
@@ -164,4 +178,9 @@ async def generate_memo(
                 )
             )
 
-    return Memo(sections=sections, model_version=model, generation_mode="agent")
+    return Memo(
+        sections=sections,
+        model_version=model,
+        generation_mode="agent",
+        status="failed" if validation_failed else "succeeded",
+    )
