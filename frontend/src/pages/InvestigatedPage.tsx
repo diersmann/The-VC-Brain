@@ -5,7 +5,7 @@ import { contactCandidate, useCandidates } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
-import { candidateEvidencePercent, candidateThesisPercent, ratioPercent } from "../data/portfolioMetrics";
+import { candidateEvidencePercent, candidateThesisPercent, displayScore, ratioPercent } from "../data/portfolioMetrics";
 
 export function InvestigatedPage() {
   const navigate = useNavigate();
@@ -53,7 +53,7 @@ export function InvestigatedPage() {
                 <CandidateAvatar name={candidate.display_name} avatarUrl={candidate.avatar_url} className="h-11 w-11 rounded-lg bg-accent-soft font-bold text-accent" />
                 <div>
                   <h2 className="text-[15px] font-bold">{candidate.display_name ?? candidate.stable_id}</h2>
-                  <p className="mt-1 text-[11px] text-muted">Founder {Math.round((candidate.scores?.founder ?? 0) * 100)}% · Thesis {candidateThesisPercent(candidate)}% · Evidence {candidateEvidencePercent(candidate)}%</p>
+                  <p className="mt-1 text-[11px] text-muted">Founder {displayScore(candidate.scores?.founder)} · Thesis {displayScore(candidateThesisPercent(candidate), true)} · Evidence {displayScore(candidateEvidencePercent(candidate), true)}</p>
                 </div>
               </button>
               <button onClick={() => void contact(candidate.id)} disabled={contacting === candidate.id} className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60">

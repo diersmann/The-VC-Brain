@@ -7,6 +7,11 @@ export function scorePercent(value: number | null | undefined): number | null {
   return Math.max(0, Math.min(100, Math.round(value <= 1 ? value * 100 : value)));
 }
 
+export function displayScore(value: number | null | undefined, alreadyPercent = false): string {
+  if (value == null) return "Not scored";
+  return `${alreadyPercent ? value : Math.round(value * 100)}%`;
+}
+
 export function candidateThesisPercent(candidate: Candidate): number | null {
   return scorePercent(candidate.scores?.thesis_fit);
 }

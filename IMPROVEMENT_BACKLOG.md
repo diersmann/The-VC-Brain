@@ -169,7 +169,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-068 - Make mutations update all affected caches and lock conflicting actions.** Observed: decision action buttons remain usable during save and only detail refetches; Contact/discovery errors are often silent. Done when mutations have idempotency, all related queries invalidate/optimistically update, controls lock during requests, and failures preserve user intent.
 
-- [ ] **VCB-069 - Preserve null score semantics throughout the UI.** Observed: missing Founder/Thesis/axis values render as 0, null%, or zero meters in profiles, decisions, and Investigated. Done when types use nullable values and every display renders Not scored/Unknown with separate confidence/coverage; zero remains a valid measured value.
+- [blocked] **VCB-069 - Preserve null score semantics throughout the UI.** Observed: missing Founder/Thesis/axis values rendered as 0, null%, or zero meters in profiles, decisions, and Investigated. **Partial completion:** Investigated now renders `Not scored` for null Founder/Thesis/Evidence values while preserving measured zero as `0%`. **Blocked:** the remaining profile, decision, and meter audit requires a broader UI pass and confidence/coverage field separation tracked by VCB-070.
 
 - [ ] **VCB-070 - Separate evidence coverage from confidence.** Observed: candidateProfile.ts:18-20 averages observation confidence but UI labels it confidence-weighted coverage. Done when formulas, names, tooltips, API fields, and tests distinguish breadth/coverage, source quality, claim Trust, and model uncertainty.
 
@@ -285,6 +285,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-054 focused and full backend validation passed with 164 tests. Investigation gating now requires opportunity-scoped axes instead of any historical founder score; full per-run output identity remains blocked scope.
 - 2026-08-02: VCB-060 backend/frontend validation passed with 164 backend and 34 frontend tests; migration 018 adds append-only candidate feedback and dismissal now persists a required reason before hiding the card. Save/assign/defer/undo and authenticated actor identity remain blocked scope.
 - 2026-08-02: VCB-063 frontend validation passed with 34 tests, lint, typecheck, and production build. Memo and research views now use bounded status polling instead of one-shot timers; durable job timeout/cancel/retry remains blocked scope.
+- 2026-08-02: VCB-069 frontend validation passed with 35 tests, lint, typecheck, and production build. Investigated now distinguishes null scores from measured zero; remaining profile/decision audit remains blocked scope.
 
 ## First practical milestone
 
