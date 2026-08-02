@@ -8,6 +8,7 @@ import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { FounderAssessmentCard } from "../components/founder/FounderAssessmentCard";
 import { FounderThesisReasons } from "../components/founder/FounderThesisReasons";
+import { FounderProfileInsights } from "../components/founder/FounderProfileInsights";
 import { candidateExternalLinks, safeHttpUrl, type CandidateLinkKind } from "../data/candidateLinks";
 import { buildFounderProfile } from "../data/candidateProfile";
 import { displayScore } from "../data/displayMetrics";
@@ -52,6 +53,8 @@ export function FounderProfilePage() {
 
     <div className="mb-5"><div className="eyebrow mb-2">Independent assessment</div><h2 className="text-xl font-bold">Multi-Axis Screening</h2><p className="mt-1 text-xs text-muted">Three separate views of the opportunity. They are deliberately not averaged into one score.</p></div>
     <div className="grid gap-4 xl:grid-cols-3">{profile.assessments.map((assessment) => <FounderAssessmentCard key={assessment.title} assessment={assessment} profile={profile} history={profile.axisTrendHistory[assessment.title]} />)}</div>
+
+    <div className="mt-5"><FounderProfileInsights profile={profile} /></div>
 
     <section className="panel mt-5 rounded-lg p-5"><div className="flex items-end justify-between gap-3"><div><div className="eyebrow mb-2">Source-backed research</div><h2 className="section-title">Tavily evidence & claims</h2><p className="supporting-text mt-1">Public sources used by the three independent assessments.</p></div><span className="status-pill numeric bg-accent-soft text-accent">{profile.claims.length} records</span></div>{profile.claims.length === 0 ? <div className="mt-4 rounded-md bg-surface-2 p-4 text-xs text-muted">No research claims stored yet. Run Tavily research to populate this section.</div> : <div className="mt-4 grid gap-2 lg:grid-cols-2">{profile.claims.map((claim, index) => { const sourceUrl = safeHttpUrl(claim.source); return <div key={`${claim.claim}-${index}`} className="rounded-md bg-surface-2/80 p-3.5"><div className="flex items-start justify-between gap-3"><p className="text-xs font-semibold leading-5 text-ink-2">{claim.claim}</p><span className="numeric shrink-0 rounded bg-white px-2 py-1 text-[10px] font-bold text-muted">{claim.trust}% trust</span></div><div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted"><span>{claim.status}</span>{sourceUrl ? <a href={sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-accent">Open source <ExternalLink className="h-3 w-3" /></a> : <span>{claim.source}</span>}</div></div>; })}</div>}</section>
 
