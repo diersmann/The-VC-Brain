@@ -22,15 +22,15 @@ export function KeyMetricCard({
 }: {
   icon: ElementType;
   label: string;
-  value: number;
+  value: number | null;
   suffix?: string;
   detail: string;
-  progress: number;
+  progress: number | null;
   progressLabel: string;
   tone: MetricTone;
 }) {
   const visual = tones[tone];
-  const normalizedProgress = Math.max(0, Math.min(100, Math.round(progress)));
+  const normalizedProgress = progress == null ? 0 : Math.max(0, Math.min(100, Math.round(progress)));
 
   return (
     <article className="panel group relative isolate overflow-hidden rounded-lg px-4 py-3.5">
@@ -47,8 +47,8 @@ export function KeyMetricCard({
           <p className="mt-1 truncate text-[10px] font-medium text-muted" title={detail}>{detail}</p>
         </div>
         <div className="flex shrink-0 items-end gap-0.5">
-          <span className="numeric text-[1.55rem] font-bold leading-none tracking-[-.04em] text-ink">{value}</span>
-          {suffix && <span className="mb-px text-[11px] font-bold" style={{ color: visual.color }}>{suffix}</span>}
+          <span className="numeric text-[1.55rem] font-bold leading-none tracking-[-.04em] text-ink">{value == null ? "Not scored" : value}</span>
+          {suffix && value != null && <span className="mb-px text-[11px] font-bold" style={{ color: visual.color }}>{suffix}</span>}
         </div>
       </div>
 
@@ -56,10 +56,10 @@ export function KeyMetricCard({
         <div
           className="h-1.5 min-w-12 flex-1 overflow-hidden rounded-full"
           role="progressbar"
-          aria-label={`${label}: ${progressLabel}`}
+          aria-label={`${label}: ${progress == null ? "pending" : progressLabel}`}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={normalizedProgress}
+          aria-valuenow={progress == null ? undefined : normalizedProgress}
           style={{ backgroundColor: visual.soft }}
         >
           <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${normalizedProgress}%`, backgroundColor: visual.color }} />

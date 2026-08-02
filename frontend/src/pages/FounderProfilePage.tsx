@@ -135,7 +135,7 @@ export function FounderProfilePage() {
       <section className="mb-6 grid gap-3 sm:grid-cols-3">
         <KeyMetricCard icon={Target} label="Thesis match" value={profile.thesisFit} suffix="%" detail="Fit with the active fund strategy" progress={profile.thesisFit} progressLabel={founder.thesis_match?.hard_eligible ? "Hard constraints passed" : "Review constraints"} tone="purple" />
         <KeyMetricCard icon={UserRound} label="Founder signal" value={profile.founderScore} suffix="/100" detail="Traits, track record and execution evidence" progress={profile.founderScore} progressLabel={founderAssessment?.rating ?? "Assessment pending"} tone="green" />
-        <KeyMetricCard icon={ShieldCheck} label="Evidence quality" value={profile.evidence} suffix="%" detail="Confidence-weighted coverage of key claims" progress={profile.evidence} progressLabel={`${profile.claims.length} evidence records`} tone="blue" />
+        <KeyMetricCard icon={ShieldCheck} label="Evidence coverage" value={profile.coverageScore} suffix="%" detail="Breadth across identity, product, traction and market" progress={profile.coverageScore} progressLabel={`${profile.claims.length} evidence records`} tone="blue" />
       </section>
 
       {founder.thesis_match && (
@@ -265,25 +265,28 @@ function axisExplanation(axis: FounderAssessment["title"], profile: FounderProfi
   const strongestClaim = [...profile.claims].sort((a, b) => b.trust - a.trust)[0];
   const latestEvent = profile.events[0];
   if (axis === "Founder") {
+    const trust = latestEvent?.trust ?? profile.sourceConfidence;
     return {
       support: latestEvent?.body ?? profile.scoreHint,
-      supportMeta: `${latestEvent?.type ?? "Track record"} · Trust ${latestEvent?.trust ?? profile.evidence}%`,
+      supportMeta: `${latestEvent?.type ?? "Track record"} · Trust ${trust == null ? "Not scored" : `${trust}%`}`,
       risk: profile.gaps.at(-1) ?? "Team-building evidence remains limited.",
       unknown: "Performance under sustained fundraising and scaling pressure.",
     };
   }
   if (axis === "Market") {
     const marketCoverage = profile.coverage.at(-1);
+    const trust = strongestClaim?.trust ?? profile.sourceConfidence;
     return {
       support: `${profile.sector} demand is supported by: ${strongestClaim?.claim ?? profile.signal}.`,
-      supportMeta: `${strongestClaim?.status ?? "Supported"} · Trust ${strongestClaim?.trust ?? profile.evidence}%`,
+      supportMeta: `${strongestClaim?.status ?? "Supported"} · Trust ${trust == null ? "Not scored" : `${trust}%`}`,
       risk: profile.gaps[1] ?? profile.gaps[0] ?? "Competitive response needs deeper review.",
       unknown: `${marketCoverage?.label ?? "Bottom-up market size"} is only ${marketCoverage?.value ?? 50}% evidenced.`,
     };
   }
+  const trust = profile.claims[1]?.trust ?? profile.sourceConfidence;
   return {
     support: profile.signal,
-    supportMeta: `${profile.claims[1]?.source ?? "Product and traction evidence"} · Trust ${profile.claims[1]?.trust ?? profile.evidence}%`,
+    supportMeta: `${profile.claims[1]?.source ?? "Product and traction evidence"} · Trust ${trust == null ? "Not scored" : `${trust}%`}`,
     risk: profile.gaps[0] ?? "Repeatable customer demand has not been independently verified.",
     unknown: "Whether the current wedge scales without a material product pivot.",
   };

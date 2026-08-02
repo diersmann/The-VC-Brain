@@ -15,9 +15,13 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
   const founderScore = percentage(scoreValue(candidate, "founder") ?? composite);
   const momentum = percentage(scoreValue(candidate, "momentum") ?? composite);
   const thesisFit = percentage(scoreValue(candidate, "thesis_fit"));
-  const evidence = observations.length
+  const sourceConfidence = observations.length
     ? Math.round(observations.reduce((sum, item) => sum + item.confidence, 0) / observations.length * 100)
-    : 0;
+    : null;
+  const coverage = buildCoverage(observations);
+  const coverageScore = observations.length
+    ? Math.round(coverage.reduce((sum, item) => sum + item.value, 0) / coverage.length)
+    : null;
   const trendHistory = candidate.score_history
     .map((snapshot) => numeric(snapshot.components.composite ?? snapshot.components.founder ?? snapshot.components.thesis_fit))
     .filter((value): value is number => value !== null)
@@ -97,7 +101,9 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
     founderScore,
     momentum,
     thesisFit,
-    evidence,
+    evidence: sourceConfidence ?? 0,
+    sourceConfidence,
+    coverageScore,
     scoreHint: `${observations.length} observations across ${sources.length} source${sources.length === 1 ? "" : "s"}`,
     assessments,
     events: observations.slice(0, 8).map((item) => ({
@@ -108,7 +114,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
       trust: percentage(item.confidence),
     })),
     claims: evidenceClaims,
-    coverage: buildCoverage(observations),
+    coverage,
     gaps,
     relations: candidate.relationships.map((item) => ({
       label: item.display_name ?? item.person_id,

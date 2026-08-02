@@ -37,6 +37,8 @@ export interface FounderProfile {
   momentum: number;
   thesisFit: number;
   evidence: number;
+  sourceConfidence: number | null;
+  coverageScore: number | null;
   scoreHint: string;
   assessments: FounderAssessment[];
   events: FounderEvent[];

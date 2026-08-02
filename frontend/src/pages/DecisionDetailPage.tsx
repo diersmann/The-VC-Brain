@@ -180,7 +180,7 @@ function FounderSidebar({
 
         <div className="mt-4 grid grid-cols-2 gap-2">
           <SmallMetric label="Thesis fit" value={`${profile.thesisFit}%`} />
-          <SmallMetric label="Evidence" value={`${profile.evidence}%`} />
+          <SmallMetric label="Coverage" value={`${profile.coverageScore == null ? "Not scored" : `${profile.coverageScore}%`}`} />
         </div>
 
         <div className="mt-4 flex flex-wrap gap-1.5">
@@ -270,7 +270,7 @@ function DealMetrics({ profile, meta }: { profile: FounderProfile; meta: Decisio
     <section className="grid gap-3 sm:grid-cols-3">
       <KeyMetricCard icon={Target} label="Thesis match" value={profile.thesisFit} suffix="%" detail="Fit with the active fund strategy" progress={profile.thesisFit} progressLabel={meta.recommendation} tone="purple" />
       <KeyMetricCard icon={Users} label="Founder signal" value={profile.founderScore} suffix="/100" detail="Traits, execution history and team-building signal" progress={profile.founderScore} progressLabel={founderAssessment?.rating ?? "Assessment pending"} tone="green" />
-      <KeyMetricCard icon={ShieldCheck} label="Evidence quality" value={profile.evidence} suffix="%" detail="Confidence-weighted coverage of key claims" progress={profile.evidence} progressLabel={`${profile.claims.length} evidence records`} tone="blue" />
+      <KeyMetricCard icon={ShieldCheck} label="Evidence coverage" value={profile.coverageScore} suffix="%" detail="Breadth across identity, product, traction and market" progress={profile.coverageScore} progressLabel={`${profile.claims.length} evidence records`} tone="blue" />
     </section>
   );
 }
