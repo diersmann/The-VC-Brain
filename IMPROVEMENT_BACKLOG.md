@@ -209,7 +209,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-088 - Restore and enforce a green CI quality gate.** Observed: no CI workflow; the earlier Ruff/mypy failures are now resolved in the current tree. **Partial completion:** `.github/workflows/quality.yml` now runs Docker-backed `make check` on pushes to `post-hackathon-polish` and pull requests with read-only repository permissions. **Blocked:** migration smoke, production build, security scans, deterministic E2E, and a branch-protection/required-check setting still need CI integration and repository-admin configuration.
 
-- [ ] **VCB-089 - Make clean quick start migrate and optionally seed automatically.** Observed: README says make up on a fresh DB but Compose API does not apply migrations. Done when a clean-volume start reaches the migration head before readiness, failure blocks API, and a separate one-command deterministic demo seeds known data.
+- [blocked] **VCB-089 - Make clean quick start migrate and optionally seed automatically.** Observed: README said `make up` on a fresh DB but Compose API did not apply migrations. **Partial completion:** Compose now runs a one-shot `migrate` service before API and worker readiness; `make migrate` uses that same service, and `make seed-demo` adds two clearly labelled, synthetic, deterministic, idempotent local records without network access. **Blocked:** a clean-volume acceptance run and service-failure/readiness assertion still require a dedicated disposable Docker environment or CI integration; the repository now has the wiring and focused fixture tests but this goal does not destroy the existing developer volumes.
 
 - [ ] **VCB-090 - Make configuration names and Compose wiring coherent.** Observed: .env.example mixes APP_ and unprefixed names; Compose passes only a subset, retains removed MOCK_REPLY_DELAY, and many new knobs never reach services. Done when one convention works identically in local/Docker/tests, enabled features validate required settings, unused knobs are removed, and ranges are startup-validated.
 
@@ -286,6 +286,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-060 backend/frontend validation passed with 164 backend and 34 frontend tests; migration 018 adds append-only candidate feedback and dismissal now persists a required reason before hiding the card. Save/assign/defer/undo and authenticated actor identity remain blocked scope.
 - 2026-08-02: VCB-063 frontend validation passed with 34 tests, lint, typecheck, and production build. Memo and research views now use bounded status polling instead of one-shot timers; durable job timeout/cancel/retry remains blocked scope.
 - 2026-08-02: VCB-069 frontend validation passed with 35 tests, lint, typecheck, and production build. Investigated now distinguishes null scores from measured zero; remaining profile/decision audit remains blocked scope.
+- 2026-08-02: VCB-089 migration/seed wiring passed Compose config validation and focused demo-fixture tests. The migration service is ordered before API/worker readiness, and `make seed-demo` is documented as opt-in synthetic data; clean-volume acceptance remains blocked to avoid destroying the existing local database volume.
 
 ## First practical milestone
 

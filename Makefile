@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help setup up down restart logs ps shell-api shell-db shell-worker shell-redis shell-minio migrate lint typecheck test check build clean
+.PHONY: help setup up down restart logs ps shell-api shell-db shell-worker shell-redis shell-minio migrate seed-demo lint typecheck test check build clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -40,7 +40,10 @@ shell-db: ## Open psql in the database container
 	$(COMPOSE) exec postgres psql -U $${POSTGRES_USER:-vc_brain} -d $${POSTGRES_DB:-vc_brain}
 
 migrate: ## Apply backend database migrations
-	$(COMPOSE) exec api /opt/venv/bin/alembic upgrade head
+	$(COMPOSE) run --rm migrate
+
+seed-demo: up ## Seed deterministic, synthetic local demo records
+	$(COMPOSE) run --rm --no-deps api /opt/venv/bin/python -m scripts.seed_demo
 
 lint: ## Run frontend and backend linters
 	$(COMPOSE) run --rm api /opt/venv/bin/ruff check .

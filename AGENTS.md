@@ -23,7 +23,8 @@
 
 ```bash
 cp .env.example .env
-make up        # Build and start all services
+make up        # Build and start all services; migrations run before API/worker readiness
+make seed-demo # Optional: add clearly labelled synthetic local demo records
 make logs      # Follow logs
 ```
 
@@ -39,6 +40,7 @@ make logs      # Follow logs
 | API shell | `make shell-api` |
 | DB shell (psql) | `make shell-db` |
 | Run migrations | `make migrate` |
+| Seed local demo | `make seed-demo` |
 | Lint (backend + frontend) | `make lint` |
 | Type check (backend + frontend) | `make typecheck` |
 | Unit tests (backend + frontend) | `make test` |

@@ -49,6 +49,9 @@ cp .env.example .env
 # 2. Start the full stack
 make up
 
+# Optional: add clearly labelled synthetic demo records
+make seed-demo
+
 # 3. Follow logs
 make logs
 
@@ -65,7 +68,7 @@ make down
 
 | Command | Description |
 |---|---|
-| `make up` | Build and start all services in detached mode |
+| `make up` | Build and start all services in detached mode; migrations run before API/worker readiness |
 | `make down` | Stop all services |
 | `make restart` | Restart application containers (frontend, api, worker) |
 | `make logs` | Follow all service logs |
@@ -73,6 +76,7 @@ make down
 | `make shell-api` | Open a shell in the API container |
 | `make shell-db` | Open psql in the database container |
 | `make migrate` | Run Alembic database migrations |
+| `make seed-demo` | Start the stack and seed deterministic, synthetic local demo records |
 | `make lint` | Run Ruff (backend) and ESLint (frontend) |
 | `make typecheck` | Run mypy (backend) and tsc (frontend) |
 | `make test` | Run pytest (backend) and Vitest (frontend) |
