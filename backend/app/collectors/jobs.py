@@ -36,7 +36,7 @@ from app.collectors.priority import priority as compute_priority
 from app.collectors.queue import (
     decrement_tavily_budget,
     get_tavily_budget_remaining,
-    pop_top,
+    pop_top_with_priority,
     queue_depth,
 )
 from app.collectors.queue import (
@@ -1208,9 +1208,10 @@ async def dispatcher_job(ctx: dict[str, Any]) -> dict[str, Any]:
         logger.warning("tavily_budget_exhausted")
         # Still process non-Tavily tasks
 
-    tasks = await pop_top(redis, concurrency)
+    tasks = await pop_top_with_priority(redis, concurrency)
     enqueued = 0
-    for task in tasks:
+    failed = 0
+    for task, task_priority in tasks:
         source = task.get("source", "")
         if source == "tavily_search" and tavily_remaining <= 0:
             # Re-enqueue with lower priority for later
@@ -1221,13 +1222,27 @@ async def dispatcher_job(ctx: dict[str, Any]) -> dict[str, Any]:
             await decrement_tavily_budget(redis)
             tavily_remaining -= 1
 
-        # Enqueue as Arq job
-        await enqueue_arq_job(ctx, task)
+        try:
+            # Enqueue as Arq job.
+            await enqueue_arq_job(ctx, task)
+        except Exception as exc:
+            failed += 1
+            await queue_enqueue(redis, task, priority=task_priority)
+            if source == "tavily_search":
+                await decrement_tavily_budget(redis, amount=-1)
+                tavily_remaining += 1
+            logger.error(
+                "dispatcher_enqueue_failed",
+                source=source,
+                failure=str(exc),
+                requeued=True,
+            )
+            continue
         enqueued += 1
 
     depths = await queue_depth(redis)
-    logger.info("dispatcher_job_completed", enqueued=enqueued, queue_depths=depths)
-    return {"enqueued": enqueued, "queue_depths": depths}
+    logger.info("dispatcher_job_completed", enqueued=enqueued, failed=failed, queue_depths=depths)
+    return {"enqueued": enqueued, "failed": failed, "queue_depths": depths}
 
 
 async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:

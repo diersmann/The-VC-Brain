@@ -15,6 +15,7 @@ from app.collectors.queue import (
     enqueue,
     peek,
     pop_top,
+    pop_top_with_priority,
     queue_depth,
 )
 
@@ -55,6 +56,16 @@ async def test_pop_top_empty_queue(redis: Any) -> None:
     """Popping from an empty queue should return an empty list."""
     popped = await pop_top(redis, n=5)
     assert popped == []
+
+
+@pytest.mark.asyncio
+async def test_pop_top_with_priority_preserves_requeue_priority(redis: Any) -> None:
+    task = {"id": "priority"}
+    await enqueue(redis, task, priority=10.0)
+
+    popped = await pop_top_with_priority(redis, n=1)
+
+    assert popped == [(task, 10.0)]
 
 
 @pytest.mark.asyncio
