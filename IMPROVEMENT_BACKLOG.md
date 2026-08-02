@@ -125,7 +125,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-047 - Fix Product Hunt query and cursor semantics.** Observed: the GraphQL query variable is unused and pagination fabricates an offset instead of provider cursor. Done when thesis/query inputs affect results, pageInfo cursors are used, and multi-page tests show no skip/duplication.
 
-- [ ] **VCB-048 - Remove citation count as an arXiv eligibility gate.** Observed: arxiv.py:55-118 drops authors below the configured citation minimum. Done when citations are one confidence/momentum observation, recent uncited work remains discoverable through exploration, and cold-start coverage is measured.
+- [blocked] **VCB-048 - Remove citation count as an arXiv eligibility gate.** Observed: arXiv discovery dropped authors below the configured citation minimum. **Partial completion:** all authors in the relevant query results are now discoverable regardless of citation count; counts remain explicit `context_only` seed metadata and downstream collection already persists aggregate citation observations. **Blocked:** cold-start coverage/advancement metrics and a persisted per-discovery citation observation still require the measurement and durable discovery-event model tracked by VCB-051/VCB-059.
 
 - [ ] **VCB-049 - Make connectors async-safe and block SSRF.** Observed: multiple async connectors call synchronous Tavily SDKs; website.py follows arbitrary redirects and buffers arbitrary URLs without private-IP/size checks. Done when calls have bounded async/thread execution, cancellation/timeouts, redirect-by-redirect IP validation, HTTP(S) allow rules, and streamed byte limits.
 
@@ -261,7 +261,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - Frontend TypeScript: passed.
 - Frontend Vitest: 34 tests passed.
 - Frontend production build: passed; 349.50 kB JavaScript, 105.16 kB gzip.
-- Backend pytest: 151 tests passed with one Starlette/httpx deprecation warning.
+- Backend pytest: 152 tests passed with one Starlette/httpx deprecation warning.
 - Backend Ruff: passed after formatting two pre-existing E501 violations in migrations/versions/e093be299381_add_discovery_config_to_thesis.py.
 - Backend mypy: passed with no issues in 63 source files.
 - Alembic: one head, revision 016; local Docker database migrated successfully from e093be299381 through 016.
@@ -276,6 +276,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-043 focused and full validation passed; `make check` passed in Compose with 149 backend and 34 frontend tests, and `make migrate` advanced the local database to migration 016. Durable quarantine remains explicitly blocked on VCB-051.
 - 2026-08-02: VCB-044 focused and full backend validation passed with 150 tests. Search-synthesized claims are now excluded from memo inputs; original-page verification remains the explicit blocker.
 - 2026-08-02: VCB-045 focused and full backend validation passed with 151 tests. Tavily URL seeds route through the web collector, while entity leads remain discovery-only; provider-backed end-to-end verification remains blocked without credentials.
+- 2026-08-02: VCB-048 focused and full backend validation passed with 152 tests. Uncited recent arXiv authors remain discoverable; citation metadata is explicitly non-gating. Cold-start coverage metrics remain blocked on durable discovery-event measurement.
 
 ## First practical milestone
 

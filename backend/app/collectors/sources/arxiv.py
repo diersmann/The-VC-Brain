@@ -3,8 +3,8 @@
 Lightweight: paper metadata + abstract.
 Deep: full PDF download + coauthor expansion (capped).
 
-Threshold baked into discover: only authors in thesis-relevant categories
-whose papers have >= arxiv_min_citations (via Semantic Scholar API) become seeds.
+Discovery includes relevant authors regardless of citation count. Citations are
+retained as a confidence and momentum signal, not an eligibility gate.
 """
 
 from __future__ import annotations
@@ -53,21 +53,15 @@ class ArxivConnector(Connector):
     # ------------------------------------------------------------------
 
     async def discover(self, query: str, page: int = 1) -> list[Seed]:
-        """Search arXiv by topic, return author seeds (threshold-gated).
+        """Search arXiv by topic and return author seeds.
 
-        Only returns authors whose papers:
-        - Are in thesis-relevant categories, AND
-        - Have >= arxiv_min_citations (via Semantic Scholar).
+        Returns authors from relevant categories regardless of citation count.
+        Citation counts remain metadata and are collected as a downstream signal.
 
         Args:
             query: Search topic.
             page: Page number (1-indexed, 50 results per page).
         """
-        from app.config import get_settings
-
-        settings = get_settings()
-        min_citations = settings.arxiv_min_citations
-
         # Build arXiv search query
         cat_filter = " OR ".join(f"cat:{c}" for c in _DEFAULT_CATEGORIES)
         search_query = f"({query}) AND ({cat_filter})"
@@ -98,9 +92,6 @@ class ArxivConnector(Connector):
 
             # Get citation count from Semantic Scholar
             citations = await self._fetch_citations(arxiv_id)
-            if citations < min_citations:
-                continue
-
             authors = entry.findall("atom:author", ns)
             for author in authors:
                 name = author.findtext("atom:name", "", ns)
@@ -111,7 +102,12 @@ class ArxivConnector(Connector):
                             source_type="arxiv",
                             handle=name,
                             display_hint=name,
-                            metadata={"arxiv_id": arxiv_id, "citations": citations, "query": query},
+                            metadata={
+                                "arxiv_id": arxiv_id,
+                                "citations": citations,
+                                "citation_signal": "context_only",
+                                "query": query,
+                            },
                         )
                     )
 
