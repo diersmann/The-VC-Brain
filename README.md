@@ -130,7 +130,7 @@ npm run build                                  # Production build
 
 ### Environment variables
 
-See `.env.example` for all configurable values. The `APP_` prefix is used for backend settings (via `pydantic-settings`).
+See `.env.example` for all configurable values. Backend settings use the `APP_` prefix in local runs and Docker; `POSTGRES_*` and `MINIO_ROOT_*` remain service-native container credentials.
 
 Website collection accepts only public HTTP(S) URLs, validates redirects, and streams responses up to `APP_WEBSITE_MAX_BYTES`.
 
