@@ -134,10 +134,6 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
   };
 }
 
-export function candidateSignal(candidate: CandidateDetail | { scores: CandidateDetail["scores"] }): number | null {
-  return scoreValue(candidate, "composite");
-}
-
 export function percentage(value: number | null | undefined): number {
   return scorePercent(value) ?? 0;
 }

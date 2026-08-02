@@ -4,7 +4,3 @@ export const DECISION_RUBRIC = {
   thesisAlignment: 75,
   evidenceConfidence: 60,
 } as const;
-
-export function rubricPercent(key: "thesisAlignment" | "evidenceConfidence"): number {
-  return DECISION_RUBRIC[key];
-}
