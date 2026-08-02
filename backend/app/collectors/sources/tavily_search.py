@@ -92,7 +92,7 @@ class TavilySearchConnector(Connector):
                 if entity_type == "person":
                     seeds.append(
                         Seed(
-                            source_type="web",
+                            source_type="tavily_entity",
                             handle=entity_name,
                             display_hint=entity_name,
                             metadata={"query": query, "entity_type": "person"},

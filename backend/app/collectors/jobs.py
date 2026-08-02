@@ -350,6 +350,15 @@ def _signal_input_fingerprint(
     ).hexdigest()
 
 
+def _collection_source_for_seed(requested_source: str, seed: Seed) -> str | None:
+    """Resolve a discovery seed to a real collector, or keep it as a lead."""
+    if requested_source != "tavily_search":
+        return seed.source_type or requested_source
+    if seed.source_type == "web" and seed.handle.startswith(("http://", "https://")):
+        return "web"
+    return None
+
+
 async def _compute_and_store_signal(
     session: AsyncSession,
     person: Person,
@@ -498,9 +507,19 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
 
     async with _session_ctx(ctx) as session:
         for seed in seeds:
+            collection_source = _collection_source_for_seed(source, seed)
+            if collection_source is None:
+                logger.info(
+                    "discovery_seed_retained_as_lead",
+                    source=source,
+                    seed_type=seed.source_type,
+                    handle=seed.handle,
+                )
+                continue
+            seed_connector = get_connector(collection_source)
             person = await _get_or_create_person(
                 session,
-                source_type=source,
+                source_type=collection_source,
                 handle=seed.handle,
                 display_hint=seed.display_hint,
             )
@@ -520,11 +539,11 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
             active_thesis = active_thesis_result.scalar_one_or_none()
             
             if active_thesis:
-                freshness_days = active_thesis.source_freshness_days.get(source, 7)
+                freshness_days = active_thesis.source_freshness_days.get(collection_source, 7)
             else:
                 from app.collectors.thesis_config import get_thesis_config
                 thesis = get_thesis_config()
-                freshness_days = thesis.get("source_freshness_days", {}).get(source, 7)
+                freshness_days = thesis.get("source_freshness_days", {}).get(collection_source, 7)
             from datetime import UTC, datetime, timedelta
 
             cutoff = datetime.now(UTC) - timedelta(days=freshness_days)
@@ -534,7 +553,7 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                 .join(Observation, Observation.snapshot_id == SourceSnapshot.id)
                 .where(
                     Observation.subject_id == person.id,
-                    SourceSnapshot.source_type == source,
+                    SourceSnapshot.source_type == collection_source,
                     SourceSnapshot.collected_at >= cutoff,
                 )
                 .limit(1)
@@ -543,10 +562,12 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                 logger.debug(
                     "discover_skip_fresh",
                     person_id=str(person.id),
-                    source=source,
+                    source=collection_source,
                 )
                 # Still recompute signal score with existing observations
-                components = await _compute_and_store_signal(session, person, source)
+                components = await _compute_and_store_signal(
+                    session, person, collection_source
+                )
 
                 from app.opportunity_service import (
                     get_or_create_opportunity,
@@ -567,25 +588,25 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                     above_count += 1
                     task = {
                         "person_id": str(person.id),
-                        "source": source,
+                        "source": collection_source,
                         "depth": "deep",
                         "handle": seed.handle,
                     }
                     p = compute_priority(
                         info_gain=info_gain(components.get("composite", 0.0), staleness_days=0.0),
-                        cost=connector.cost,
-                        authority=connector.authority,
+                        cost=seed_connector.cost,
+                        authority=seed_connector.authority,
                     )
                     await queue_enqueue(ctx["redis"], task, p)
                 continue
 
             # Light collect: get metadata
             try:
-                collected = await connector.collect(seed, depth="light")
+                collected = await seed_connector.collect(seed, depth="light")
             except Exception as exc:
                 logger.error(
                     "collect_light_failed",
-                    source=source,
+                    source=collection_source,
                     handle=seed.handle,
                     error=str(exc),
                 )
@@ -603,7 +624,7 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                     break
 
             # Compute signal score
-            components = await _compute_and_store_signal(session, person, source)
+            components = await _compute_and_store_signal(session, person, collection_source)
 
             # Create/update outbound opportunity at the right lifecycle stage
             from app.opportunity_service import get_or_create_opportunity, transition_opportunity
@@ -623,14 +644,14 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                 above_count += 1
                 task = {
                     "person_id": str(person.id),
-                    "source": source,
+                    "source": collection_source,
                     "depth": "deep",
                     "handle": seed.handle,
                 }
                 p = compute_priority(
                     info_gain=info_gain(composite, staleness_days=0.0),
-                    cost=connector.cost,
-                    authority=connector.authority,
+                    cost=seed_connector.cost,
+                    authority=seed_connector.authority,
                 )
                 await queue_enqueue(ctx["redis"], task, p)
 

@@ -1,4 +1,13 @@
-from app.collectors.jobs import _rating, score_research_axis
+from app.collectors.base import Seed
+from app.collectors.jobs import _collection_source_for_seed, _rating, score_research_axis
+
+
+def test_tavily_url_seeds_route_to_web_and_entity_leads_are_not_collected() -> None:
+    url_seed = Seed(source_type="web", handle="https://example.test/profile")
+    entity_seed = Seed(source_type="tavily_entity", handle="Ada Founder")
+
+    assert _collection_source_for_seed("tavily_search", url_seed) == "web"
+    assert _collection_source_for_seed("tavily_search", entity_seed) is None
 
 
 def test_research_axis_without_results_is_low_confidence() -> None:

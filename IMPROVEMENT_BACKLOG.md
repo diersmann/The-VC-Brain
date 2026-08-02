@@ -119,7 +119,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-044 - Treat search snippets and synthesized answers as leads, not trusted claims.** Observed: Tavily results/answers became observations and a nonstandard `tavily_synthesized` Claim that memo generation accepted. **Partial completion:** synthesized answer Claims are no longer created, and memo inputs accept only reconciliation status `supported`; existing `tavily_synthesized` rows are excluded. **Blocked:** the remaining workflow must fetch and verify each original result page before its content can support a claim or assessment; the current research path still uses search output as low-authority lead evidence.
 
-- [ ] **VCB-045 - Repair Tavily discovery routing.** Observed: tavily_search emits web seeds, discover_job ignores seed source type, then invokes Tavily collect which raises NotImplementedError. Done when declared collection connector and discovery provenance are distinct and an end-to-end Tavily discovery test persists verified web observations.
+- [blocked] **VCB-045 - Repair Tavily discovery routing.** Observed: `tavily_search` emitted web seeds, `discover_job` ignored seed source type, and then invoked Tavily collect, which raises `NotImplementedError`; entity-name leads were also treated as URLs. **Partial completion:** HTTP(S) URL seeds now route to the `web` collector, discovery-only entity leads are retained and skipped for collection, and seed-source routing is regression-tested. **Blocked:** an end-to-end Tavily discovery test that persists verified web observations requires a configured Tavily credential and external provider access, which are not available for this local validation.
 
 - [ ] **VCB-046 - Classify entities before founder scoring.** Observed: hackathon projects, YouTube channels, Tavily URLs, and other seeds are all passed through person creation. Done when Person, Organization, Project, Channel, and Event are classified with confidence and only verified people enter founder ranking.
 
@@ -261,7 +261,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - Frontend TypeScript: passed.
 - Frontend Vitest: 34 tests passed.
 - Frontend production build: passed; 349.50 kB JavaScript, 105.16 kB gzip.
-- Backend pytest: 150 tests passed with one Starlette/httpx deprecation warning.
+- Backend pytest: 151 tests passed with one Starlette/httpx deprecation warning.
 - Backend Ruff: passed after formatting two pre-existing E501 violations in migrations/versions/e093be299381_add_discovery_config_to_thesis.py.
 - Backend mypy: passed with no issues in 63 source files.
 - Alembic: one head, revision 016; local Docker database migrated successfully from e093be299381 through 016.
@@ -275,6 +275,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: Docker became available; the VCB-042 focused tests and full local checks passed, `make check` passed in Compose, and `make migrate` advanced the local database from e093be299381 to migration 015. The two pre-existing migration E501 failures were formatted in the VCB-042 checkpoint. The remaining VCB-041 blocker is schema/duplicate policy, not Docker access.
 - 2026-08-02: VCB-043 focused and full validation passed; `make check` passed in Compose with 149 backend and 34 frontend tests, and `make migrate` advanced the local database to migration 016. Durable quarantine remains explicitly blocked on VCB-051.
 - 2026-08-02: VCB-044 focused and full backend validation passed with 150 tests. Search-synthesized claims are now excluded from memo inputs; original-page verification remains the explicit blocker.
+- 2026-08-02: VCB-045 focused and full backend validation passed with 151 tests. Tavily URL seeds route through the web collector, while entity leads remain discovery-only; provider-backed end-to-end verification remains blocked without credentials.
 
 ## First practical milestone
 
