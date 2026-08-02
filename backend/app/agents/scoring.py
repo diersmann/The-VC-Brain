@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import structlog
 from openai import AsyncOpenAI
@@ -41,6 +42,8 @@ class AgentAssessment(BaseModel):
     unknowns: list[str] = Field(default_factory=list)
     recommendation: str = ""
     rationale: str = ""
+    validation_status: Literal["passed", "failed", "unavailable"] = "passed"
+    validation_errors: list[str] = Field(default_factory=list)
 
 
 class Issue(BaseModel):
@@ -55,6 +58,8 @@ class Critique(BaseModel):
     """Output from the critic agent."""
 
     issues: list[Issue] = Field(default_factory=list)
+    validation_status: Literal["passed", "failed", "unavailable"] = "passed"
+    validation_errors: list[str] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -69,6 +74,8 @@ class Scorecard:
     hard_eligible: bool
     critique: list[Issue] = field(default_factory=list)
     agents: dict[str, AgentAssessment] = field(default_factory=dict)
+    validator_status: Literal["passed", "failed", "unavailable"] = "passed"
+    validation_errors: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -153,11 +160,15 @@ def _fallback_assessment(dimension: str) -> AgentAssessment:
         unknowns=["LLM unavailable — manual review required"],
         recommendation="Score pending LLM availability.",
         rationale="The scoring agent was unavailable; a neutral placeholder was used.",
+        validation_status="unavailable",
+        validation_errors=["specialist agent unavailable"],
     )
 
 
-def _fallback_critique() -> Critique:
-    return Critique(issues=[])
+def _fallback_critique(
+    status: Literal["failed", "unavailable"], error: str
+) -> Critique:
+    return Critique(issues=[], validation_status=status, validation_errors=[error])
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +230,10 @@ async def _call_agent(
         )
     except (ValueError, TypeError) as exc:
         logger.warning("agent_payload_invalid", dimension=dimension, error=str(exc))
-        return _fallback_assessment(dimension)
+        fallback = _fallback_assessment(dimension)
+        fallback.validation_status = "failed"
+        fallback.validation_errors = ["specialist payload failed validation"]
+        return fallback
 
 
 async def execution_agent(
@@ -283,7 +297,7 @@ async def critic_agent(
     semaphore: asyncio.Semaphore,
 ) -> Critique:
     if client is None:
-        return _fallback_critique()
+        return _fallback_critique("unavailable", "critic agent unavailable")
 
     assessments_summary = json.dumps(
         [
@@ -317,24 +331,53 @@ async def critic_agent(
             )
         except Exception as exc:
             logger.warning("critic_call_failed", error=str(exc))
-            return _fallback_critique()
+            return _fallback_critique("unavailable", "critic agent unavailable")
 
     content = completion.choices[0].message.content or "{}"
     try:
         payload = json.loads(content)
     except json.JSONDecodeError:
-        return _fallback_critique()
+        return _fallback_critique("failed", "critic JSON failed validation")
 
     issues: list[Issue] = []
-    for item in payload.get("issues", []):
+    raw_issues = payload.get("issues", [])
+    if not isinstance(raw_issues, list):
+        return _fallback_critique("failed", "critic issues payload is not a list")
+    for item in raw_issues:
         if not isinstance(item, dict):
-            continue
+            return _fallback_critique("failed", "critic issue failed validation")
+        severity = str(item.get("severity", ""))
+        description = str(item.get("description", "")).strip()
+        if severity not in {"hard", "soft"} or not description:
+            return _fallback_critique("failed", "critic issue failed validation")
         issues.append(
             Issue(
-                severity=str(item.get("severity", "soft")),
-                description=str(item.get("description", "")),
+                severity=severity,
+                description=description,
                 evidence_id=item.get("evidence_id"),
             )
+        )
+    allowed_evidence_ids = set(re.findall(r"\[([^\]]+)\]", evidence_text))
+    cited_ids = {
+        evidence_id
+        for issue in issues
+        if issue.evidence_id
+        for evidence_id in [issue.evidence_id]
+    }
+    for assessment in assessments:
+        cited_ids.update(assessment.evidence)
+        cited_ids.update(assessment.counter_evidence)
+    unknown_ids = sorted(cited_ids - allowed_evidence_ids)
+    if unknown_ids:
+        return Critique(
+            issues=[
+                Issue(
+                    severity="hard",
+                    description="Validator rejected unknown evidence citations",
+                )
+            ],
+            validation_status="failed",
+            validation_errors=[f"unknown evidence IDs: {', '.join(unknown_ids)}"],
         )
     return Critique(issues=issues)
 
@@ -374,6 +417,18 @@ def aggregate_assessments(
     )
 
     hard_issue = any(i.severity == "hard" for i in critique.issues)
+    statuses = [assessment.validation_status for assessment in assessments]
+    statuses.append(critique.validation_status)
+    validator_status: Literal["passed", "failed", "unavailable"] = "passed"
+    if "failed" in statuses:
+        validator_status = "failed"
+    elif "unavailable" in statuses:
+        validator_status = "unavailable"
+    validation_errors = [
+        error
+        for assessment in assessments
+        for error in assessment.validation_errors
+    ] + critique.validation_errors
     if hard_issue:
         composite = min(composite, 35.0)
 
@@ -386,9 +441,11 @@ def aggregate_assessments(
         commercial=round(comm_score, 2),
         composite=round(composite, 2),
         confidence=round(confidence, 4),
-        hard_eligible=not hard_issue,
+        hard_eligible=not hard_issue and validator_status == "passed",
         critique=critique.issues,
         agents=by_dim,
+        validator_status=validator_status,
+        validation_errors=validation_errors,
     )
 
 
@@ -481,6 +538,8 @@ async def score_candidate(
         "critique": critique.model_dump(),
         "model": model,
         "hard_eligible": scorecard.hard_eligible,
+        "validator_status": scorecard.validator_status,
+        "validation_errors": scorecard.validation_errors,
     }
 
     logger.info(

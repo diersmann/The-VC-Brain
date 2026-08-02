@@ -73,6 +73,8 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
             "commercial": scorecard.commercial,
             "evidence_confidence": scorecard.confidence,
             "hard_eligible": scorecard.hard_eligible,
+            "validator_status": scorecard.validator_status,
+            "validation_errors": scorecard.validation_errors,
             "critique": [i.model_dump() for i in scorecard.critique],
             "agents": {dim: a.model_dump() for dim, a in scorecard.agents.items()},
         }
