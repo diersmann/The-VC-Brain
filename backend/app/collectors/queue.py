@@ -147,6 +147,11 @@ async def reset_tavily_budget(redis: Any, monthly_limit: int) -> None:
     await redis.set(_TAVILY_BUDGET_KEY, monthly_limit)
 
 
+async def initialize_tavily_budget(redis: Any, monthly_limit: int) -> None:
+    """Initialize Tavily budget without replenishing it on worker restart."""
+    await redis.set(_TAVILY_BUDGET_KEY, monthly_limit, nx=True)
+
+
 # ---------------------------------------------------------------------------
 # Agent (LLM) budget counter
 # ---------------------------------------------------------------------------

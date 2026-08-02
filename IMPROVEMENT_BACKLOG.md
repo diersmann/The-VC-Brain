@@ -135,7 +135,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-052 - Make DB transitions, queue delivery, and budgets crash-safe.** Observed: lifecycle mutates DB/decrements Redis budget/enqueues before final commit; dispatcher popped a task before Arq enqueue. **Partial completion:** dispatcher now retains original priority, requeues tasks when Arq enqueue fails, and refunds the Tavily budget reservation on that failure. **Blocked:** crash-safe leases/ack/requeue, deterministic job IDs across all workflows, and atomic DB/Redis budget reservation still require the broader transactional orchestration design.
 
-- [ ] **VCB-053 - Correct provider/model budget accounting.** Observed: worker.py:45-48 resets a monthly budget on every restart; tasks are charged rather than actual calls/tokens; manual routes bypass caps. Done when billing-period counters survive restarts, every entry point reserves/reconciles actual usage, and skipped work visibly changes confidence.
+- [blocked] **VCB-053 - Correct provider/model budget accounting.** Observed: worker startup reset a monthly budget on every restart; tasks are charged rather than actual calls/tokens; manual routes bypass caps. **Partial completion:** Tavily budget initialization is now idempotent across worker restarts, with a regression test. **Blocked:** billing-period reset ownership, actual provider/token usage reconciliation, reservation/refund across every entry point, and visible confidence changes for skipped work require the broader budget ledger design.
 
 - [ ] **VCB-054 - Prevent historical scores from stalling or satisfying a new opportunity.** Observed: lifecycle_job.py:77-87 and 177-268 checks any person-wide founder-agent score and can leave interesting opportunities stuck or reuse stale results. Done when stage outputs are keyed by opportunity/run while historical Founder Score remains only a versioned input.
 
@@ -261,7 +261,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - Frontend TypeScript: passed.
 - Frontend Vitest: 34 tests passed.
 - Frontend production build: passed; 349.50 kB JavaScript, 105.16 kB gzip.
-- Backend pytest: 163 tests passed with one Starlette/httpx deprecation warning.
+- Backend pytest: 164 tests passed with one Starlette/httpx deprecation warning.
 - Backend Ruff: passed after formatting two pre-existing E501 violations in migrations/versions/e093be299381_add_discovery_config_to_thesis.py.
 - Backend mypy: passed with no issues in 63 source files.
 - Alembic: one head, revision 016; local Docker database migrated successfully from e093be299381 through 016.
@@ -281,6 +281,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-050 focused and full backend validation passed with 160 tests. Collector errors now expose retry classification; durable retry/DLQ behavior remains blocked on VCB-051.
 - 2026-08-02: VCB-051 foundation validation passed with 162 tests; local migration 017 adds the durable job ledger and discovery triggers now return status-trackable job IDs. Remaining job integrations and cancel/retry semantics are explicitly blocked scope.
 - 2026-08-02: VCB-052 focused and full backend validation passed with 163 tests. Dispatcher enqueue failures now requeue work with preserved priority and refund Tavily reservations; crash-safe leases and atomic orchestration remain blocked scope.
+- 2026-08-02: VCB-053 focused and full backend validation passed with 164 tests. Tavily budget state now survives worker restarts; actual usage reconciliation remains blocked scope.
 
 ## First practical milestone
 

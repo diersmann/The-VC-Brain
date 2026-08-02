@@ -29,7 +29,7 @@ from app.collectors.jobs import (
     research_candidate_job,
     resolve_identities_job,
 )
-from app.collectors.queue import initialize_agent_budget, reset_tavily_budget
+from app.collectors.queue import initialize_agent_budget, initialize_tavily_budget
 from app.config import get_settings
 from app.db.session import _get_session_factory, get_engine
 from app.processing.pipeline_job import process_candidate_job
@@ -43,9 +43,9 @@ async def startup(ctx: dict[str, Any]) -> None:
     ctx["settings"] = settings
     ctx["session_factory"] = _get_session_factory()
 
-    # Reset Tavily budget on worker start (in production, this should be
-    # a monthly cron, but for MVP it's fine to reset on deploy).
-    await reset_tavily_budget(ctx["redis"], settings.tavily_monthly_budget)
+    # Preserve monthly Tavily spend across worker restarts; a billing-period
+    # job must explicitly reset this key at the start of a new period.
+    await initialize_tavily_budget(ctx["redis"], settings.tavily_monthly_budget)
     await initialize_agent_budget(ctx["redis"], settings.agent_monthly_budget)
 
     logger.info("worker_started", environment=settings.environment)
