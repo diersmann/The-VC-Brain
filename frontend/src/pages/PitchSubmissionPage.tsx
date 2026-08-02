@@ -7,6 +7,7 @@ export function PitchSubmissionPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submission, setSubmission] = useState<{ opportunityId: string } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -21,7 +22,7 @@ export function PitchSubmissionPage() {
     formData.append("file", file);
 
     try {
-      const response = await submitPitch(formData);
+      const response = await submitPitch(formData, undefined, idempotencyKey);
       setSubmission({ opportunityId: response.opportunity_id });
     } catch (error) {
       console.error("Failed to submit pitch", error);
@@ -46,6 +47,7 @@ export function PitchSubmissionPage() {
     setSubmission(null);
     setErrorMessage(null);
     setFile(null);
+    setIdempotencyKey(crypto.randomUUID());
     fileInputRef.current?.form?.reset();
     if (fileInputRef.current) fileInputRef.current.value = "";
   };

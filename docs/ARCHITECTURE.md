@@ -57,6 +57,8 @@ Core entities are:
 | ScoreSnapshot | Reproducible score at a point in time | Subject, rubric/model version, components, confidence interval, evidence IDs |
 | Assessment | Per-opportunity Founder, Market, or Idea-vs-Market result | Axis, rating, trend, confidence, evidence and counter-evidence |
 | DecisionEvent | Auditable lifecycle transition | Opportunity, prior/new state, actor, reason, timestamp, SLA metadata |
+| InboundSubmission | Idempotent application envelope | Idempotency key, person/opportunity/deck references, accepted status, timestamps |
+| OutboxEvent | Durable handoff from PostgreSQL to workers | Dedupe key, event payload, dispatch status, retry count, availability, error metadata |
 
 Every observation, claim, relationship, score, and recommendation retains provenance, observation time, confidence, and the version of the extractor, rubric, prompt, or model that produced it. Personally identifying data is stored only when necessary and is subject to correction, retention, and deletion controls; audit records retain non-sensitive tombstones where legally permissible.
 
@@ -91,7 +93,7 @@ The backend coordinates the application:
 
 - Authentication and authorization
 - Founder, company, evidence, and search APIs
-- Inbound applications and deck uploads
+- Inbound applications and deck uploads, committed with an idempotent submission envelope and durable outbox before worker dispatch
 - Sourcing-to-decision workflow state
 - Collection, correlation, and analysis jobs
 - Profile, score, graph, and memo delivery

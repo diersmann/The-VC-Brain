@@ -4,11 +4,16 @@ export interface PitchSubmissionResponse {
   opportunity_id: string;
 }
 
-export async function submitPitch(formData: FormData, signal?: AbortSignal): Promise<PitchSubmissionResponse> {
+export async function submitPitch(
+  formData: FormData,
+  signal?: AbortSignal,
+  idempotencyKey?: string,
+): Promise<PitchSubmissionResponse> {
   const response = await fetch("/api/v1/inbound/pitch", {
     method: "POST",
     body: formData,
     signal,
+    headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
   });
 
   if (!response.ok) {

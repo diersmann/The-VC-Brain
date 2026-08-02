@@ -17,6 +17,7 @@ from app.agents.contact_job import contact_outbound_job
 from app.agents.inbound_job import process_inbound_pitch_job
 from app.agents.lifecycle_job import advance_pipeline_job
 from app.agents.memo_job import generate_memo_job
+from app.agents.outbox_job import dispatch_outbox_job
 from app.agents.scoring_job import score_candidate_job
 from app.collectors.jobs import (
     auto_discovery_job,
@@ -90,9 +91,11 @@ class WorkerSettings:
         contact_outbound_job,
         auto_discovery_job,
         process_inbound_pitch_job,
+        dispatch_outbox_job,
     ]
 
     cron_jobs = [  # noqa: RUF012
+        cron(dispatch_outbox_job, unique=False),
         # dispatcher_job: every minute
         cron(dispatcher_job, unique=False),
         # recompute_signals_job: every hour at minute 5

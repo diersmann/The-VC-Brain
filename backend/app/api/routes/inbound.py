@@ -1,25 +1,21 @@
 from datetime import UTC, datetime
 
 import structlog
-from arq import create_pool
-from arq.connections import ArqRedis, RedisSettings
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db.models import Person, SourceSnapshot
+from app.db.models import InboundSubmission, Person, SourceSnapshot
 from app.db.session import get_session
 from app.opportunity_service import create_inbound_opportunity
+from app.outbox import inbound_outbox_event
 from app.storage import put_snapshot
 from app.uploads import UploadRejected, quarantine_pitch_upload
 
 router = APIRouter(prefix="/inbound", tags=["inbound"])
 logger = structlog.get_logger(__name__)
-
-async def _get_redis() -> ArqRedis:
-    settings = get_settings()
-    return await create_pool(RedisSettings.from_dsn(settings.redis_url))
 
 @router.post("/pitch")
 async def submit_pitch(
@@ -27,9 +23,25 @@ async def submit_pitch(
     founder_email: str = Form(...),
     company_name: str = Form(...),
     file: UploadFile = File(...),  # noqa: B008
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_session)  # noqa: B008
 ) -> dict[str, str]:
     logger.info("inbound_pitch_received", company=company_name)
+
+    idempotency_key = idempotency_key.strip()
+    if not 1 <= len(idempotency_key) <= 128:
+        raise HTTPException(status_code=400, detail="Idempotency-Key must be 1-128 characters")
+
+    existing_result = await db.execute(
+        select(InboundSubmission).where(InboundSubmission.idempotency_key == idempotency_key)
+    )
+    existing = existing_result.scalar_one_or_none()
+    if existing is not None:
+        return {
+            "status": existing.status,
+            "person_id": str(existing.person_id),
+            "opportunity_id": str(existing.opportunity_id),
+        }
 
     try:
         content = await quarantine_pitch_upload(file, get_settings())
@@ -74,18 +86,36 @@ async def submit_pitch(
     opportunity = await create_inbound_opportunity(
         db, person, company_name=company_name
     )
-    
-    await db.commit()
-    
-    # 5. Enqueue background job
-    redis = await _get_redis()
-    await redis.enqueue_job(
-        "process_inbound_pitch_job",
-        person_id=str(person.id),
-        snapshot_id=str(snapshot.id),
-        opportunity_id=str(opportunity.id),
-        company_name=company_name,
-        _queue_name="arq:queue"
+    await db.flush()
+
+    submission = InboundSubmission(
+        idempotency_key=idempotency_key,
+        person_id=person.id,
+        opportunity_id=opportunity.id,
+        snapshot_id=snapshot.id,
+        status="accepted",
     )
-    
-    return {"status": "success", "person_id": str(person.id), "opportunity_id": str(opportunity.id)}
+    db.add(submission)
+    db.add(inbound_outbox_event(submission, company_name))
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        existing_result = await db.execute(
+            select(InboundSubmission).where(InboundSubmission.idempotency_key == idempotency_key)
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is None:
+            raise
+        return {
+            "status": existing.status,
+            "person_id": str(existing.person_id),
+            "opportunity_id": str(existing.opportunity_id),
+        }
+
+    return {
+        "status": submission.status,
+        "person_id": str(submission.person_id),
+        "opportunity_id": str(submission.opportunity_id),
+    }

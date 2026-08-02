@@ -16,7 +16,7 @@ from starlette.datastructures import Headers
 
 from app.api.routes import inbound
 from app.config import Settings
-from app.db.models import Opportunity, Person, SourceSnapshot
+from app.db.models import InboundSubmission, Opportunity, OutboxEvent, Person, SourceSnapshot
 from app.db.session import get_session
 from app.main import app
 from app.uploads import UploadRejected, quarantine_pitch_upload
@@ -27,25 +27,28 @@ class _FakeSession:
         self.person = person
         self.added: list[object] = []
         self.committed = False
+        self.submission: InboundSubmission | None = None
 
     async def execute(self, _statement: object) -> SimpleNamespace:
+        if "inbound_submissions" in str(_statement):
+            return SimpleNamespace(scalar_one_or_none=lambda: self.submission)
         return SimpleNamespace(scalar_one_or_none=lambda: self.person)
 
     def add(self, instance: object) -> None:
-        if isinstance(instance, SourceSnapshot) and instance.id is None:
+        if (
+            isinstance(instance, (SourceSnapshot, InboundSubmission, OutboxEvent))
+            and instance.id is None
+        ):
             instance.id = uuid.uuid4()
+        if isinstance(instance, InboundSubmission):
+            self.submission = instance
         self.added.append(instance)
+
+    async def flush(self) -> None:
+        return None
 
     async def commit(self) -> None:
         self.committed = True
-
-
-class _FakeRedis:
-    def __init__(self) -> None:
-        self.jobs: list[tuple[str, dict[str, object]]] = []
-
-    async def enqueue_job(self, name: str, **kwargs: object) -> None:
-        self.jobs.append((name, kwargs))
 
 
 def _pdf_bytes(*, pages: int = 1, password: str | None = None) -> bytes:
@@ -167,7 +170,6 @@ def test_submission_persists_uploaded_deck_and_returns_opportunity_id(monkeypatc
         lifecycle_state="received",
     )
     session = _FakeSession(person)
-    redis = _FakeRedis()
     put_snapshot = AsyncMock(return_value=("hash-1", "snapshots/hash-1.pdf"))
 
     async def fake_opportunity(*_args, **_kwargs) -> Opportunity:
@@ -178,7 +180,6 @@ def test_submission_persists_uploaded_deck_and_returns_opportunity_id(monkeypatc
 
     monkeypatch.setattr(inbound, "put_snapshot", put_snapshot)
     monkeypatch.setattr(inbound, "create_inbound_opportunity", fake_opportunity)
-    monkeypatch.setattr(inbound, "_get_redis", AsyncMock(return_value=redis))
     app.dependency_overrides[get_session] = override_session
 
     try:
@@ -190,17 +191,31 @@ def test_submission_persists_uploaded_deck_and_returns_opportunity_id(monkeypatc
                 "company_name": "Example AI",
             },
             files={"file": ("pitch.pdf", _pdf_bytes(), "application/pdf")},
+            headers={"Idempotency-Key": "submission-1"},
+        )
+        duplicate = TestClient(app).post(
+            "/api/v1/inbound/pitch",
+            data={
+                "founder_name": "Alice Example",
+                "founder_email": "alice@example.com",
+                "company_name": "Example AI",
+            },
+            files={"file": ("pitch.pdf", _pdf_bytes(), "application/pdf")},
+            headers={"Idempotency-Key": "submission-1"},
         )
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert response.json()["opportunity_id"] == str(opportunity.id)
+    assert duplicate.json() == response.json()
     assert session.committed is True
     snapshot = next(item for item in session.added if isinstance(item, SourceSnapshot))
     assert snapshot.content_hash == "hash-1"
     assert snapshot.storage_path == "snapshots/hash-1.pdf"
     put_snapshot.assert_awaited_once()
     assert put_snapshot.await_args.kwargs["content"].startswith(b"%PDF-")
-    assert redis.jobs[0][0] == "process_inbound_pitch_job"
-    assert redis.jobs[0][1]["opportunity_id"] == str(opportunity.id)
+    assert len([item for item in session.added if isinstance(item, InboundSubmission)]) == 1
+    outbox = next(item for item in session.added if isinstance(item, OutboxEvent))
+    assert outbox.dedupe_key == "inbound-submission:submission-1"
+    assert outbox.payload["job_name"] == "process_inbound_pitch_job"
