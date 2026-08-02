@@ -140,6 +140,20 @@ async def _write_snapshot(
         source_type=collected.source_type,
     )
 
+    existing_result = await session.execute(
+        select(SourceSnapshot)
+        .where(
+            SourceSnapshot.uri == collected.uri,
+            SourceSnapshot.source_type == collected.source_type,
+            SourceSnapshot.content_hash == content_hash,
+        )
+        .order_by(SourceSnapshot.collected_at.desc())
+        .limit(1)
+    )
+    existing = existing_result.scalar_one_or_none()
+    if existing is not None:
+        return existing
+
     snapshot = SourceSnapshot(
         uri=collected.uri,
         source_type=collected.source_type,
@@ -173,14 +187,34 @@ async def _write_observations(
         else:
             observed_at = now
 
+        predicate = str(obs.get("predicate", ""))
+        object_value = str(obs.get("object_value", ""))
+        extractor_version = f"{snapshot.source_type}-v1"
+        existing_result = await session.execute(
+            select(Observation)
+            .where(
+                Observation.snapshot_id == snapshot.id,
+                Observation.subject_id == subject_id,
+                Observation.opportunity_id == opportunity_id,
+                Observation.predicate == predicate,
+                Observation.object_value == object_value,
+                Observation.extractor_version == extractor_version,
+            )
+            .limit(1)
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            observation_ids.append(existing.id)
+            continue
+
         observation = Observation(
             snapshot_id=snapshot.id,
             subject_id=subject_id,
             opportunity_id=opportunity_id,
-            predicate=str(obs.get("predicate", "")),
-            object_value=str(obs.get("object_value", "")),
+            predicate=predicate,
+            object_value=object_value,
             observed_at=observed_at,
-            extractor_version=f"{snapshot.source_type}-v1",
+            extractor_version=extractor_version,
             confidence=float(str(obs.get("confidence", 1.0))),
         )
         session.add(observation)
