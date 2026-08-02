@@ -130,9 +130,8 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
             step="06 · Memory"
             title="Decision feedback"
             value={`${counts.scored} snapshots`}
-            detail="Versioned evidence sharpens future scoring"
+            detail="No separate Memory workspace yet"
             tone="blue"
-            onClick={() => onNavigate("/thesis")}
           />
         </div>
 
@@ -172,9 +171,8 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
             step="06 · Memory"
             title="Decision feedback"
             value={`${counts.scored} snapshots`}
-            detail="Versioned evidence sharpens future scoring"
+            detail="No separate Memory workspace yet"
             tone="blue"
-            onClick={() => onNavigate("/thesis")}
           />
         </div>
       </div>
@@ -204,13 +202,15 @@ function WorkflowNode({
   detail: string;
   tone: keyof typeof nodeTones;
   compact?: boolean;
-  onClick: () => void;
+  onClick?: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`${compact ? "min-h-[104px]" : "min-h-[132px]"} group relative w-full overflow-hidden rounded-lg p-4 text-left shadow-[0_10px_28px_rgba(70,91,120,.08)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_16px_36px_rgba(70,91,120,.14)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${nodeTones[tone]}`}
+      disabled={!onClick}
+      aria-disabled={!onClick}
+      className={`${compact ? "min-h-[104px]" : "min-h-[132px]"} group relative w-full overflow-hidden rounded-lg p-4 text-left shadow-[0_10px_28px_rgba(70,91,120,.08)] transition duration-200 ${onClick ? "hover:-translate-y-1 hover:shadow-[0_16px_36px_rgba(70,91,120,.14)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" : "cursor-not-allowed opacity-75"} ${nodeTones[tone]}`}
     >
       <span className="pointer-events-none absolute -right-5 -top-5 h-16 w-16 rounded-full bg-white/55 blur-xl" />
       <div className="relative flex items-start justify-between gap-2">

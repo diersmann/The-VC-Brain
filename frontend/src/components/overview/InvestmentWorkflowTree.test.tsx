@@ -19,6 +19,8 @@ describe("InvestmentWorkflowTree", () => {
     expect(screen.getByText("8 profiles")).toBeDefined();
     expect(screen.getAllByText("12 opportunities").length).toBe(2);
     expect(screen.getAllByText("Founder · Market · Idea × Market · 3 pending").length).toBe(2);
+    expect(screen.getAllByRole("button", { name: /decision feedback/i })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /decision feedback/i })[0]).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: /founder applications/i }));
     fireEvent.click(screen.getAllByRole("button", { name: /memo & decision/i })[0]);

@@ -69,7 +69,7 @@ export function HomePage() {
 
       <div className={`grid gap-5 ${candidateDashboardReady ? "xl:grid-cols-[1.6fr_1fr]" : ""}`}>
         {candidateDashboardReady && <section className="panel space-y-1 rounded-lg p-2">
-          <div className="flex items-center justify-between rounded-md bg-gradient-to-r from-[#edf3fb] to-transparent px-3 py-3"><div><h2 className="section-title">Priority candidates</h2><p className="supporting-text">Ordered by recorded thesis or discovery signal</p></div><button onClick={() => navigate("/investigated")} className="text-xs font-bold text-accent">View all</button></div>
+          <div className="flex items-center justify-between rounded-md bg-gradient-to-r from-[#edf3fb] to-transparent px-3 py-3"><div><h2 className="section-title">Priority candidates</h2><p className="supporting-text">Ordered by recorded thesis or discovery signal</p></div><button onClick={() => navigate("/sourcing")} className="text-xs font-bold text-accent">View all</button></div>
           {priorities.length === 0 && <div className="px-3 py-10 text-center text-xs text-muted">No live candidates yet.</div>}
           {priorities.map((candidate, index) => {
             const source = Object.keys(candidate.handles ?? {})[0] ?? candidate.origin ?? "database";

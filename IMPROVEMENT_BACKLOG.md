@@ -185,7 +185,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-076 - Show identity verification only when verified.** Observed: FounderProfile always showed a green check next to the founder name. **Partial completion:** the unsupported marker is now omitted. **Blocked:** the API and persistence model expose no explicit identity-verification state, method, source, or timestamp to render when verification is actually complete.
 
-- [ ] **VCB-077 - Fix misleading workflow navigation.** Observed: Decision feedback/Memory navigates to thesis; Home View all uses every candidate but routes to Investigated only. Done when nodes route to the exact workspace/result set, or are visibly disabled with an explanation until implemented.
+- [blocked] **VCB-077 - Fix misleading workflow navigation.** Observed: Decision feedback/Memory navigated to thesis; Home View all used every candidate but routed to Investigated only. **Partial completion:** Home View all now routes to Discover, which owns the full candidate set, and the Memory node is visibly disabled with an explanation because no separate workspace exists. **Blocked:** a real Memory/feedback workspace and route are still needed for enabled historical decision feedback.
 
 - [ ] **VCB-078 - Make the public submission form trustworthy and accessible.** Observed: public copy says next cohort, form lacks persistent labels/privacy/support, silent failure relies on alert, and Submit Another retains the previous file. Done when brand/purpose/privacy/retention/support are clear, controls are labeled, inline errors are announced, progress/retry is durable, and a new submission resets all fields.
 
