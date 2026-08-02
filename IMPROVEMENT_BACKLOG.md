@@ -115,7 +115,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-042 - Validate observation schemas at ingestion.** Observed: empty values, arbitrary confidence, naive string dates, and missing coordinates could be inserted. **Partial completion:** collection ingestion now normalizes timestamps to UTC, rejects future/invalid times, rejects empty predicate/value and non-finite/out-of-range confidence, and attaches an explicit coordinate-unavailable locator when connectors omit one. **Blocked:** the final durable quarantine requirement depends on a job/error ledger that can retain rejected payload metadata without treating it as investment evidence; that capability is tracked by VCB-051 and is not present yet.
 
-- [ ] **VCB-043 - Give signal snapshots deterministic provenance.** Observed: signal aggregation uses arbitrary historical setdefault values and writes evidence_ids empty. Done when signals select latest valid claims deterministically, retain exact evidence and coverage/confidence, fingerprint outputs, and quarantine malformed numerics.
+- [blocked] **VCB-043 - Give signal snapshots deterministic provenance.** Observed: signal aggregation used arbitrary historical `setdefault` values and wrote `evidence_ids` empty. **Partial completion:** signal inputs now select the latest valid observation deterministically, retain exact evidence IDs, source confidence, coverage, selected predicates, rejected numeric IDs, and a SHA-256 input fingerprint in versioned provenance. Malformed numeric inputs are excluded and logged. **Blocked:** durable quarantine of rejected numeric payload metadata still depends on the VCB-051 job/error ledger.
 
 - [ ] **VCB-044 - Treat search snippets and synthesized answers as leads, not trusted claims.** Observed: Tavily results/answers become observations and a nonstandard tavily_synthesized Claim. Done when original pages are fetched and verified, search output stays low-authority discovery material, and unsupported conclusions cannot enter accepted claims.
 
@@ -261,10 +261,10 @@ The main conclusion is simple: make the product truthful before making it broade
 - Frontend TypeScript: passed.
 - Frontend Vitest: 34 tests passed.
 - Frontend production build: passed; 349.50 kB JavaScript, 105.16 kB gzip.
-- Backend pytest: 148 tests passed with one Starlette/httpx deprecation warning.
+- Backend pytest: 149 tests passed with one Starlette/httpx deprecation warning.
 - Backend Ruff: passed after formatting two pre-existing E501 violations in migrations/versions/e093be299381_add_discovery_config_to_thesis.py.
 - Backend mypy: passed with no issues in 63 source files.
-- Alembic: one head, revision 015; local Docker database migrated successfully from e093be299381 through 015.
+- Alembic: one head, revision 016; local Docker database migrated successfully from e093be299381 through 016.
 - git diff --check: passed.
 - Docker Compose `make check`: passed (Ruff, ESLint, mypy, TypeScript, backend pytest, and frontend Vitest).
 - Live browser QA: reproduced false-zero outage state, silent failed submission, and missing mobile navigation. Temporary evidence was kept outside the repository.
@@ -273,6 +273,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - 2026-08-02: VCB-018 frontend validation passed. `make check` could not start because Docker Compose could not connect to the local Docker daemon; no repository check was executed by the target container.
 - 2026-08-02: Docker became available; the VCB-042 focused tests and full local checks passed, `make check` passed in Compose, and `make migrate` advanced the local database from e093be299381 to migration 015. The two pre-existing migration E501 failures were formatted in the VCB-042 checkpoint. The remaining VCB-041 blocker is schema/duplicate policy, not Docker access.
+- 2026-08-02: VCB-043 focused and full validation passed; `make check` passed in Compose with 149 backend and 34 frontend tests, and `make migrate` advanced the local database to migration 016. Durable quarantine remains explicitly blocked on VCB-051.
 
 ## First practical milestone
 

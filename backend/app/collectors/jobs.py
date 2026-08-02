@@ -15,11 +15,12 @@ Jobs:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import math
 import re
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -66,6 +67,31 @@ from app.db.models import (
 from app.storage import put_snapshot
 
 logger = structlog.get_logger(__name__)
+
+_SIGNAL_PREDICATES = {
+    "github_login",
+    "github_languages",
+    "github_public_repos",
+    "github_total_stars",
+    "github_top_repo_readme",
+    "producthunt_username",
+    "producthunt_total_upvotes",
+    "producthunt_posts",
+    "arxiv_paper_count",
+    "arxiv_total_citations",
+    "page_content",
+    "blog_url",
+    "podcast_url",
+    "youtube_recent_videos",
+}
+_SIGNAL_NUMERIC_PREDICATES = {
+    "github_public_repos",
+    "github_total_stars",
+    "producthunt_total_upvotes",
+    "producthunt_posts",
+    "arxiv_paper_count",
+    "arxiv_total_citations",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +280,77 @@ async def _write_observations(
     return observation_ids
 
 
+def _parse_signal_count(predicate: str, value: str) -> int | None:
+    """Parse a non-negative integer signal input without allowing coercion surprises."""
+    if predicate not in _SIGNAL_NUMERIC_PREDICATES:
+        return None
+    stripped = value.strip()
+    if not stripped or not stripped.isdecimal():
+        return None
+    return int(stripped)
+
+
+def _select_latest_signal_observations(
+    observations: Sequence[Observation],
+) -> tuple[dict[str, Observation], list[str]]:
+    """Select deterministic, latest valid inputs for the signal score."""
+    selected: dict[str, Observation] = {}
+    rejected_numeric: list[str] = []
+    ordered = sorted(
+        observations,
+        key=lambda item: (
+            item.observed_at,
+            item.created_at or datetime.min.replace(tzinfo=UTC),
+            str(item.id),
+        ),
+        reverse=True,
+    )
+    for observation in ordered:
+        predicate = observation.predicate
+        if predicate not in _SIGNAL_PREDICATES or predicate in selected:
+            continue
+        if not observation.object_value.strip():
+            continue
+        if predicate in _SIGNAL_NUMERIC_PREDICATES and _parse_signal_count(
+            predicate, observation.object_value
+        ) is None:
+            rejected_numeric.append(str(observation.id))
+            logger.warning(
+                "signal_input_rejected",
+                predicate=predicate,
+                observation_id=str(observation.id),
+                reason="invalid_nonnegative_integer",
+            )
+            continue
+        selected[predicate] = observation
+    return selected, rejected_numeric
+
+
+def _signal_input_fingerprint(
+    selected: dict[str, Observation],
+    components: dict[str, float],
+) -> str:
+    """Hash the exact observations and output components used by a signal snapshot."""
+    payload = {
+        "rubric_version": "signal-v1",
+        "provenance_version": "signal-v2",
+        "components": components,
+        "observations": [
+            {
+                "id": str(observation.id),
+                "predicate": predicate,
+                "object_value": observation.object_value,
+                "observed_at": observation.observed_at.isoformat(),
+                "confidence": observation.confidence,
+            }
+            for predicate, observation in sorted(selected.items())
+        ],
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
 async def _compute_and_store_signal(
     session: AsyncSession,
     person: Person,
@@ -264,11 +361,9 @@ async def _compute_and_store_signal(
     result = await session.execute(select(Observation).where(Observation.subject_id == person.id))
     observations = result.scalars().all()
 
-    # Aggregate all relevant observations before computing each source score.
-    values: dict[str, str] = {}
-    predicates = {obs.predicate for obs in observations}
-    for obs in observations:
-        values.setdefault(obs.predicate, obs.object_value)
+    selected, rejected_numeric = _select_latest_signal_observations(observations)
+    values = {predicate: observation.object_value for predicate, observation in selected.items()}
+    predicates = set(selected)
 
     github_score = 0.0
     if "github_login" in predicates:
@@ -278,8 +373,14 @@ async def _compute_and_store_signal(
             if item.strip()
         ]
         github_score = compute_github_signal(
-            public_repos=int(values.get("github_public_repos", "0") or 0),
-            total_stars=int(values.get("github_total_stars", "0") or 0),
+            public_repos=_parse_signal_count(
+                "github_public_repos", values.get("github_public_repos", "0")
+            )
+            or 0,
+            total_stars=_parse_signal_count(
+                "github_total_stars", values.get("github_total_stars", "0")
+            )
+            or 0,
             top_language_count=len(languages),
             has_readme="github_top_repo_readme" in predicates,
         )
@@ -287,16 +388,28 @@ async def _compute_and_store_signal(
     producthunt_score = 0.0
     if "producthunt_username" in predicates:
         producthunt_score = compute_producthunt_signal(
-            total_upvotes=int(values.get("producthunt_total_upvotes", "0") or 0),
-            launch_count=int(values.get("producthunt_posts", "0") or 0),
+            total_upvotes=_parse_signal_count(
+                "producthunt_total_upvotes", values.get("producthunt_total_upvotes", "0")
+            )
+            or 0,
+            launch_count=_parse_signal_count(
+                "producthunt_posts", values.get("producthunt_posts", "0")
+            )
+            or 0,
             has_maker_profile=True,
         )
 
     arxiv_score = 0.0
     if "arxiv_paper_count" in predicates:
         arxiv_score = compute_arxiv_signal(
-            paper_count=int(values.get("arxiv_paper_count", "0") or 0),
-            total_citations=int(values.get("arxiv_total_citations", "0") or 0),
+            paper_count=_parse_signal_count(
+                "arxiv_paper_count", values.get("arxiv_paper_count", "0")
+            )
+            or 0,
+            total_citations=_parse_signal_count(
+                "arxiv_total_citations", values.get("arxiv_total_citations", "0")
+            )
+            or 0,
             in_relevant_categories=True,
         )
 
@@ -314,12 +427,30 @@ async def _compute_and_store_signal(
         web=web_score,
     )
 
+    evidence_ids = sorted(str(observation.id) for observation in selected.values())
+    source_confidence = round(
+        sum(observation.confidence for observation in selected.values()) / len(selected), 4
+    ) if selected else 0.0
+    fingerprint = _signal_input_fingerprint(selected, components)
+    provenance = {
+        "kind": "signal_snapshot",
+        "version": "signal-v2",
+        "input_fingerprint": fingerprint,
+        "observation_ids": evidence_ids,
+        "selected_predicates": sorted(selected),
+        "signal_coverage": components["signal_coverage"],
+        "source_confidence": source_confidence,
+        "rejected_numeric_observation_ids": sorted(rejected_numeric),
+    }
+
     score_snapshot = ScoreSnapshot(
         subject_id=person.id,
         subject_type="person",
         rubric_version="signal-v1",
         components=components,
-        evidence_ids=[],
+        evidence_ids=evidence_ids,
+        input_fingerprint=fingerprint,
+        provenance=provenance,
     )
     session.add(score_snapshot)
     await session.flush()

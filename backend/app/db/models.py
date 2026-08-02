@@ -397,6 +397,8 @@ class ScoreSnapshot(TimestampMixin, Base):
     components: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     confidence_interval: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    input_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    provenance: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
 
 # ---------------------------------------------------------------------------
