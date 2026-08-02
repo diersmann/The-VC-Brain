@@ -5,7 +5,16 @@ from __future__ import annotations
 import uuid
 from unittest.mock import MagicMock
 
-from app.agents.memo_job import _claim_context, _claim_observation_ids
+from app.agents.memo_job import (
+    _ACCEPTED_CLAIM_STATUSES,
+    _claim_context,
+    _claim_observation_ids,
+)
+
+
+def test_search_synthesized_claims_are_not_memo_inputs() -> None:
+    assert "tavily_synthesized" not in _ACCEPTED_CLAIM_STATUSES
+    assert "supported" in _ACCEPTED_CLAIM_STATUSES
 
 
 def test_claim_observation_ids_rejects_malformed_references() -> None:

@@ -117,7 +117,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-043 - Give signal snapshots deterministic provenance.** Observed: signal aggregation used arbitrary historical `setdefault` values and wrote `evidence_ids` empty. **Partial completion:** signal inputs now select the latest valid observation deterministically, retain exact evidence IDs, source confidence, coverage, selected predicates, rejected numeric IDs, and a SHA-256 input fingerprint in versioned provenance. Malformed numeric inputs are excluded and logged. **Blocked:** durable quarantine of rejected numeric payload metadata still depends on the VCB-051 job/error ledger.
 
-- [ ] **VCB-044 - Treat search snippets and synthesized answers as leads, not trusted claims.** Observed: Tavily results/answers become observations and a nonstandard tavily_synthesized Claim. Done when original pages are fetched and verified, search output stays low-authority discovery material, and unsupported conclusions cannot enter accepted claims.
+- [blocked] **VCB-044 - Treat search snippets and synthesized answers as leads, not trusted claims.** Observed: Tavily results/answers became observations and a nonstandard `tavily_synthesized` Claim that memo generation accepted. **Partial completion:** synthesized answer Claims are no longer created, and memo inputs accept only reconciliation status `supported`; existing `tavily_synthesized` rows are excluded. **Blocked:** the remaining workflow must fetch and verify each original result page before its content can support a claim or assessment; the current research path still uses search output as low-authority lead evidence.
 
 - [ ] **VCB-045 - Repair Tavily discovery routing.** Observed: tavily_search emits web seeds, discover_job ignores seed source type, then invokes Tavily collect which raises NotImplementedError. Done when declared collection connector and discovery provenance are distinct and an end-to-end Tavily discovery test persists verified web observations.
 
@@ -261,7 +261,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - Frontend TypeScript: passed.
 - Frontend Vitest: 34 tests passed.
 - Frontend production build: passed; 349.50 kB JavaScript, 105.16 kB gzip.
-- Backend pytest: 149 tests passed with one Starlette/httpx deprecation warning.
+- Backend pytest: 150 tests passed with one Starlette/httpx deprecation warning.
 - Backend Ruff: passed after formatting two pre-existing E501 violations in migrations/versions/e093be299381_add_discovery_config_to_thesis.py.
 - Backend mypy: passed with no issues in 63 source files.
 - Alembic: one head, revision 016; local Docker database migrated successfully from e093be299381 through 016.
@@ -274,6 +274,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-018 frontend validation passed. `make check` could not start because Docker Compose could not connect to the local Docker daemon; no repository check was executed by the target container.
 - 2026-08-02: Docker became available; the VCB-042 focused tests and full local checks passed, `make check` passed in Compose, and `make migrate` advanced the local database from e093be299381 to migration 015. The two pre-existing migration E501 failures were formatted in the VCB-042 checkpoint. The remaining VCB-041 blocker is schema/duplicate policy, not Docker access.
 - 2026-08-02: VCB-043 focused and full validation passed; `make check` passed in Compose with 149 backend and 34 frontend tests, and `make migrate` advanced the local database to migration 016. Durable quarantine remains explicitly blocked on VCB-051.
+- 2026-08-02: VCB-044 focused and full backend validation passed with 150 tests. Search-synthesized claims are now excluded from memo inputs; original-page verification remains the explicit blocker.
 
 ## First practical milestone
 

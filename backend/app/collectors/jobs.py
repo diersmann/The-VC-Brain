@@ -56,7 +56,6 @@ from app.collectors.signals import (
 from app.collectors.signals import web_signal as compute_web_signal
 from app.db.models import (
     Assessment,
-    Claim,
     Observation,
     Opportunity,
     OpportunityFounder,
@@ -1070,18 +1069,6 @@ async def research_candidate_job(
                     opportunity.id,
                 )
                 evidence_ids.extend(str(item) for item in summary_ids)
-                session.add(
-                    Claim(
-                        observation_ids=evidence_ids,
-                        subject_id=person.id,
-                        opportunity_id=opportunity.id,
-                        predicate=f"research_{axis}_summary",
-                        object_value=answer,
-                        status="tavily_synthesized",
-                        confidence=scored["confidence"],
-                        valid_time_start=datetime.now(UTC),
-                    )
-                )
 
             axis_evidence[axis] = evidence_ids
 

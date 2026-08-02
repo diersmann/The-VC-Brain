@@ -27,7 +27,7 @@ from app.db.models import (
 
 logger = structlog.get_logger(__name__)
 
-_ACCEPTED_CLAIM_STATUSES = frozenset({"supported", "tavily_synthesized"})
+_ACCEPTED_CLAIM_STATUSES = frozenset({"supported"})
 
 
 def _claim_observation_ids(claim: Claim) -> list[uuid.UUID] | None:
