@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.db.models import Claim
 from app.processing.dedup import _cosine_similarity
 from app.processing.reconcile import _observation_strength, reconcile_observations
+
+
+def _scalar_result(rows: list[object]) -> MagicMock:
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = rows
+    return result
 
 
 def test_cosine_similarity_identical_vectors() -> None:
@@ -95,9 +103,7 @@ async def test_reconcile_keeps_same_predicate_separate_per_opportunity() -> None
         observations.append(observation)
 
     session = AsyncMock()
-    session.execute.return_value = MagicMock(
-        scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=observations)))
-    )
+    session.execute.side_effect = [_scalar_result(observations), _scalar_result([])]
     session.add = MagicMock()
 
     created = await reconcile_observations(session, person_id)
@@ -105,6 +111,41 @@ async def test_reconcile_keeps_same_predicate_separate_per_opportunity() -> None
     assert created == 2
     claims = [call.args[0] for call in session.add.call_args_list]
     assert {claim.opportunity_id for claim in claims} == {opportunity_a, opportunity_b}
+
+
+@pytest.mark.asyncio
+async def test_reconcile_is_idempotent_for_unchanged_observations() -> None:
+    """Running reconciliation twice does not append duplicate claims."""
+    person_id = uuid.uuid4()
+    observation = MagicMock(
+        id=uuid.uuid4(),
+        opportunity_id=uuid.uuid4(),
+        predicate="company_name",
+        object_value="Example Labs",
+        confidence=1.0,
+        observed_at=datetime.now(UTC),
+    )
+    session = AsyncMock()
+    session.execute.side_effect = [
+        _scalar_result([observation]),
+        _scalar_result([]),
+    ]
+    created_claims: list[Claim] = []
+
+    def add_claim(entity: object) -> None:
+        if isinstance(entity, Claim):
+            entity.id = uuid.uuid4()
+            created_claims.append(entity)
+
+    session.add = MagicMock(side_effect=add_claim)
+    assert await reconcile_observations(session, person_id) == 1
+
+    session.execute.side_effect = [
+        _scalar_result([observation]),
+        _scalar_result(created_claims),
+    ]
+    assert await reconcile_observations(session, person_id) == 0
+    assert len(created_claims) == 1
 
 
 @pytest.mark.asyncio
