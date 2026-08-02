@@ -437,6 +437,9 @@ class DecisionEvent(TimestampMixin, Base):
     prior_state: Mapped[str] = mapped_column(String(32), nullable=False)
     new_state: Mapped[str] = mapped_column(String(32), nullable=False)
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, unique=True, index=True
+    )
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     sla_metadata: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 

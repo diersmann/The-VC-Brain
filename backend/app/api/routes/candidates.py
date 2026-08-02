@@ -13,7 +13,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +25,7 @@ from app.db.models import (
     Assessment,
     Claim,
     DecisionEvent,
+    InvestmentMemo,
     Observation,
     Opportunity,
     OpportunityFounder,
@@ -34,6 +35,7 @@ from app.db.models import (
     ScoreSnapshot,
     SourceSnapshot,
 )
+from app.lifecycle import is_valid_transition
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
@@ -778,8 +780,13 @@ async def record_candidate_decision(
     candidate_id: uuid.UUID,
     payload: CandidateDecisionRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
 ) -> CandidateDecisionResponse:
-    """Persist a human VC decision and update the latest opportunity state."""
+    """Persist an idempotent, lifecycle-validated human VC decision."""
+    idempotency_key = idempotency_key.strip()
+    if not 1 <= len(idempotency_key) <= 128:
+        raise HTTPException(status_code=422, detail="Idempotency-Key must be 1-128 characters")
+
     person = await session.get(Person, candidate_id)
     if person is None or not person.canonical:
         raise HTTPException(status_code=404, detail="Candidate not found")
@@ -791,21 +798,80 @@ async def record_candidate_decision(
             Opportunity.id == payload.opportunity_id,
             OpportunityFounder.person_id == person.id,
         )
+        .with_for_update(of=Opportunity)
     )
     opportunity = opportunity_result.scalar_one_or_none()
     if opportunity is None:
         raise HTTPException(status_code=409, detail="Candidate is not linked to this opportunity")
 
+    reason = payload.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(status_code=422, detail="Decision reason must be at least 3 characters")
+
+    existing_result = await session.execute(
+        select(DecisionEvent).where(DecisionEvent.idempotency_key == idempotency_key)
+    )
+    existing_event = existing_result.scalar_one_or_none()
+    if existing_event is not None:
+        existing_action = (
+            existing_event.sla_metadata.get("action")
+            if isinstance(existing_event.sla_metadata, dict)
+            else None
+        )
+        if (
+            existing_event.opportunity_id != opportunity.id
+            or existing_action != payload.action
+            or existing_event.reason != reason
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Idempotency-Key was already used for another decision",
+            )
+        return CandidateDecisionResponse(
+            event_id=existing_event.id,
+            prior_state=existing_event.prior_state,
+            new_state=existing_event.new_state,
+            action=payload.action,
+            reason=reason,
+            created_at=existing_event.created_at,
+        )
+
     prior_state = opportunity.lifecycle_state
     new_state = decision_state_for_action(payload.action)
-    reason = payload.reason.strip()
+    if not is_valid_transition(prior_state, new_state) or prior_state == new_state:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Decision is not allowed from lifecycle state '{prior_state}'",
+        )
+
+    memo_result = await session.execute(
+        select(InvestmentMemo)
+        .where(
+            InvestmentMemo.opportunity_id == opportunity.id,
+            InvestmentMemo.status == "succeeded",
+        )
+        .order_by(InvestmentMemo.created_at.desc())
+        .limit(1)
+    )
+    memo = memo_result.scalar_one_or_none()
+    if memo is None:
+        raise HTTPException(status_code=409, detail="A validated memo is required before deciding")
+
     event = DecisionEvent(
         opportunity_id=opportunity.id,
         prior_state=prior_state,
         new_state=new_state,
         actor="vc-ui:sophie-werner",
+        idempotency_key=idempotency_key,
         reason=reason,
-        sla_metadata={"action": payload.action, "source": "decision-floating-dock"},
+        sla_metadata={
+            "action": payload.action,
+            "source": "decision-floating-dock",
+            "memo_id": str(memo.id),
+            "claim_ids": memo.claim_ids,
+            "assessment_ids": memo.assessment_ids,
+            "thesis_version": memo.thesis_version,
+        },
     )
     opportunity.lifecycle_state = new_state
     session.add(event)

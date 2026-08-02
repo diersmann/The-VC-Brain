@@ -109,7 +109,10 @@ export async function recordCandidateDecision(
 ): Promise<DecisionResult> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/decision`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": crypto.randomUUID(),
+    },
     body: JSON.stringify({ opportunity_id: opportunityId, action, reason }),
   });
   if (!response.ok) {
