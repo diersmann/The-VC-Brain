@@ -221,7 +221,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-094 - Add backup, restore, migration, rollback, and incident runbooks.** Missing: production RPO/RTO and tested recovery. Done when PostgreSQL/object-storage backups, scheduled restore drills, forward-fix/rollback policy, rolling worker compatibility, and incident ownership are documented and exercised.
 
-- [ ] **VCB-095 - Rewrite stale README and architecture status.** Observed: README still says Boilerplate phase and once a router is added despite implemented routes/features. Done when docs distinguish implemented/partial/proposed behavior, list honest limitations/provider costs, and provide one clean start, one demo start, reset, troubleshooting, and workflow map.
+- [x] **VCB-095 - Rewrite stale README and architecture status.** Observed: README said Boilerplate phase and still described adding a router despite implemented routes/features. **Completed:** README and architecture status now distinguish implemented foundations from partial/proposed capabilities, document provider/auth/SLA limitations, provide clean start, opt-in synthetic demo, destructive reset, troubleshooting, and the current workflow route map.
 
 - [ ] **VCB-096 - Ship a deterministic, visibly labeled demo walkthrough.** Observed: a large seed exists but root onboarding does not expose a one-command demo. Done when no paid APIs are required to walk sourcing, contradiction, axes, evidence, memo, and decision; expected counts/routes are smoke-tested; screenshots/script stay current.
 
@@ -290,6 +290,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-090 configuration validation passed Compose config, six focused settings tests, live API startup, mypy, and full `make check` with 180 backend and 42 frontend tests. Backend settings now use `APP_*` consistently across `.env.example`, local settings, and the API/worker Compose environment; deployment secret injection and a full environment matrix remain blocked scope.
 - 2026-08-02: VCB-092 focused lifecycle cleanup tests passed for API and worker shutdown; full shared AI/Redis ownership remains explicitly blocked pending a client-lifecycle design.
 - 2026-08-02: VCB-099 canonical JSON serialization passed focused round-trip/stability coverage and source audit; all `application/json` snapshot writers now emit valid deterministic UTF-8 JSON.
+- 2026-08-02: VCB-095 documentation review passed; README and architecture status now match the current repository, and the clean/demo/reset/troubleshooting/workflow paths are documented.
 
 ## First practical milestone
 

@@ -4,6 +4,10 @@
 
 The VC Brain discovers promising founders, maintains evidence-backed profiles, and supports sourcing, screening, diligence, and investment decisions. Profiles and scores must remain time-aware, explainable, and traceable to their original evidence. Sourcing depth is the MVP priority; the other layers remain deliberately thin where necessary to prove that strong founders can be found before they begin fundraising.
 
+## Implementation status
+
+This document is the target architecture and contract, not a claim that every surface is shipped. The current repository has a working local Docker stack, provenance-aware source collection, inbound PDF submission, deterministic scoring foundations, and tested sourcing/inbound/decision UI states. Authentication and tenant scoping, the complete triage-to-decision lifecycle, real SLA clocks, production observability, and several connector depth requirements remain partial or proposed. The durable implementation status is tracked in [`IMPROVEMENT_BACKLOG.md`](../IMPROVEMENT_BACKLOG.md).
+
 ## Evaluation Criteria Coverage
 
 | Criterion | Weight | Primary architecture coverage |

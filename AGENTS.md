@@ -2,9 +2,9 @@
 
 ## Project Map
 
-- This repository defines a VC founder sourcing, profiling, and scoring platform. It now contains a Docker-first development boilerplate.
+- This repository defines a VC founder sourcing, profiling, and scoring platform with a working Docker-first local product foundation.
 - `Problem_Statement.pdf`: product brief and source requirements.
-- `docs/ARCHITECTURE.md`: proposed systems, data flow, and scoring methods.
+- `docs/ARCHITECTURE.md`: target systems, data flow, scoring methods, and implementation boundaries.
 - `compose.yaml`: Docker Compose development environment with frontend, API, worker, PostgreSQL, Redis, and MinIO.
 - `Makefile`: shortcuts for Docker Compose and tooling commands.
 - `backend/`: FastAPI modular monolith + Arq worker + Alembic migrations + pytest tests.
@@ -77,7 +77,6 @@ npm run build
 | `postgres` | 5432 | PostgreSQL 16 with pgvector extension |
 | `redis` | 6379 | Redis 7 for job queue, caching, and rate limiting |
 | `minio` | 9000 / 9001 | S3-compatible object storage (API / Console) |
-| `minio-init` | — | One-shot bucket creation on first start |
 
 ### Databases and Storage
 
