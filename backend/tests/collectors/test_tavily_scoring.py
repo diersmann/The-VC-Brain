@@ -1,12 +1,13 @@
-from app.collectors.jobs import score_research_axis
+from app.collectors.jobs import _rating, score_research_axis
 
 
 def test_research_axis_without_results_is_low_confidence() -> None:
     result = score_research_axis("founder", {"results": [], "answer": ""}, ["Ada Founder"])
 
-    assert result["score"] == 0.3
+    assert result["score"] == 0.5
     assert result["confidence"] == 0.0
     assert result["result_count"] == 0.0
+    assert _rating(result["score"]) == "Neutral"
 
 
 def test_positive_source_backed_evidence_scores_above_negative_case() -> None:

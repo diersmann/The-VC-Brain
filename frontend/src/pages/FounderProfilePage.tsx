@@ -194,7 +194,7 @@ function ThesisReasons({ icon: Icon, label, values, tone }: { icon: React.Elemen
 function AxisCard({ assessment, profile, history }: { assessment: FounderAssessment; profile: FounderProfile; history: number[] }) {
   const details = axisDetails[assessment.title];
   const Icon = details.icon;
-  const values = history.length ? history.slice(-5) : [0];
+  const values = history.length ? history.slice(-5) : assessment.score == null ? [] : [assessment.score];
   const ratingStyle = assessment.rating === "Bullish"
     ? "bg-[#e4f2ed] text-success"
     : assessment.rating === "Bearish"
@@ -228,9 +228,9 @@ function AxisCard({ assessment, profile, history }: { assessment: FounderAssessm
       <div className="bg-gradient-to-br from-surface-2 to-[#edf4f4] px-5 pb-4 pt-4">
         <div className="mb-2 flex items-center justify-between">
           <div><div className="data-label">Trend · last 5 updates</div><div className="mt-1 flex items-center gap-1.5 text-xs font-bold" style={{ color: details.color }}><TrendIcon className="h-3.5 w-3.5" />{assessment.trend}</div></div>
-          <div className="text-right"><div className="numeric text-xl font-bold leading-none">{values.at(-1) || "—"}</div><div className="mt-1 text-[10px] text-muted">Current signal</div></div>
+          <div className="text-right"><div className="numeric text-xl font-bold leading-none">{values.at(-1) ?? "—"}</div><div className="mt-1 text-[10px] text-muted">Current signal</div></div>
         </div>
-        <TrendChart values={values} color={details.color} />
+        {values.length ? <TrendChart values={values} color={details.color} /> : <div className="flex h-[92px] items-center justify-center text-xs text-muted">No measured signal yet.</div>}
         <div className="mt-1 flex justify-between text-[10px] text-muted-2"><span>Earlier evidence</span><span>Latest</span></div>
         <div className="mt-3 rounded-md bg-white/55 p-3">
           <div className="data-label mb-1.5 flex items-center justify-between"><span>Assessment confidence</span><span className="numeric">{assessment.confidence}%</span></div>

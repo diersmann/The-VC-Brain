@@ -291,7 +291,7 @@ function AxisScreening({ profile }: { profile: FounderProfile }) {
   );
 }
 
-function AxisCard({ assessment, score, values }: { assessment: FounderAssessment; score: number; values: number[] }) {
+function AxisCard({ assessment, score, values }: { assessment: FounderAssessment; score: number | null; values: number[] }) {
   const TrendIcon = assessment.trend === "Improving" ? TrendingUp : assessment.trend === "Declining" ? TrendingDown : Minus;
   const ratingVisual = assessment.rating === "Bullish"
     ? { color: "#347c67", soft: "#e4f2ed" }
@@ -301,8 +301,8 @@ function AxisCard({ assessment, score, values }: { assessment: FounderAssessment
         ? { color: "#7d8999", soft: "#edf1f5" }
         : { color: "#a96e2d", soft: "#fff1df" };
   const tone = ratingVisual.color;
-  const trendData = values.length ? values.slice(-5) : [score];
-  const change = score - trendData[0];
+  const trendData = values.length ? values.slice(-5) : score == null ? [] : [score];
+  const change = score != null && trendData.length ? score - trendData[0] : null;
 
   return (
     <article
@@ -321,9 +321,9 @@ function AxisCard({ assessment, score, values }: { assessment: FounderAssessment
           </div>
         </div>
         <div className="w-20 shrink-0 text-right">
-          <span className="numeric text-xl font-bold leading-none" style={{ color: tone }}>{score}</span>
-          <div role="meter" aria-label={`${assessment.title} axis score: ${score}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={score} className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ backgroundColor: ratingVisual.soft }}>
-            <div className="h-full rounded-full" style={{ width: `${score}%`, backgroundColor: tone }} />
+          <span className="numeric text-xl font-bold leading-none" style={{ color: tone }}>{score ?? "—"}</span>
+          <div role="meter" aria-label={`${assessment.title} axis score: ${score == null ? "pending" : `${score}%`}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={score ?? undefined} className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ backgroundColor: ratingVisual.soft }}>
+            <div className="h-full rounded-full" style={{ width: `${score ?? 0}%`, backgroundColor: tone }} />
           </div>
         </div>
       </div>
@@ -331,10 +331,10 @@ function AxisCard({ assessment, score, values }: { assessment: FounderAssessment
         <div className="flex items-center justify-between">
           <span className="data-label">Trend · last 5 updates</span>
           <span className="numeric text-[10px] font-bold" style={{ color: tone }}>
-            {change > 0 ? "+" : ""}{change} pts
+            {change == null ? "No measured change" : `${change > 0 ? "+" : ""}${change} pts`}
           </span>
         </div>
-        <AxisTrendChart values={trendData} color={tone} label={`${assessment.title} ${assessment.trend} trend`} />
+        {trendData.length ? <AxisTrendChart values={trendData} color={tone} label={`${assessment.title} ${assessment.trend} trend`} /> : <div className="flex h-20 items-center justify-center text-xs text-muted">No measured signal yet.</div>}
         <div className="flex justify-between text-[10px] text-muted-2">
           <span>Earlier evidence</span>
           <span>Latest</span>

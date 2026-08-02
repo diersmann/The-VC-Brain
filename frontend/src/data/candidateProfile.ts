@@ -29,6 +29,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
   };
 
   const assessments = axisNames.map((title) => {
+    const axisKey = title === "Founder" ? "founder" : title === "Market" ? "market" : "idea_market";
     const actual = candidate.assessments.find((item) => normalizeAxis(item.axis) === title);
     if (!actual) {
       return {
@@ -36,7 +37,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
         rating: "Pending" as const,
         trend: "Stable" as const,
         confidence: 0,
-        score: 0,
+        score: null,
         body: `No recorded ${title} assessment yet. Review the collected evidence before assigning a rating.`,
       };
     }
@@ -45,7 +46,9 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
       rating: normalizeRating(actual.rating),
       trend: normalizeTrend(actual.trend),
       confidence: percentage(actual.confidence),
-      score: percentage(scoreValue(candidate, title === "Founder" ? "founder" : title === "Market" ? "market" : "idea_market")),
+      score: scoreValue(candidate, axisKey) == null
+        ? null
+        : percentage(scoreValue(candidate, axisKey)),
       body: actual.unknowns.length ? `Open questions: ${actual.unknowns.join("; ")}` : "Assessment recorded from the investment workflow.",
     };
   });

@@ -18,7 +18,7 @@ export interface FounderAssessment {
   rating: "Bullish" | "Neutral" | "Bearish" | "Pending";
   trend: "Improving" | "Stable" | "Declining";
   confidence: number;
-  score: number;
+  score: number | null;
   body: string;
 }
 

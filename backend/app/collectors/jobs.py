@@ -674,7 +674,9 @@ def score_research_axis(
     negative_signal = min(1.0, negative_hits / 3.0)
 
     if not results:
-        score = 0.30
+        # No public result is an evidence gap, not negative evidence. Keep
+        # the axis neutral and make its low confidence drive diligence.
+        score = 0.50
         confidence = 0.0
     else:
         score = (
