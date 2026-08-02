@@ -19,7 +19,7 @@ from app.config import Settings
 from app.db.models import InboundSubmission, Opportunity, OutboxEvent, Person, SourceSnapshot
 from app.db.session import get_session
 from app.main import app
-from app.uploads import UploadRejected, quarantine_pitch_upload
+from app.uploads import UploadRejected, extract_pdf_pages, quarantine_pitch_upload
 
 
 class _FakeSession:
@@ -81,6 +81,19 @@ async def test_quarantine_rejects_oversized_upload() -> None:
         await quarantine_pitch_upload(
             _upload(_pdf_bytes()), Settings(environment="test", upload_max_bytes=10)
         )
+
+
+def test_extract_pdf_pages_preserves_page_coordinates() -> None:
+    pages = extract_pdf_pages(_pdf_bytes(pages=2), max_pages=2, max_text_chars=1000)
+
+    assert len(pages) == 2
+    assert pages[0][1] == {
+        "kind": "pdf",
+        "page": 1,
+        "char_start": 0,
+        "char_end": 0,
+    }
+    assert pages[1][1]["page"] == 2
 
 
 @pytest.mark.asyncio

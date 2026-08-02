@@ -298,6 +298,7 @@ class Observation(TimestampMixin, Base):
     )
     predicate: Mapped[str] = mapped_column(String(128), nullable=False)
     object_value: Mapped[str] = mapped_column(Text, nullable=False)
+    source_locator: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     extractor_version: Mapped[str] = mapped_column(String(64), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)

@@ -15,7 +15,7 @@ from app.config import get_settings
 from app.db.models import Observation, SourceSnapshot
 from app.processing.pipeline_job import process_candidate_job
 from app.storage import get_snapshot
-from app.uploads import UploadRejected, extract_pdf_text
+from app.uploads import UploadRejected, extract_pdf_pages
 
 logger = structlog.get_logger(__name__)
 
@@ -45,8 +45,8 @@ async def process_inbound_pitch_job(
         
         try:
             settings = get_settings()
-            text_content = await asyncio.to_thread(
-                extract_pdf_text,
+            page_text = await asyncio.to_thread(
+                extract_pdf_pages,
                 content,
                 max_pages=settings.upload_max_pages,
                 max_text_chars=settings.upload_max_text_chars,
@@ -59,19 +59,22 @@ async def process_inbound_pitch_job(
         now = datetime.now(UTC)
         observations_to_add = []
         
-        # We store the raw text as an observation so the reconciler/LLM can use it
-        observations_to_add.append(
-            Observation(
-                snapshot_id=snapshot.id,
-                subject_id=uuid.UUID(person_id),
-                opportunity_id=uuid.UUID(opportunity_id),
-                predicate="pitch_deck_text",
-                object_value=text_content[:50000], # truncate to 50k chars
-                observed_at=now,
-                extractor_version="inbound-v1",
-                confidence=1.0
+        # Keep one observation per page so claims can reopen the immutable
+        # source at a concrete coordinate instead of a flattened 50k-char blob.
+        for text_content, source_locator in page_text:
+            observations_to_add.append(
+                Observation(
+                    snapshot_id=snapshot.id,
+                    subject_id=uuid.UUID(person_id),
+                    opportunity_id=uuid.UUID(opportunity_id),
+                    predicate="pitch_deck_page_text",
+                    object_value=text_content or "[No extractable text on page]",
+                    source_locator=source_locator,
+                    observed_at=now,
+                    extractor_version="inbound-v1",
+                    confidence=1.0,
+                )
             )
-        )
         
         # Store company name as observation
         observations_to_add.append(

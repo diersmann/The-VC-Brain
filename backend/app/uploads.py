@@ -117,20 +117,43 @@ async def quarantine_pitch_upload(upload: UploadFile, settings: Settings) -> byt
         return content
 
 
-def extract_pdf_text(content: bytes, *, max_pages: int, max_text_chars: int) -> str:
-    """Extract bounded text from a previously validated PDF.
+def extract_pdf_pages(
+    content: bytes, *, max_pages: int, max_text_chars: int
+) -> list[tuple[str, dict[str, object]]]:
+    """Extract bounded page text with stable PDF page/character locators.
 
     This function is intended to run in a worker thread so malformed content
     cannot block the async worker event loop.
     """
     _validate_pdf_bytes(content, max_pages=max_pages)
     reader = pypdf.PdfReader(io.BytesIO(content), strict=True)
-    text_parts: list[str] = []
+    pages: list[tuple[str, dict[str, object]]] = []
     remaining = max_text_chars
-    for page in reader.pages:
+    for page_number, page in enumerate(reader.pages, start=1):
         if remaining <= 0:
             break
         text = page.extract_text() or ""
-        text_parts.append(text[:remaining])
-        remaining -= len(text)
-    return "\n".join(text_parts)
+        bounded_text = text[:remaining]
+        pages.append(
+            (
+                bounded_text,
+                {
+                    "kind": "pdf",
+                    "page": page_number,
+                    "char_start": 0,
+                    "char_end": len(bounded_text),
+                },
+            )
+        )
+        remaining -= len(bounded_text)
+    return pages
+
+
+def extract_pdf_text(content: bytes, *, max_pages: int, max_text_chars: int) -> str:
+    """Extract bounded text from a previously validated PDF."""
+    return "\n".join(
+        text
+        for text, _locator in extract_pdf_pages(
+            content, max_pages=max_pages, max_text_chars=max_text_chars
+        )
+    )

@@ -121,6 +121,7 @@ class CandidateObservationResponse(BaseModel):
     predicate: str
     object_value: str
     confidence: float
+    source_locator: dict[str, object] | None = None
     observed_at: datetime
     source_type: str
     source_uri: str
@@ -659,6 +660,7 @@ async def get_candidate(
             predicate=observation.predicate,
             object_value=observation.object_value,
             confidence=observation.confidence,
+            source_locator=observation.source_locator,
             observed_at=observation.observed_at,
             source_type=snapshot.source_type,
             source_uri=snapshot.uri,

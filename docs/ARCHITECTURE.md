@@ -51,7 +51,7 @@ Core entities are:
 | Organization | Company, institution, accelerator, or fund | Stable ID, names, type, locations |
 | Opportunity | A company and idea evaluated at a point in time | Company, founders, source kind, lifecycle state, thesis version |
 | SourceSnapshot | Immutable copy or reference to collected material | URI, source type, content hash, collected time, license/access metadata |
-| Observation | Extracted source statement before reconciliation | Subject, opportunity when known, predicate, object/value, observed time, extractor version, snapshot |
+| Observation | Extracted source statement before reconciliation | Subject, opportunity when known, predicate, object/value, source locator, observed time, extractor version, snapshot |
 | Claim | Reconciled assertion used by scoring and memos | Subject, opportunity when known, observation references, status, confidence, valid time, supersession link |
 | Relationship | Typed graph edge | Endpoints, relationship type, evidence, confidence, observed/valid time |
 | ScoreSnapshot | Reproducible score at a point in time | Person-scoped Founder Score/sourcing/thesis or opportunity-scoped axis snapshot, rubric/model version, components, confidence interval, evidence IDs |

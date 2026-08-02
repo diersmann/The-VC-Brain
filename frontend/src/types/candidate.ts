@@ -60,6 +60,7 @@ export interface CandidateObservation {
   predicate: string;
   object_value: string;
   confidence: number;
+  source_locator?: Record<string, unknown> | null;
   observed_at: string;
   source_type: string;
   source_uri: string;
