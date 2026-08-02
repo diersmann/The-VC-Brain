@@ -67,7 +67,7 @@ make down
 make clean
 ```
 
-The optional `make seed-demo` command creates two fictional, clearly labelled inbound records and does not call paid or external APIs. It is safe to rerun.
+The optional `make seed-demo` command creates two fictional, clearly labelled inbound records and a complete local walkthrough fixture: one investigating candidate, one memo-ready candidate, three assessments per candidate, score history, a seeded contradiction, evidence-backed claims, and one five-section template memo. It does not call paid or external APIs and is safe to rerun. After seeding, verify `/inbound`, `/investigated`, `/decisions`, and `/founders/:id` in the frontend; the API smoke contract is two demo candidates, two thesis matches, six assessments, one contradiction, and one succeeded memo with five sections.
 
 ## Current workflow map
 

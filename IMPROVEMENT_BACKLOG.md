@@ -223,7 +223,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [x] **VCB-095 - Rewrite stale README and architecture status.** Observed: README said Boilerplate phase and still described adding a router despite implemented routes/features. **Completed:** README and architecture status now distinguish implemented foundations from partial/proposed capabilities, document provider/auth/SLA limitations, provide clean start, opt-in synthetic demo, destructive reset, troubleshooting, and the current workflow route map.
 
-- [ ] **VCB-096 - Ship a deterministic, visibly labeled demo walkthrough.** Observed: a large seed exists but root onboarding does not expose a one-command demo. Done when no paid APIs are required to walk sourcing, contradiction, axes, evidence, memo, and decision; expected counts/routes are smoke-tested; screenshots/script stay current.
+- [blocked] **VCB-096 - Ship a deterministic, visibly labeled demo walkthrough.** Observed: a large seed exists but root onboarding does not expose a one-command demo. **Partial completion:** `make seed-demo` now remains fully synthetic, idempotent, and local while creating two clearly labelled workflow records, one investigating and one memo-ready, with score history, thesis matches, six assessments, a contradiction, evidence-linked claims, and one five-section template memo; seed tests and a live API smoke check verified the expected counts and `/inbound`, `/investigated`, `/decisions`, and `/founders/:id` routes. **Blocked:** the remaining walkthrough contract requires a clean-volume smoke job and current browser screenshots/script coverage for the rendered flow.
 
 - [ ] **VCB-097 - Add connector contract tests and readiness levels.** Observed: ten registered connectors vary widely in pagination, provenance, retry, and completeness. Done when shared fixtures test cursoring, dedup, coordinates, licensing, rate limits, retries, partial failure, and connectors are marked experimental/beta/production with last-success health.
 
@@ -298,6 +298,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-03: VCB-083 onboarding split passed focused helper tests (2 tests), ESLint, TypeScript, and production build; the page container is 42 lines, while founder-profile and candidate-card extraction remain explicitly blocked scope.
 - 2026-08-03: VCB-083 founder-profile split passed ESLint, TypeScript, and production build; the page container is 60 lines, while candidate-card extraction remains explicitly blocked scope.
 - 2026-08-03: VCB-083 candidate-card split passed its 9-test behavior suite, ESLint, and TypeScript; all four oversized frontend modules now have feature-local containers/components and the item is complete pending the full checkpoint gate.
+- 2026-08-03: VCB-096 demo workflow seed passed fixture tests and live Docker verification: reruns reused two demo IDs, candidates exposed investigating/memo-ready states, two scores/thesis matches, six assessments, one contradiction, and one succeeded five-section template memo; clean-volume and rendered browser walkthrough coverage remain blocked scope.
 
 ## First practical milestone
 
