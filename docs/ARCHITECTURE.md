@@ -99,6 +99,7 @@ The backend coordinates the application:
 - Collection, correlation, and analysis jobs
 - Profile, score, graph, and memo delivery
 - Versioned thesis, rubric, memo, and decision contracts
+- Opportunity-scoped jobs carry and validate the exact opportunity ID; person-only fallback selection is not permitted for research, memo, or decisions.
 - Append-only lifecycle events and investor feedback capture
 
 For an MVP, this should be a modular monolith rather than a set of microservices.

@@ -732,7 +732,9 @@ def _axis_unknowns(axis: str, result_count: int, confidence: float) -> list[str]
     return unknowns
 
 
-async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, Any]:
+async def research_candidate_job(
+    ctx: dict[str, Any], person_id: str, opportunity_id: str
+) -> dict[str, Any]:
     """Research one candidate with three Tavily searches and persist scored evidence."""
     from tavily import TavilyClient  # type: ignore[import-untyped]
 
@@ -745,28 +747,29 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
         if person is None or not person.canonical:
             return {"error": "person_not_found", "person_id": person_id}
 
+        try:
+            requested_opportunity_id = uuid.UUID(opportunity_id)
+        except ValueError:
+            return {"error": "opportunity_id_required", "person_id": person_id}
+
+        opportunity_result = await session.execute(
+            select(Opportunity)
+            .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
+            .where(
+                Opportunity.id == requested_opportunity_id,
+                OpportunityFounder.person_id == person.id,
+            )
+        )
+        opportunity = opportunity_result.scalar_one_or_none()
+        if opportunity is None:
+            return {"error": "opportunity_not_found", "person_id": person_id}
+
         existing_observations_result = await session.execute(
             select(Observation).where(Observation.subject_id == person.id)
         )
         existing_observations = list(existing_observations_result.scalars().all())
         company = _candidate_company(existing_observations, person)
         queries = _research_queries(person, company)
-
-        opportunity_result = await session.execute(
-            select(Opportunity)
-            .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
-            .where(OpportunityFounder.person_id == person.id)
-            .order_by(Opportunity.created_at.desc())
-            .limit(1)
-        )
-        opportunity = opportunity_result.scalar_one_or_none()
-        if opportunity is None:
-            from app.opportunity_service import get_or_create_opportunity
-
-            opportunity = await get_or_create_opportunity(
-                session, person, source_kind="outbound", lifecycle_state="investigating",
-                company_name=company,
-            )
 
         previous_result = await session.execute(
             select(ScoreSnapshot)
@@ -987,6 +990,7 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
         await pool.enqueue_job(
             "research_candidate_job",
             task.get("person_id", ""),
+            task.get("opportunity_id", ""),
         )
     elif job_type == "fetch_candidate_avatar":
         await pool.enqueue_job(
@@ -1002,6 +1006,7 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
         await pool.enqueue_job(
             "generate_memo_job",
             task.get("person_id", ""),
+            task.get("opportunity_id", ""),
         )
     elif job_type == "process_candidate":
         await pool.enqueue_job(

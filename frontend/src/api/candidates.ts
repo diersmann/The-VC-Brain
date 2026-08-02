@@ -103,13 +103,14 @@ export async function draftCandidateOutreach(
 
 export async function recordCandidateDecision(
   candidateId: string,
+  opportunityId: string,
   action: DecisionAction,
   reason: string,
 ): Promise<DecisionResult> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/decision`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, reason }),
+    body: JSON.stringify({ opportunity_id: opportunityId, action, reason }),
   });
   if (!response.ok) {
     throw new Error(`Decision request failed with status ${response.status}`);
@@ -131,14 +132,18 @@ export type CandidateMemo = {
   created_at: string | null;
 };
 
-export async function fetchCandidateMemo(candidateId: string, signal?: AbortSignal): Promise<CandidateMemo> {
-  const response = await fetch(`/api/v1/candidates/${candidateId}/memo`, { signal });
+export async function fetchCandidateMemo(candidateId: string, opportunityId: string, signal?: AbortSignal): Promise<CandidateMemo> {
+  const response = await fetch(`/api/v1/candidates/${candidateId}/memo?opportunity_id=${encodeURIComponent(opportunityId)}`, { signal });
   if (response.status === 404) return { sections: [], status: "missing", generation_mode: null, model_version: null, created_at: null };
   if (!response.ok) throw new Error(`Memo request failed with status ${response.status}`);
   return (await response.json()) as CandidateMemo;
 }
 
-export async function generateCandidateMemo(candidateId: string): Promise<void> {
-  const response = await fetch(`/api/v1/candidates/${candidateId}/memo/generate`, { method: "POST" });
+export async function generateCandidateMemo(candidateId: string, opportunityId: string): Promise<void> {
+  const response = await fetch(`/api/v1/candidates/${candidateId}/memo/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ opportunity_id: opportunityId }),
+  });
   if (!response.ok) throw new Error(`Memo generation failed with status ${response.status}`);
 }

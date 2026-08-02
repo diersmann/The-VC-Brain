@@ -195,7 +195,11 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                 # Enqueue the three investigation jobs
                 await queue_enqueue(
                     redis,
-                    {"job_type": "research_candidate", "person_id": str(person.id)},
+                    {
+                        "job_type": "research_candidate",
+                        "person_id": str(person.id),
+                        "opportunity_id": str(opp.id),
+                    },
                     priority=10.0,
                 )
                 await queue_enqueue(
@@ -239,7 +243,11 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                         ):
                             await queue_enqueue(
                                 redis,
-                                {"job_type": job_type, "person_id": str(person.id)},
+                                {
+                                    "job_type": job_type,
+                                    "person_id": str(person.id),
+                                    "opportunity_id": str(opp.id),
+                                },
                                 priority=10.0,
                             )
                         session.add(
@@ -326,7 +334,11 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                         await decrement_agent_budget(redis, 1)
                         await queue_enqueue(
                             redis,
-                            {"job_type": "generate_memo", "person_id": str(person.id)},
+                            {
+                                "job_type": "generate_memo",
+                                "person_id": str(person.id),
+                                "opportunity_id": str(opp.id),
+                            },
                             priority=10.0,
                         )
                         session.add(

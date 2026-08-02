@@ -61,8 +61,8 @@ export function DecisionDetailPage() {
     refetch: refetchMemo,
   } = useQuery({
     queryKey: ["candidate-memo", founderId],
-    queryFn: ({ signal }) => fetchCandidateMemo(founderId!, signal),
-    enabled: Boolean(founderId),
+    queryFn: ({ signal }) => fetchCandidateMemo(founderId!, candidate?.opportunity?.id ?? "", signal),
+    enabled: Boolean(founderId && candidate?.opportunity?.id),
     staleTime: 30_000,
   });
   const [memoGenState, setMemoGenState] = useState<"idle" | "queued" | "error">("idle");
@@ -76,7 +76,8 @@ export function DecisionDetailPage() {
   const generateMemo = async () => {
     setMemoGenState("queued");
     try {
-      await generateCandidateMemo(founderId!);
+      if (!candidate?.opportunity?.id) return;
+      await generateCandidateMemo(founderId!, candidate.opportunity.id);
       // Poll for the memo after a short delay
       window.setTimeout(() => void refetchMemo(), 5_000);
     } catch {
@@ -134,6 +135,7 @@ export function DecisionDetailPage() {
       </div>
       <DecisionActionDock
         candidateId={candidate.id}
+        opportunityId={candidate.opportunity?.id ?? null}
         currentState={candidate.opportunity?.lifecycle_state ?? "No opportunity state"}
         onSaved={() => void refetch()}
       />

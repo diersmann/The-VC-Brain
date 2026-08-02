@@ -27,7 +27,9 @@ from app.db.models import (
 logger = structlog.get_logger(__name__)
 
 
-async def generate_memo_job(ctx: dict[str, Any], person_id: str) -> dict[str, Any]:
+async def generate_memo_job(
+    ctx: dict[str, Any], person_id: str, opportunity_id: str
+) -> dict[str, Any]:
     """Generate an investment memo for a candidate.
 
     Loads the latest agent scorecard + assessments + evidence + thesis,
@@ -36,13 +38,30 @@ async def generate_memo_job(ctx: dict[str, Any], person_id: str) -> dict[str, An
     from app.config import get_settings
 
     settings = ctx.get("settings") or get_settings()
-    logger.info("generate_memo_job_started", person_id=person_id)
+    logger.info("generate_memo_job_started", person_id=person_id, opportunity_id=opportunity_id)
 
     async with _session_ctx(ctx) as session:
         person = await session.get(Person, uuid.UUID(person_id))
         if person is None:
             logger.error("memo_person_not_found", person_id=person_id)
             return {"error": "person_not_found"}
+
+        try:
+            requested_opportunity_id = uuid.UUID(opportunity_id)
+        except ValueError:
+            return {"error": "opportunity_id_required", "person_id": person_id}
+
+        opportunity_result = await session.execute(
+            select(Opportunity)
+            .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
+            .where(
+                Opportunity.id == requested_opportunity_id,
+                OpportunityFounder.person_id == person.id,
+            )
+        )
+        opportunity = opportunity_result.scalar_one_or_none()
+        if opportunity is None:
+            return {"error": "opportunity_not_found", "person_id": person_id}
 
         # Fetch observations
         obs_result = await session.execute(
@@ -105,13 +124,6 @@ async def generate_memo_job(ctx: dict[str, Any], person_id: str) -> dict[str, An
             f"sectors: {thesis.sectors}, regions: {thesis.regions}"
             if thesis
             else "No active thesis."
-        )
-
-        # Find or create opportunity
-        from app.opportunity_service import get_or_create_opportunity
-
-        opportunity = await get_or_create_opportunity(
-            session, person, source_kind="outbound", lifecycle_state="investigating",
         )
 
         # Persist a pending run before calling the external model. If the

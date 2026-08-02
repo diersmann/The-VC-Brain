@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.collectors.queue import queue_depth
 from app.collectors.registry import all_connectors
 from app.db import get_session
-from app.db.models import Observation, Person, ScoreSnapshot
+from app.db.models import Observation, Opportunity, OpportunityFounder, Person, ScoreSnapshot
 
 logger = structlog.get_logger(__name__)
 
@@ -96,6 +96,17 @@ class AvatarQueueResponse(BaseModel):
     queued: int
     candidate_ids: list[str]
     message: str
+
+
+async def _current_opportunity(session: AsyncSession, person_id: uuid.UUID) -> Opportunity | None:
+    result = await session.execute(
+        select(Opportunity)
+        .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
+        .where(OpportunityFounder.person_id == person_id)
+        .order_by(Opportunity.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +214,9 @@ async def fetch_candidate_avatars(
 
     queued_ids: list[str] = []
     for person in people:
+        opportunity = await _current_opportunity(session, person.id)
+        if opportunity is None:
+            continue
         await queue_enqueue(
             redis,
             {
@@ -253,11 +267,15 @@ async def research_candidates(
 
     queued_ids: list[str] = []
     for person in people:
+        opportunity = await _current_opportunity(session, person.id)
+        if opportunity is None:
+            continue
         await queue_enqueue(
             redis,
             {
                 "job_type": "research_candidate",
                 "person_id": str(person.id),
+                "opportunity_id": str(opportunity.id),
                 "source": "tavily_search",
             },
             priority=10.0,
@@ -280,6 +298,9 @@ async def research_candidate(
     person = await session.get(Person, candidate_id)
     if person is None or not person.canonical:
         raise HTTPException(status_code=404, detail="Candidate not found")
+    opportunity = await _current_opportunity(session, person.id)
+    if opportunity is None:
+        raise HTTPException(status_code=409, detail="Candidate has no opportunity to research")
 
     from app.collectors.queue import enqueue as queue_enqueue
 
@@ -288,6 +309,7 @@ async def research_candidate(
         {
             "job_type": "research_candidate",
             "person_id": str(person.id),
+            "opportunity_id": str(opportunity.id),
             "source": "tavily_search",
         },
         priority=10.0,
@@ -307,17 +329,21 @@ async def candidate_research_status(
     person = await session.get(Person, candidate_id)
     if person is None:
         raise HTTPException(status_code=404, detail="Candidate not found")
+    opportunity = await _current_opportunity(session, person.id)
 
-    score_result = await session.execute(
-        select(ScoreSnapshot)
-        .where(
-            ScoreSnapshot.subject_id == candidate_id,
-            ScoreSnapshot.rubric_version == "founder-tavily-v1",
+    snapshot = None
+    if opportunity is not None:
+        score_result = await session.execute(
+            select(ScoreSnapshot)
+            .where(
+                ScoreSnapshot.subject_id == opportunity.id,
+                ScoreSnapshot.subject_type == "opportunity",
+                ScoreSnapshot.rubric_version == "opportunity-axes-v1",
+            )
+            .order_by(ScoreSnapshot.created_at.desc())
+            .limit(1)
         )
-        .order_by(ScoreSnapshot.created_at.desc())
-        .limit(1)
-    )
-    snapshot = score_result.scalar_one_or_none()
+        snapshot = score_result.scalar_one_or_none()
     count_result = await session.execute(
         select(func.count(Observation.id)).where(
             Observation.subject_id == candidate_id,

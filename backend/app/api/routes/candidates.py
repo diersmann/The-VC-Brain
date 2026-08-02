@@ -202,6 +202,7 @@ DecisionAction = Literal["proceed", "hold", "decline"]
 
 
 class CandidateDecisionRequest(BaseModel):
+    opportunity_id: uuid.UUID
     action: DecisionAction
     reason: str = Field(min_length=3, max_length=2000)
 
@@ -786,13 +787,14 @@ async def record_candidate_decision(
     opportunity_result = await session.execute(
         select(Opportunity)
         .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
-        .where(OpportunityFounder.person_id == person.id)
-        .order_by(Opportunity.created_at.desc())
-        .limit(1)
+        .where(
+            Opportunity.id == payload.opportunity_id,
+            OpportunityFounder.person_id == person.id,
+        )
     )
     opportunity = opportunity_result.scalar_one_or_none()
     if opportunity is None:
-        raise HTTPException(status_code=409, detail="Candidate has no opportunity to decide")
+        raise HTTPException(status_code=409, detail="Candidate is not linked to this opportunity")
 
     prior_state = opportunity.lifecycle_state
     new_state = decision_state_for_action(payload.action)
@@ -1012,10 +1014,18 @@ class MemoResponse(BaseModel):
     created_at: datetime | None = None
 
 
+class MemoGenerationRequest(BaseModel):
+    opportunity_id: uuid.UUID
+
+
 @router.get("/{candidate_id}/memo", response_model=MemoResponse)
 async def get_candidate_memo(
     candidate_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
+    opportunity_id: Annotated[
+        uuid.UUID,
+        Query(description="Exact opportunity whose memo is requested"),
+    ],
 ) -> MemoResponse:
     """Return the latest investment memo for a candidate."""
     from app.db.models import InvestmentMemo
@@ -1024,7 +1034,10 @@ async def get_candidate_memo(
         select(InvestmentMemo)
         .join(Opportunity, Opportunity.id == InvestmentMemo.opportunity_id)
         .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
-        .where(OpportunityFounder.person_id == candidate_id)
+        .where(
+            OpportunityFounder.person_id == candidate_id,
+            InvestmentMemo.opportunity_id == opportunity_id,
+        )
         .order_by(InvestmentMemo.created_at.desc())
         .limit(1)
     )
@@ -1048,12 +1061,24 @@ async def get_candidate_memo(
 @router.post("/{candidate_id}/memo/generate", response_model=dict[str, str])
 async def generate_candidate_memo(
     candidate_id: uuid.UUID,
+    payload: MemoGenerationRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, str]:
     """Queue investment memo generation for a candidate."""
     person = await session.get(Person, candidate_id)
     if person is None or not person.canonical:
         raise HTTPException(status_code=404, detail="Candidate not found")
+
+    opportunity_result = await session.execute(
+        select(Opportunity)
+        .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
+        .where(
+            Opportunity.id == payload.opportunity_id,
+            OpportunityFounder.person_id == person.id,
+        )
+    )
+    if opportunity_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=409, detail="Candidate is not linked to this opportunity")
 
     import redis.asyncio as aioredis
 
@@ -1065,7 +1090,11 @@ async def generate_candidate_memo(
     try:
         await queue_enqueue(
             redis,
-            {"job_type": "generate_memo", "person_id": str(person.id)},
+            {
+                "job_type": "generate_memo",
+                "person_id": str(person.id),
+                "opportunity_id": str(payload.opportunity_id),
+            },
             priority=10.0,
         )
     finally:

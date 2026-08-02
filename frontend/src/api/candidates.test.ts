@@ -78,9 +78,9 @@ test("persists a human decision", async () => {
   const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(responseBody), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
 
-  await expect(recordCandidateDecision("candidate-1", "hold", "Verify retention")).resolves.toEqual(responseBody);
+  await expect(recordCandidateDecision("candidate-1", "opportunity-1", "hold", "Verify retention")).resolves.toEqual(responseBody);
   expect(fetchMock).toHaveBeenCalledWith(
     "/api/v1/candidates/candidate-1/decision",
-    expect.objectContaining({ method: "POST", body: JSON.stringify({ action: "hold", reason: "Verify retention" }) }),
+    expect.objectContaining({ method: "POST", body: JSON.stringify({ opportunity_id: "opportunity-1", action: "hold", reason: "Verify retention" }) }),
   );
 });

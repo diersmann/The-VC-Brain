@@ -21,7 +21,7 @@ describe("DecisionActionDock", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const onSaved = vi.fn();
-    render(<DecisionActionDock candidateId="candidate-1" currentState="memo_ready" onSaved={onSaved} />);
+    render(<DecisionActionDock candidateId="candidate-1" opportunityId="opportunity-1" currentState="memo_ready" onSaved={onSaved} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Hold" }));
     fireEvent.change(screen.getByPlaceholderText("Add a concise reason for the decision record…"), { target: { value: "Verify retention" } });
@@ -31,7 +31,7 @@ describe("DecisionActionDock", () => {
     expect(await screen.findByText("Decision saved · hold")).toBeDefined();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/candidates/candidate-1/decision",
-      expect.objectContaining({ body: JSON.stringify({ action: "hold", reason: "Verify retention" }) }),
+      expect.objectContaining({ body: JSON.stringify({ opportunity_id: "opportunity-1", action: "hold", reason: "Verify retention" }) }),
     );
   });
 });
