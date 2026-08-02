@@ -10,6 +10,7 @@ from datetime import datetime
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -124,6 +125,14 @@ class Organization(TimestampMixin, Base):
 
 class Opportunity(TimestampMixin, Base):
     __tablename__ = "opportunities"
+    __table_args__ = (
+        CheckConstraint(
+            "lifecycle_state IN ("
+            "'discovered','interesting','investigating','contacted','received',"
+            "'memo_ready','hold','approved','closed','screening','triage','diligence')",
+            name="ck_opportunities_lifecycle_state",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     company_name: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -358,6 +367,12 @@ class Observation(TimestampMixin, Base):
 
 class Claim(TimestampMixin, Base):
     __tablename__ = "claims"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('supported','contradicted','unverified','tavily_synthesized')",
+            name="ck_claims_status",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     observation_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
@@ -452,6 +467,20 @@ class ScoreSnapshot(TimestampMixin, Base):
 
 class Assessment(TimestampMixin, Base):
     __tablename__ = "assessments"
+    __table_args__ = (
+        CheckConstraint(
+            "axis IN ('Founder','Market','Idea-Market','execution','technical','commercial')",
+            name="ck_assessments_axis",
+        ),
+        CheckConstraint(
+            "rating IN ('Bullish','Neutral','Bearish','bullish','neutral','bearish')",
+            name="ck_assessments_rating",
+        ),
+        CheckConstraint(
+            "trend IN ('Improving','Stable','Declining','improving','stable','declining')",
+            name="ck_assessments_trend",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     opportunity_id: Mapped[uuid.UUID] = mapped_column(

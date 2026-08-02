@@ -10,7 +10,7 @@ export interface FounderClaim {
   claim: string;
   source: string;
   trust: number;
-  status: string;
+  status: "Supported" | "Contradicted" | "Unverified" | "Synthesized" | "Observed";
 }
 
 export interface FounderAssessment {

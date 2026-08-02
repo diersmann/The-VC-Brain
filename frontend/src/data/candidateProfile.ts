@@ -1,5 +1,5 @@
 import type { CandidateDetail, CandidateObservation } from "../types/candidate";
-import type { FounderAssessment, FounderProfile } from "../types/profile";
+import type { FounderAssessment, FounderClaim, FounderProfile } from "../types/profile";
 
 const axisNames: FounderAssessment["title"][] = ["Founder", "Market", "Idea × Market"];
 
@@ -61,7 +61,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
         claim: `${formatPredicate(claim.predicate)}: ${claim.object_value}`,
         source: "Reconciled claim",
         trust: percentage(claim.trust_score ?? claim.confidence),
-        status: claim.status,
+        status: formatClaimStatus(claim.status),
       }));
   const sourceEvidence = observations
     .filter((item) => /^research_.*_evidence$/.test(item.predicate))
@@ -69,7 +69,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
         claim: `${formatPredicate(item.predicate)}: ${truncate(item.object_value, 150)}`,
         source: item.source_uri,
         trust: percentage(item.confidence),
-        status: "Observed",
+        status: "Observed" as const,
       }));
   const evidenceClaims = [...reconciledClaims, ...sourceEvidence].length
     ? [...reconciledClaims, ...sourceEvidence].slice(0, 12)
@@ -77,7 +77,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
         claim: `${formatPredicate(item.predicate)}: ${truncate(item.object_value, 150)}`,
         source: item.source_uri,
         trust: percentage(item.confidence),
-        status: "Observed",
+        status: "Observed" as const,
       }));
 
   const gaps = unique([
@@ -198,6 +198,13 @@ function normalizeTrend(trend: string): FounderAssessment["trend"] {
   if (value === "improving") return "Improving";
   if (value === "declining") return "Declining";
   return "Stable";
+}
+
+function formatClaimStatus(status: CandidateDetail["claims"][number]["status"]): FounderClaim["status"] {
+  if (status === "supported") return "Supported";
+  if (status === "contradicted") return "Contradicted";
+  if (status === "tavily_synthesized") return "Synthesized";
+  return "Unverified";
 }
 
 function signalText(observations: CandidateObservation[], composite: number | null, sourceLabel: string): string {

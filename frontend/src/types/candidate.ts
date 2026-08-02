@@ -38,6 +38,12 @@ export interface CandidateThesisMatch {
   criteria: Record<string, Record<string, unknown>>;
 }
 
+export type ClaimStatus = "supported" | "contradicted" | "unverified" | "tavily_synthesized";
+export type AssessmentAxis = "Founder" | "Market" | "Idea-Market" | "execution" | "technical" | "commercial";
+export type AssessmentRating = "Bullish" | "Neutral" | "Bearish";
+export type AssessmentTrend = "Improving" | "Stable" | "Declining";
+export type LifecycleStage = "discovered" | "interesting" | "investigating" | "contacted" | "received" | "memo_ready" | "hold" | "approved" | "closed" | "screening" | "triage" | "diligence";
+
 export interface Candidate {
   id: string;
   stable_id: string;
@@ -69,7 +75,7 @@ export interface CandidateObservation {
 export interface CandidateClaim {
   predicate: string;
   object_value: string;
-  status: string;
+  status: ClaimStatus;
   confidence: number;
   trust_score?: number | null;
   trust_interval?: { low: number; high: number } | null;
@@ -79,9 +85,9 @@ export interface CandidateClaim {
 }
 
 export interface CandidateAssessment {
-  axis: string;
-  rating: string;
-  trend: string;
+  axis: AssessmentAxis;
+  rating: AssessmentRating;
+  trend: AssessmentTrend;
   confidence: number;
   unknowns: string[];
   created_at: string | null;
@@ -105,7 +111,7 @@ export interface CandidateOpportunity {
   id: string;
   company_name: string;
   source_kind: string;
-  lifecycle_state: string;
+  lifecycle_state: LifecycleStage;
   thesis_version: string | null;
   created_at: string | null;
 }

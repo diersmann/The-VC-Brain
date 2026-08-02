@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +35,18 @@ from app.db.models import (
     Relationship,
     ScoreSnapshot,
     SourceSnapshot,
+)
+from app.domain_status import (
+    AssessmentAxis,
+    AssessmentRating,
+    AssessmentTrend,
+    ClaimStatus,
+    LifecycleStage,
+    normalize_assessment_axis,
+    normalize_assessment_rating,
+    normalize_assessment_trend,
+    normalize_claim_status,
+    normalize_lifecycle_stage,
 )
 from app.lifecycle import is_valid_transition
 
@@ -115,7 +127,12 @@ class CandidateResponse(BaseModel):
     avatar_source: str | None = None
     latest_score_at: datetime | None = None
     created_at: datetime | None = None
-    lifecycle_stage: str | None = None
+    lifecycle_stage: LifecycleStage | None = None
+
+    @field_validator("lifecycle_stage", mode="before")
+    @classmethod
+    def canonical_lifecycle_stage(cls, value: str | None) -> LifecycleStage | None:
+        return None if value is None else normalize_lifecycle_stage(value)
 
 
 class CandidateObservationResponse(BaseModel):
@@ -131,7 +148,12 @@ class CandidateObservationResponse(BaseModel):
 class CandidateClaimResponse(BaseModel):
     predicate: str
     object_value: str
-    status: str
+    status: ClaimStatus
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def canonical_claim_status(cls, value: str) -> ClaimStatus:
+        return normalize_claim_status(value)
     confidence: float
     trust_score: float | None = None
     trust_interval: dict[str, float] | None = None
@@ -141,12 +163,27 @@ class CandidateClaimResponse(BaseModel):
 
 
 class CandidateAssessmentResponse(BaseModel):
-    axis: str
-    rating: str
-    trend: str
+    axis: AssessmentAxis
+    rating: AssessmentRating
+    trend: AssessmentTrend
     confidence: float
     unknowns: list[str]
     created_at: datetime | None = None
+
+    @field_validator("axis", mode="before")
+    @classmethod
+    def canonical_axis(cls, value: str) -> AssessmentAxis:
+        return normalize_assessment_axis(value)
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def canonical_rating(cls, value: str) -> AssessmentRating:
+        return normalize_assessment_rating(value)
+
+    @field_validator("trend", mode="before")
+    @classmethod
+    def canonical_trend(cls, value: str) -> AssessmentTrend:
+        return normalize_assessment_trend(value)
 
 
 class CandidateScoreResponse(BaseModel):
@@ -167,7 +204,12 @@ class CandidateOpportunityResponse(BaseModel):
     id: uuid.UUID
     company_name: str
     source_kind: str
-    lifecycle_state: str
+    lifecycle_state: LifecycleStage
+
+    @field_validator("lifecycle_state", mode="before")
+    @classmethod
+    def canonical_lifecycle_state(cls, value: str) -> LifecycleStage:
+        return normalize_lifecycle_stage(value)
     thesis_version: str | None = None
     created_at: datetime | None = None
 
