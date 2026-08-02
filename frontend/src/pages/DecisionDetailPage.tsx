@@ -19,7 +19,7 @@ import {
   Users,
 } from "lucide-react";
 import { Link, useParams } from "react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchCandidateMemo,
@@ -55,6 +55,7 @@ type DecisionMeta = {
 export function DecisionDetailPage() {
   const { founderId } = useParams();
   const { data: candidate, isLoading, error, refetch } = useCandidate(founderId);
+  const [memoGenState, setMemoGenState] = useState<"idle" | "queued" | "error">("idle");
   const {
     data: memo,
     isLoading: memoLoading,
@@ -64,8 +65,14 @@ export function DecisionDetailPage() {
     queryFn: ({ signal }) => fetchCandidateMemo(founderId!, candidate?.opportunity?.id ?? "", signal),
     enabled: Boolean(founderId && candidate?.opportunity?.id),
     staleTime: 30_000,
+    refetchInterval: memoGenState === "queued" ? 2_000 : false,
   });
-  const [memoGenState, setMemoGenState] = useState<"idle" | "queued" | "error">("idle");
+
+  useEffect(() => {
+    if (memo?.status === "succeeded" || memo?.status === "failed" || memo?.status === "degraded") {
+      setMemoGenState("idle");
+    }
+  }, [memo?.status]);
 
   if (isLoading) return <div className="py-20 text-center text-sm text-muted">Loading investment evidence…</div>;
   if (error || !candidate) return <div className="py-20 text-center"><div className="text-sm font-bold">Decision candidate not found</div><Link to="/decisions" className="mt-3 inline-block text-xs font-bold text-accent">Back to decision queue</Link></div>;
@@ -78,8 +85,7 @@ export function DecisionDetailPage() {
     try {
       if (!candidate?.opportunity?.id) return;
       await generateCandidateMemo(founderId!, candidate.opportunity.id);
-      // Poll for the memo after a short delay
-      window.setTimeout(() => void refetchMemo(), 5_000);
+      await refetchMemo();
     } catch {
       setMemoGenState("error");
     }

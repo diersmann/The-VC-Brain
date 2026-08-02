@@ -100,6 +100,23 @@ export async function researchCandidate(candidateId: string): Promise<void> {
   }
 }
 
+export type ResearchStatus = {
+  candidate_id: string;
+  status: "not_started" | "pending" | "completed";
+  research_observations: number;
+  latest_scores: Record<string, unknown> | null;
+  scored_at: string | null;
+};
+
+export async function fetchResearchStatus(
+  candidateId: string,
+  signal?: AbortSignal,
+): Promise<ResearchStatus> {
+  const response = await fetch(`/api/v1/collection/research/${candidateId}/status`, { signal });
+  if (!response.ok) throw new Error(`Research status failed with status ${response.status}`);
+  return (await response.json()) as ResearchStatus;
+}
+
 export async function draftCandidateOutreach(
   candidateId: string,
   emailType: OutreachEmailType,

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   AlertTriangle,
@@ -24,10 +25,7 @@ import {
   TrendingUp,
   UserRound,
 } from "lucide-react";
-import {
-  researchCandidate,
-  useCandidate,
-} from "../api/candidates";
+import { fetchResearchStatus, researchCandidate, useCandidate } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { buildFounderProfile } from "../data/candidateProfile";
@@ -63,6 +61,19 @@ export function FounderProfilePage() {
   const navigate = useNavigate();
   const { data: founder, isLoading, error, refetch } = useCandidate(founderId);
   const [researchState, setResearchState] = useState<"idle" | "queued" | "error">("idle");
+  const researchStatus = useQuery({
+    queryKey: ["research-status", founderId],
+    queryFn: ({ signal }) => fetchResearchStatus(founderId!, signal),
+    enabled: Boolean(founderId),
+    refetchInterval: researchState === "queued" ? 2_000 : false,
+  });
+
+  useEffect(() => {
+    if (researchStatus.data?.status === "completed") {
+      setResearchState("idle");
+      void refetch();
+    }
+  }, [researchStatus.data?.status, refetch]);
 
   if (isLoading) return <div className="py-20 text-center text-sm text-muted">Loading source evidence…</div>;
   if (error || !founder) return <div className="py-20 text-center"><div className="text-sm font-bold">Founder not found</div><button onClick={() => navigate("/sourcing")} className="mt-3 text-xs font-bold text-accent">Back to discover</button></div>;
@@ -74,7 +85,6 @@ export function FounderProfilePage() {
     setResearchState("queued");
     try {
       await researchCandidate(founder.id);
-      window.setTimeout(() => void refetch(), 65_000);
     } catch {
       setResearchState("error");
     }

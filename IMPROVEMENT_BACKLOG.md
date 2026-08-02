@@ -157,7 +157,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-062 - Finish the founder profile's core analytical views.** Observed: candidateProfile.ts builds timeline, coverage, relations, affiliations, and gaps, but FounderProfilePage does not render most of them. Done when profile exposes persistent score history, evidence timeline, coverage/gaps, projects, typed graph, corrections, and weak-vs-verified relationship semantics.
 
-- [ ] **VCB-063 - Replace one-shot timers with durable async progress.** Observed: memo generation refetches once after 5 seconds; research once after 65 seconds; queued state can remain forever. Done when job status drives bounded polling/subscription, terminal timeout/error, retry, last-updated, and cleanup on unmount.
+- [blocked] **VCB-063 - Replace one-shot timers with durable async progress.** Observed: memo generation refetched once after 5 seconds and research once after 65 seconds; queued state could remain forever. **Partial completion:** memo and research screens now poll their status endpoints every two seconds only while queued, stop on terminal status, and rely on query cleanup on unmount. **Blocked:** durable job IDs, terminal timeout/cancel/retry, and last-updated metadata require VCB-051 integration across all async workflows.
 
 - [ ] **VCB-064 - Add complete mobile navigation and decision flows.** Observed in live QA at 390px: LeftNav.tsx:14 hides the only navigation and RootLayout supplies no replacement. Done when accessible mobile nav exposes all routes/current state and core sourcing, evidence, memo, and decision tasks pass 320/390/768px visual tests without clipping.
 
@@ -284,6 +284,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-053 focused and full backend validation passed with 164 tests. Tavily budget state now survives worker restarts; actual usage reconciliation remains blocked scope.
 - 2026-08-02: VCB-054 focused and full backend validation passed with 164 tests. Investigation gating now requires opportunity-scoped axes instead of any historical founder score; full per-run output identity remains blocked scope.
 - 2026-08-02: VCB-060 backend/frontend validation passed with 164 backend and 34 frontend tests; migration 018 adds append-only candidate feedback and dismissal now persists a required reason before hiding the card. Save/assign/defer/undo and authenticated actor identity remain blocked scope.
+- 2026-08-02: VCB-063 frontend validation passed with 34 tests, lint, typecheck, and production build. Memo and research views now use bounded status polling instead of one-shot timers; durable job timeout/cancel/retry remains blocked scope.
 
 ## First practical milestone
 
