@@ -44,7 +44,7 @@ export function KeyMetricCard({
         </span>
         <div className="min-w-0 flex-1">
           <div className="data-label">{label}</div>
-          <p className="mt-1 truncate text-[10px] font-medium text-muted" title={detail}>{detail}</p>
+          <p className="mt-1 text-[10px] font-medium leading-4 text-muted" title={detail}>{detail}</p>
         </div>
         <div className="flex shrink-0 items-end gap-0.5">
           <span className="numeric text-[1.55rem] font-bold leading-none tracking-[-.04em] text-ink">{value == null ? "Not scored" : value}</span>
