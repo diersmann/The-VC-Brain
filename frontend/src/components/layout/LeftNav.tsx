@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink } from "react-router";
 import { Compass, Inbox, LayoutDashboard, SearchCheck, Scale } from "lucide-react";
 
@@ -35,5 +36,37 @@ export function LeftNav() {
         </div>
       </div>
     </aside>
+  );
+}
+
+export function MobileNav() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="border-b border-line bg-white/80 px-4 py-3 shadow-sm backdrop-blur-xl md:hidden">
+      <div className="flex items-center justify-between gap-3">
+        <div className="brand-wordmark" aria-label="FirstCheck24">
+          <span>FirstCheck</span><span className="brand-wordmark-number">24</span>
+        </div>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls="mobile-workspace-nav"
+          aria-label={open ? "Close workspace navigation" : "Open workspace navigation"}
+          onClick={() => setOpen((current) => !current)}
+          className="rounded-md border border-line bg-white px-3 py-2 text-xs font-bold text-ink-2 shadow-sm"
+        >
+          {open ? "Close" : "Menu"}
+        </button>
+      </div>
+      {open && (
+        <nav id="mobile-workspace-nav" aria-label="Mobile workspace" className="mt-3 grid gap-1.5 border-t border-line pt-3">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return <NavLink key={item.id} to={item.path} onClick={() => setOpen(false)} className={({ isActive }) => `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium ${isActive ? "bg-accent text-white" : "text-muted hover:bg-surface-2 hover:text-ink"}`}><Icon className="h-4 w-4" />{item.label}</NavLink>;
+          })}
+        </nav>
+      )}
+    </div>
   );
 }
