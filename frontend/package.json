@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -b --pretty false",
+    "bundle:check": "node scripts/check-bundle-size.mjs",
     "test": "vitest"
   },
   "dependencies": {

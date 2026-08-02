@@ -95,7 +95,8 @@ The pages expose truthful loading, empty, partial, and failure states, but the f
 | `make lint` | Run Ruff (backend) and ESLint (frontend) |
 | `make typecheck` | Run mypy (backend) and tsc (frontend) |
 | `make test` | Run pytest (backend) and Vitest (frontend) |
-| `make check` | Run lint + typecheck + test |
+| `make bundle-check` | Build the frontend and enforce the tracked raw/gzip bundle budget |
+| `make check` | Run lint + typecheck + test + bundle budget |
 | `make build` | Build production Docker images |
 | `make clean` | Stop stack and remove all data volumes |
 

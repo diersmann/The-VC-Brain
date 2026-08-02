@@ -44,6 +44,7 @@ make logs      # Follow logs
 | Lint (backend + frontend) | `make lint` |
 | Type check (backend + frontend) | `make typecheck` |
 | Unit tests (backend + frontend) | `make test` |
+| Bundle budget | `make bundle-check` |
 | Full validation | `make check` |
 | Build production images | `make build` |
 | Clean (remove data volumes) | `make clean` |
