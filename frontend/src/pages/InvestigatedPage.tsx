@@ -14,12 +14,16 @@ export function InvestigatedPage() {
   const { data = [], isLoading, error, refetch } = investigatedQuery;
   const dataAvailable = investigatedQuery.data !== undefined;
   const [contacting, setContacting] = useState<string | null>(null);
+  const [contactError, setContactError] = useState<string | null>(null);
 
   const contact = async (candidateId: string) => {
     setContacting(candidateId);
+    setContactError(null);
     try {
       await contactCandidate(candidateId);
       window.setTimeout(() => void refetch(), 5_000);
+    } catch {
+      setContactError(candidateId);
     } finally {
       setContacting(null);
     }
@@ -57,10 +61,11 @@ export function InvestigatedPage() {
                   <p className="mt-1 text-[11px] text-muted">Founder {displayScore(candidate.scores?.founder)} · Thesis {displayScore(candidateThesisPercent(candidate), true)} · Evidence {displayScore(candidateEvidencePercent(candidate), true)}</p>
                 </div>
               </button>
-              <button onClick={() => void contact(candidate.id)} disabled={contacting === candidate.id} className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60">
+              <button onClick={() => void contact(candidate.id)} disabled={contacting === candidate.id} aria-busy={contacting === candidate.id} className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60">
                 <Mail className="h-3.5 w-3.5" />{contacting === candidate.id ? "Queuing…" : "Contact"}
               </button>
             </div>
+            {contactError === candidate.id && <p role="alert" className="mt-3 rounded-md bg-[#fbe8e9] px-3 py-2 text-xs font-semibold text-danger">Unable to queue contact. Check the API service and retry.</p>}
           </article>
         ))}
       </div>
