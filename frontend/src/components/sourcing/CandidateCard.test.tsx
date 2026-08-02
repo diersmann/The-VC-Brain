@@ -1,8 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { CandidateCard } from "./CandidateCard";
 import type { Candidate } from "../../types/candidate";
+
+afterEach(cleanup);
 
 const baseCandidate: Candidate = {
   id: "test-id",
@@ -156,5 +158,13 @@ describe("CandidateCard", () => {
 
     expect(onOutreach).toHaveBeenCalledTimes(1);
     expect(onViewFounder).not.toHaveBeenCalled();
+  });
+
+  test("uses the explicit founder action instead of a pointer-only card", () => {
+    const onViewFounder = vi.fn();
+    render(<CandidateCard candidate={baseCandidate} onViewFounder={onViewFounder} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "View Founder" }));
+    expect(onViewFounder).toHaveBeenCalledOnce();
   });
 });

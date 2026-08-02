@@ -24,7 +24,7 @@ export function CandidateCard({ candidate, onViewFounder, onOutreach }: Props) {
   const websiteUrl = safeExternalUrl(profile?.website);
   const originTone = candidate.origin === "inbound" ? "bg-[#ece9fb] text-[#7059a6]" : candidate.origin === "outbound" ? "bg-[#e4f3ee] text-[#327d68]" : "bg-accent-soft text-accent";
 
-  return <article onClick={onViewFounder} className="panel group cursor-pointer rounded-lg p-5 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_45px_rgba(65,90,125,.13)]">
+  return <article className="panel group rounded-lg p-5 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_45px_rgba(65,90,125,.13)]">
     <CandidateCardHeader candidate={candidate} originTone={originTone} onDismiss={() => setFeedbackOpen(true)} />
     <div className="my-4 rounded-md bg-gradient-to-br from-surface-2 to-[#edf2f8] p-3.5"><div className="flex gap-2"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent" /><div><div className="data-label">Evidence summary</div><p className="mt-1.5 line-clamp-3 text-[13px] leading-5 text-ink-2">{profile?.summary || `Public activity was collected from ${formatPredicate(Object.keys(candidate.handles ?? {})[0] ?? candidate.origin ?? "database")}, but a verified founder summary is still pending.`}</p></div></div></div>
     {!candidate.scores && <div className="mb-2 text-[11px] font-semibold text-warn">No scores yet</div>}
