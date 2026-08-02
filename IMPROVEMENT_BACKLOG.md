@@ -111,9 +111,9 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-040 - Add fairness evaluation and scoring guardrails.** Observed: public stars, votes, citations, and appearances shape discovery; arXiv hard-filters by citation count. Done when proxy-sensitive features are documented, subgroup coverage/error/advancement/override metrics exist where lawful, and new rankers run in shadow mode before affecting recommendations.
 
-- [blocked] **VCB-041 - Make collection persistence idempotent.** Observed: collectors/jobs.py:132-187 inserted new snapshot and observation rows even when MinIO detected identical content. **Partial completion:** collection now reuses the same URI/source/content-hash snapshot and skips identical observation rows, with regression-safe deterministic fingerprints in the application path. **Blocked:** conflict-safe completion still requires database-enforced unique fingerprints and a migration/backfill plan for any existing duplicate snapshots/observations; Docker/PostgreSQL is unavailable in this workspace, so that schema validation and safe duplicate inventory cannot be completed without database access. `make check` was attempted at the milestone boundary and stopped before project checks with `Cannot connect to the Docker daemon at unix:///Users/gerrit/.docker/run/docker.sock`.
+- [blocked] **VCB-041 - Make collection persistence idempotent.** Observed: collectors/jobs.py:132-187 inserted new snapshot and observation rows even when MinIO detected identical content. **Partial completion:** collection now reuses the same URI/source/content-hash snapshot and skips identical observation rows, with regression-safe deterministic fingerprints in the application path. **Blocked:** conflict-safe completion still requires database-enforced unique fingerprints and a migration/backfill plan for any existing duplicate snapshots/observations; the remaining work needs an explicit schema and duplicate-resolution policy before adding constraints.
 
-- [ ] **VCB-042 - Validate observation schemas at ingestion.** Observed: empty values, arbitrary confidence, naive string dates, and missing coordinates can be inserted. Done when UTC time, nonempty predicate/value, confidence range, extractor schema, source coordinates, and future-time tolerance are enforced and invalid outputs are quarantined.
+- [blocked] **VCB-042 - Validate observation schemas at ingestion.** Observed: empty values, arbitrary confidence, naive string dates, and missing coordinates could be inserted. **Partial completion:** collection ingestion now normalizes timestamps to UTC, rejects future/invalid times, rejects empty predicate/value and non-finite/out-of-range confidence, and attaches an explicit coordinate-unavailable locator when connectors omit one. **Blocked:** the final durable quarantine requirement depends on a job/error ledger that can retain rejected payload metadata without treating it as investment evidence; that capability is tracked by VCB-051 and is not present yet.
 
 - [ ] **VCB-043 - Give signal snapshots deterministic provenance.** Observed: signal aggregation uses arbitrary historical setdefault values and writes evidence_ids empty. Done when signals select latest valid claims deterministically, retain exact evidence and coverage/confidence, fingerprint outputs, and quarantine malformed numerics.
 
@@ -259,19 +259,20 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - Frontend ESLint: passed.
 - Frontend TypeScript: passed.
-- Frontend Vitest: 25 tests passed.
-- Frontend production build: passed; 350.50 kB JavaScript, 104.86 kB gzip.
-- Backend pytest: 116 tests passed with one Starlette/httpx deprecation warning.
-- Backend Ruff: failed on two E501 violations in migrations/versions/e093be299381_add_discovery_config_to_thesis.py:23 and :27.
-- Backend mypy: failed on three errors in app/api/routes/inbound.py:19, :24, and :77.
-- Alembic: one head, revision 008.
+- Frontend Vitest: 34 tests passed.
+- Frontend production build: passed; 349.50 kB JavaScript, 105.16 kB gzip.
+- Backend pytest: 148 tests passed with one Starlette/httpx deprecation warning.
+- Backend Ruff: passed after formatting two pre-existing E501 violations in migrations/versions/e093be299381_add_discovery_config_to_thesis.py.
+- Backend mypy: passed with no issues in 63 source files.
+- Alembic: one head, revision 015; local Docker database migrated successfully from e093be299381 through 015.
 - git diff --check: passed.
-- Docker Compose/runtime migration check: not run because Docker Desktop was not running.
+- Docker Compose `make check`: passed (Ruff, ESLint, mypy, TypeScript, backend pytest, and frontend Vitest).
 - Live browser QA: reproduced false-zero outage state, silent failed submission, and missing mobile navigation. Temporary evidence was kept outside the repository.
 
 ## Progress notes
 
 - 2026-08-02: VCB-018 frontend validation passed. `make check` could not start because Docker Compose could not connect to the local Docker daemon; no repository check was executed by the target container.
+- 2026-08-02: Docker became available; the VCB-042 focused tests and full local checks passed, `make check` passed in Compose, and `make migrate` advanced the local database from e093be299381 to migration 015. The two pre-existing migration E501 failures were formatted in the VCB-042 checkpoint. The remaining VCB-041 blocker is schema/duplicate policy, not Docker access.
 
 ## First practical milestone
 

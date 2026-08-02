@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -76,3 +76,62 @@ async def test_write_observations_skips_identical_rows() -> None:
 
     assert ids == [existing.id]
     session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_write_observations_rejects_invalid_schema_values() -> None:
+    session = AsyncMock()
+    session.add = MagicMock()
+
+    ids = await _write_observations(
+        session,
+        MagicMock(id=uuid.uuid4(), source_type="website", uri="https://example.test"),
+        [
+            {"predicate": "", "object_value": "value"},
+            {"predicate": "title", "object_value": "", "confidence": 2.0},
+        ],
+        uuid.uuid4(),
+    )
+
+    assert ids == []
+    session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_write_observations_rejects_invalid_and_future_times() -> None:
+    session = AsyncMock()
+    session.add = MagicMock()
+
+    ids = await _write_observations(
+        session,
+        MagicMock(id=uuid.uuid4(), source_type="website", uri="https://example.test"),
+        [
+            {"predicate": "title", "object_value": "Example", "observed_at": "not-a-date"},
+            {
+                "predicate": "title",
+                "object_value": "Example",
+                "observed_at": datetime.now(UTC) + timedelta(minutes=6),
+            },
+        ],
+        uuid.uuid4(),
+    )
+
+    assert ids == []
+    session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_write_observations_records_coordinate_gap_metadata() -> None:
+    session = AsyncMock()
+    session.execute.return_value = _result(None)
+    session.add = MagicMock()
+
+    await _write_observations(
+        session,
+        MagicMock(id=uuid.uuid4(), source_type="website", uri="https://example.test"),
+        [{"predicate": "title", "object_value": "Example"}],
+        uuid.uuid4(),
+    )
+
+    observation = session.add.call_args.args[0]
+    assert observation.source_locator["reason"] == "coordinate unavailable from connector"

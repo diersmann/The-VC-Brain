@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -180,15 +181,44 @@ async def _write_observations(
     for obs in observations:
         # Parse observed_at: connectors may pass an ISO string or a datetime
         raw_observed_at = obs.get("observed_at", now)
-        if isinstance(raw_observed_at, str):
-            observed_at = datetime.fromisoformat(raw_observed_at)
-        elif isinstance(raw_observed_at, datetime):
-            observed_at = raw_observed_at
+        try:
+            if isinstance(raw_observed_at, str):
+                observed_at = datetime.fromisoformat(raw_observed_at)
+            elif isinstance(raw_observed_at, datetime):
+                observed_at = raw_observed_at
+            else:
+                observed_at = now
+        except (TypeError, ValueError):
+            logger.warning("observation_rejected", reason="invalid_observed_at")
+            continue
+        if observed_at.tzinfo is None:
+            observed_at = observed_at.replace(tzinfo=UTC)
         else:
-            observed_at = now
+            observed_at = observed_at.astimezone(UTC)
+        if observed_at > now + timedelta(minutes=5):
+            logger.warning("observation_rejected", reason="future_observed_at")
+            continue
 
         predicate = str(obs.get("predicate", ""))
         object_value = str(obs.get("object_value", ""))
+        if not predicate.strip() or not object_value.strip():
+            logger.warning("observation_rejected", reason="empty_predicate_or_value")
+            continue
+        try:
+            confidence = float(str(obs.get("confidence", 1.0)))
+        except (TypeError, ValueError):
+            logger.warning("observation_rejected", reason="invalid_confidence")
+            continue
+        if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+            logger.warning("observation_rejected", reason="confidence_out_of_range")
+            continue
+        source_locator = obs.get("source_locator")
+        if not isinstance(source_locator, dict):
+            source_locator = {
+                "kind": "source_snapshot",
+                "source_uri": snapshot.uri,
+                "reason": "coordinate unavailable from connector",
+            }
         extractor_version = f"{snapshot.source_type}-v1"
         existing_result = await session.execute(
             select(Observation)
@@ -215,7 +245,8 @@ async def _write_observations(
             object_value=object_value,
             observed_at=observed_at,
             extractor_version=extractor_version,
-            confidence=float(str(obs.get("confidence", 1.0))),
+            confidence=confidence,
+            source_locator=source_locator,
         )
         session.add(observation)
         await session.flush()
