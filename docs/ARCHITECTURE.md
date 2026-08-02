@@ -352,7 +352,7 @@ For an MVP, use three specialist agents, one critic, and one deterministic aggre
 
 ## Investment Memo and Decision Contracts
 
-The memo is generated from accepted claims and assessment snapshots, not directly from raw model prose. For the current contract, accepted claims are supported or explicitly synthesized claims that are not superseded; every referenced observation must resolve to the same person and opportunity. Each memo persists the exact claim IDs, assessment IDs, evidence IDs, and pinned thesis version used for generation, so later collection or thesis changes cannot silently change its input package. Every factual sentence links to one or more claim IDs and exposes its Trust Score. Contradictions and unavailable information appear inline rather than being silently omitted or guessed.
+The memo is generated from accepted claims and assessment snapshots, not directly from raw model prose. For the current contract, accepted claims are supported or explicitly synthesized claims that are not superseded; every referenced observation must resolve to the same person and opportunity. Each memo persists the exact claim IDs, assessment IDs, evidence IDs, and pinned thesis version used for generation, so later collection or thesis changes cannot silently change its input package. The server rejects unknown claim/evidence IDs, requires claim support for factual sentences, permits uncited sentences only when they explicitly state an unavailable/unknown condition, and stores citations in deterministic order. Every factual sentence links to one or more claim IDs and exposes its Trust Score. Contradictions and unavailable information appear inline rather than being silently omitted or guessed.
 
 Required memo sections are:
 

@@ -121,6 +121,7 @@ export async function recordCandidateDecision(
 export type MemoSection = {
   title: string;
   text: string;
+  claim_ids: string[];
   evidence_ids: string[];
 };
 

@@ -9,7 +9,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.agents.memo import REQUIRED_SECTIONS, generate_memo
+from app.agents.memo import (
+    REQUIRED_SECTIONS,
+    MemoSection,
+    _validate_memo_citations,
+    generate_memo,
+)
 
 
 def _mock_response(payload: dict[str, Any]) -> MagicMock:
@@ -24,11 +29,36 @@ async def test_memo_has_all_required_sections() -> None:
     """Memo should contain all 5 required sections."""
     payload = {
         "sections": [
-            {"title": "Company snapshot", "text": "Test company.", "evidence_ids": ["obs-1"]},
-            {"title": "Investment hypotheses", "text": "Hypothesis.", "evidence_ids": ["obs-2"]},
-            {"title": "SWOT", "text": "Strengths and weaknesses.", "evidence_ids": ["obs-3"]},
-            {"title": "Problem and product", "text": "Problem and solution.", "evidence_ids": []},
-            {"title": "Traction and KPIs", "text": "Traction data.", "evidence_ids": ["obs-4"]},
+            {
+                "title": "Company snapshot",
+                "text": "Test company.",
+                "claim_ids": ["claim-1"],
+                "evidence_ids": ["obs-1"],
+            },
+            {
+                "title": "Investment hypotheses",
+                "text": "Hypothesis.",
+                "claim_ids": ["claim-2"],
+                "evidence_ids": ["obs-2"],
+            },
+            {
+                "title": "SWOT",
+                "text": "Strengths and weaknesses.",
+                "claim_ids": ["claim-3"],
+                "evidence_ids": ["obs-3"],
+            },
+            {
+                "title": "Problem and product",
+                "text": "Problem and solution.",
+                "claim_ids": ["claim-4"],
+                "evidence_ids": ["obs-4"],
+            },
+            {
+                "title": "Traction and KPIs",
+                "text": "Traction data.",
+                "claim_ids": ["claim-5"],
+                "evidence_ids": ["obs-5"],
+            },
         ]
     }
 
@@ -60,7 +90,12 @@ async def test_memo_adds_missing_sections() -> None:
     """Missing required sections should be filled in with placeholders."""
     payload = {
         "sections": [
-            {"title": "Company snapshot", "text": "Test.", "evidence_ids": []},
+            {
+                "title": "Company snapshot",
+                "text": "Test.",
+                "claim_ids": ["claim-1"],
+                "evidence_ids": ["obs-1"],
+            },
         ]
     }
 
@@ -136,11 +171,31 @@ async def test_memo_evidence_ids_preserved() -> None:
     """Evidence IDs from the LLM response should be preserved."""
     payload = {
         "sections": [
-            {"title": "Company snapshot", "text": "Test.", "evidence_ids": ["obs-1", "obs-2"]},
-            {"title": "Investment hypotheses", "text": "Test.", "evidence_ids": ["obs-3"]},
-            {"title": "SWOT", "text": "Test.", "evidence_ids": []},
-            {"title": "Problem and product", "text": "Test.", "evidence_ids": []},
-            {"title": "Traction and KPIs", "text": "Test.", "evidence_ids": []},
+            {
+                "title": "Company snapshot",
+                "text": "Test.",
+                "claim_ids": ["claim-1"],
+                "evidence_ids": ["obs-1", "obs-2"],
+            },
+            {
+                "title": "Investment hypotheses",
+                "text": "Test.",
+                "claim_ids": ["claim-2"],
+                "evidence_ids": ["obs-3"],
+            },
+            {"title": "SWOT", "text": "Not available.", "claim_ids": [], "evidence_ids": []},
+            {
+                "title": "Problem and product",
+                "text": "Not available.",
+                "claim_ids": [],
+                "evidence_ids": [],
+            },
+            {
+                "title": "Traction and KPIs",
+                "text": "Not available.",
+                "claim_ids": [],
+                "evidence_ids": [],
+            },
         ]
     }
 
@@ -162,3 +217,25 @@ async def test_memo_evidence_ids_preserved() -> None:
     snapshot = next(s for s in memo.sections if s.title == "Company snapshot")
     assert "obs-1" in snapshot.evidence_ids
     assert "obs-2" in snapshot.evidence_ids
+
+
+def test_memo_citations_are_scoped_and_deterministic() -> None:
+    """Unknown IDs fail and valid citations are stored in stable order."""
+    sections = [
+        MemoSection(
+            title="Company snapshot",
+            text="Supported fact.",
+            claim_ids=["claim-2", "claim-1", "claim-1"],
+            evidence_ids=["obs-2", "obs-unknown", "obs-1"],
+        )
+    ]
+
+    errors = _validate_memo_citations(
+        sections,
+        allowed_claim_ids=["claim-1", "claim-2"],
+        allowed_evidence_ids=["obs-1", "obs-2"],
+    )
+
+    assert errors == ["Company snapshot: unknown evidence IDs: obs-unknown"]
+    assert sections[0].claim_ids == ["claim-1", "claim-2"]
+    assert sections[0].evidence_ids == ["obs-1", "obs-2", "obs-unknown"]

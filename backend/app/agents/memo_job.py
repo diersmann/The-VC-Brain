@@ -252,6 +252,8 @@ async def generate_memo_job(
                 api_key=settings.llm_api_key,
                 model=settings.agent_model,
                 semaphore=semaphore,
+                allowed_claim_ids=claim_ids,
+                allowed_evidence_ids=obs_ids,
             )
         except Exception as exc:
             memo_record.status = "failed"
@@ -268,6 +270,7 @@ async def generate_memo_job(
         memo_record.sections = {
             "sections": [s.model_dump() for s in memo.sections],
             "generation_mode": memo.generation_mode,
+            "validation_errors": memo.validation_errors,
         }
         # Keep the durable evidence package limited to observations belonging
         # to the accepted claims. Citation validation is a separate contract.
