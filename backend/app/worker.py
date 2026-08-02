@@ -6,6 +6,7 @@ Registers jobs and cron schedules.  The worker is started by the
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -36,6 +37,12 @@ from app.processing.pipeline_job import process_candidate_job
 from app.storage import close_client
 
 logger = structlog.get_logger(__name__)
+_WORKER_HEARTBEAT_KEY = "vcbrain:worker:heartbeat"
+
+
+async def worker_heartbeat(ctx: dict[str, Any]) -> None:
+    """Refresh the short-lived readiness marker for the active worker."""
+    await ctx["redis"].set(_WORKER_HEARTBEAT_KEY, datetime.now(UTC).isoformat(), ex=120)
 
 
 async def startup(ctx: dict[str, Any]) -> None:
@@ -48,6 +55,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     # job must explicitly reset this key at the start of a new period.
     await initialize_tavily_budget(ctx["redis"], settings.tavily_monthly_budget)
     await initialize_agent_budget(ctx["redis"], settings.agent_monthly_budget)
+    await worker_heartbeat(ctx)
 
     logger.info("worker_started", environment=settings.environment)
 
@@ -97,6 +105,7 @@ class WorkerSettings:
     ]
 
     cron_jobs = [  # noqa: RUF012
+        cron(worker_heartbeat, minute=set(range(60)), unique=True),
         cron(dispatch_outbox_job, unique=False),
         # dispatcher_job: every minute
         cron(dispatcher_job, unique=False),
