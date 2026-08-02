@@ -1,8 +1,8 @@
 """Cold outreach job.
 
-``contact_outbound_job`` generates an outreach email (via the existing
-agent) and transitions the opportunity to "contacted".  The email
-directs the founder to submit their pitch deck at /submit.
+``contact_outbound_job`` generates a human-reviewable outreach draft. It
+never claims that a provider sent the email; approval and delivery are
+separate lifecycle actions.
 """
 
 from __future__ import annotations
@@ -16,15 +16,22 @@ from sqlalchemy import select
 
 from app.agents.outreach import draft_outreach_email
 from app.collectors.jobs import _session_ctx
-from app.db.models import Observation, Opportunity, OpportunityFounder, Person, SourceSnapshot
-from app.opportunity_service import transition_opportunity
+from app.db.models import (
+    Observation,
+    Opportunity,
+    OpportunityFounder,
+    OutreachMessage,
+    Person,
+    SourceSnapshot,
+)
+from app.outreach_delivery import contact_block_reason
 from app.storage import put_snapshot
 
 logger = structlog.get_logger(__name__)
 
 
 async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str, Any]:
-    """Generate an outreach email and transition to 'contacted'.
+    """Generate a persisted outreach draft without claiming provider delivery.
 
     The email invites the founder to submit their pitch deck at the
     /submit endpoint.  No mock reply is scheduled — the founder's
@@ -56,6 +63,42 @@ async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str,
         if opportunity is None:
             logger.error("contact_no_opportunity", person_id=person_id)
             return {"error": "no_opportunity"}
+
+        existing_result = await session.execute(
+            select(OutreachMessage)
+            .where(
+                OutreachMessage.person_id == person.id,
+                OutreachMessage.opportunity_id == opportunity.id,
+                OutreachMessage.status != "failed",
+            )
+            .order_by(OutreachMessage.created_at.desc())
+            .limit(1)
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            return {
+                "person_id": person_id,
+                "status": existing.status,
+                "outreach_id": str(existing.id),
+            }
+
+        block_reason = contact_block_reason(person)
+        if block_reason:
+            blocked_status = "opted_out" if block_reason.startswith("suppressed_") else "failed"
+            message = OutreachMessage(
+                opportunity_id=opportunity.id,
+                person_id=person.id,
+                recipient_email=person.email,
+                status=blocked_status,
+                failure_reason=block_reason,
+            )
+            session.add(message)
+            await session.commit()
+            return {
+                "person_id": person_id,
+                "status": blocked_status,
+                "error": block_reason,
+            }
 
         # Generate outreach email (uses existing agent with template fallback)
         gh_handle = person.handles.get("github", "N/A") if person.handles else "N/A"
@@ -97,11 +140,16 @@ async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str,
             )
         )
 
-        # Transition to contacted
-        await transition_opportunity(
-            session, opportunity, "contacted",
-            reason=f"Cold outreach sent — mode={draft.generation_mode}",
+        message = OutreachMessage(
+            opportunity_id=opportunity.id,
+            person_id=person.id,
+            recipient_email=person.email,
+            subject=draft.subject,
+            body=draft.body,
+            generation_mode=draft.generation_mode,
+            status="drafted",
         )
+        session.add(message)
 
         await session.commit()
 
@@ -113,4 +161,6 @@ async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str,
     return {
         "person_id": person_id,
         "mode": draft.generation_mode,
+        "status": "drafted",
+        "outreach_id": str(message.id),
     }

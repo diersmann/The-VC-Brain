@@ -206,7 +206,7 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                     priority=10.0,
                 )
 
-            # --- investigating -> contacted (if above contact threshold) ---
+            # --- investigating -> outreach draft (if above contact threshold) ---
             elif state == "investigating":
                 if not await _has_score(session, person.id):
                     # Still being scored — retry only after the configured
@@ -276,10 +276,17 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                         f"Agent composite {composite:.1f} >= "
                         f"contact threshold {settings.contact_threshold * 100:.0f}"
                     )
-                    await transition_opportunity(
-                        session, opp, "contacted", reason=reason,
+                    session.add(
+                        DecisionEvent(
+                            opportunity_id=opp.id,
+                            prior_state="investigating",
+                            new_state="investigating",
+                            actor="pipeline:auto",
+                            reason=f"Outreach draft requested — {reason}",
+                            sla_metadata={"outreach_status": "drafted"},
+                        )
                     )
-                    transitions += 1
+                    opp.updated_at = datetime.now(UTC)
                     await queue_enqueue(
                         redis,
                         {"job_type": "contact_outbound", "person_id": str(person.id)},

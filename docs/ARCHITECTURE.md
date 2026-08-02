@@ -59,6 +59,7 @@ Core entities are:
 | DecisionEvent | Auditable lifecycle transition | Opportunity, prior/new state, actor, reason, timestamp, SLA metadata |
 | InboundSubmission | Idempotent application envelope | Idempotency key, person/opportunity/deck references, accepted status, timestamps |
 | OutboxEvent | Durable handoff from PostgreSQL to workers | Dedupe key, event payload, dispatch status, retry count, availability, error metadata |
+| OutreachMessage | Human-reviewed contact and provider state | Draft, approval, send request, provider ID, delivery state, suppression/failure metadata |
 
 Every observation, claim, relationship, score, and recommendation retains provenance, observation time, confidence, and the version of the extractor, rubric, prompt, or model that produced it. Personally identifying data is stored only when necessary and is subject to correction, retention, and deletion controls; audit records retain non-sensitive tombstones where legally permissible.
 
@@ -160,6 +161,8 @@ Outbound: signal -> threshold -> outreach -> application
 ```
 
 An outbound signal does not trigger an investment. It creates a candidate, and crossing a configurable conviction threshold creates an activation task. Approved outreach asks the founder to submit or confirm the minimum application: company name and deck. The resulting application enters the same `Received` state as inbound applications and is evaluated by the same rules.
+
+Outreach is stateful: drafting and human approval are distinct from a send request, and `contacted` is only recorded after a mail provider confirms submission. Delivery, bounce, reply, opt-out, and failure signals remain separate states.
 
 Every transition emits a `DecisionEvent`, writes the latest evidence and assessment snapshots back to Memory, and records who or what initiated the transition. A closed opportunity retains its reason, evidence, and reopen conditions.
 

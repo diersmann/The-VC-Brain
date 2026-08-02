@@ -71,7 +71,7 @@ def advance_reason(prior: str, new: str, *, detail: str = "") -> str:
     label_map = {
         "interesting": "Signal crossed interesting threshold",
         "investigating": "Investigation started (research + scoring + processing)",
-        "contacted": "Cold outreach sent (mock)",
+        "contacted": "Cold outreach confirmed by provider",
         "received": "Inbound application received",
         "memo_ready": "Investment memo generated",
         "approved": "Investment approved",

@@ -123,8 +123,8 @@ async def test_investigated_candidate_above_threshold_queues_contact() -> None:
         context.return_value.__aenter__.return_value = session
         result = await advance_pipeline_job(ctx)
 
-    assert result["transitions"] == 1
-    assert opportunity.lifecycle_state == "contacted"
+    assert result["transitions"] == 0
+    assert opportunity.lifecycle_state == "investigating"
     enqueue.assert_awaited_once()
     call = enqueue.await_args
     assert call is not None

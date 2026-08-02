@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -28,6 +28,7 @@ from app.db.models import (
     Observation,
     Opportunity,
     OpportunityFounder,
+    OutreachMessage,
     Person,
     Relationship,
     ScoreSnapshot,
@@ -184,6 +185,17 @@ class OutreachDraftResponse(BaseModel):
     generation_mode: Literal["agent", "template", "template_fallback"]
     model: str | None = None
     warning: str | None = None
+
+
+class OutreachApprovalRequest(BaseModel):
+    approved_by: str = Field(min_length=1, max_length=128)
+
+
+class OutreachActionResponse(BaseModel):
+    outreach_id: uuid.UUID
+    status: str
+    recipient_email: str | None = None
+    detail: str
 
 
 DecisionAction = Literal["proceed", "hold", "decline"]
@@ -799,6 +811,72 @@ async def create_outreach_draft(
     return OutreachDraftResponse(
         **draft.model_dump(),
         recipient_email=person.email,
+    )
+
+
+@router.post(
+    "/{candidate_id}/outreach/{outreach_id}/approve",
+    response_model=OutreachActionResponse,
+)
+async def approve_outreach(
+    candidate_id: uuid.UUID,
+    outreach_id: uuid.UUID,
+    payload: OutreachApprovalRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> OutreachActionResponse:
+    """Approve one persisted draft after rechecking recipient suppression."""
+    from app.outreach_delivery import contact_block_reason
+
+    message = await session.get(OutreachMessage, outreach_id)
+    if message is None or message.person_id != candidate_id:
+        raise HTTPException(status_code=404, detail="Outreach draft not found")
+    if message.status != "drafted":
+        raise HTTPException(status_code=409, detail=f"Outreach is already {message.status}")
+    person = await session.get(Person, candidate_id)
+    if person is None:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    block_reason = contact_block_reason(person)
+    if block_reason:
+        message.status = "opted_out" if block_reason.startswith("suppressed_") else "failed"
+        message.failure_reason = block_reason
+        await session.commit()
+        raise HTTPException(status_code=409, detail=block_reason)
+
+    message.status = "approved"
+    message.approved_by = payload.approved_by.strip()
+    message.approved_at = datetime.now(UTC)
+    await session.commit()
+    return OutreachActionResponse(
+        outreach_id=message.id,
+        status=message.status,
+        recipient_email=message.recipient_email,
+        detail="Draft approved; sending still requires an explicit request.",
+    )
+
+
+@router.post(
+    "/{candidate_id}/outreach/{outreach_id}/send",
+    response_model=OutreachActionResponse,
+)
+async def request_outreach_send(
+    candidate_id: uuid.UUID,
+    outreach_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> OutreachActionResponse:
+    """Record a send request without simulating provider delivery."""
+    message = await session.get(OutreachMessage, outreach_id)
+    if message is None or message.person_id != candidate_id:
+        raise HTTPException(status_code=404, detail="Outreach draft not found")
+    if message.status != "approved":
+        raise HTTPException(status_code=409, detail="Outreach must be approved before sending")
+    message.status = "send_requested"
+    message.requested_at = datetime.now(UTC)
+    await session.commit()
+    return OutreachActionResponse(
+        outreach_id=message.id,
+        status=message.status,
+        recipient_email=message.recipient_email,
+        detail="Send requested; status changes to sent only after provider confirmation.",
     )
 
 

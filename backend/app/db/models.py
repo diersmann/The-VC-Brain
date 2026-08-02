@@ -248,6 +248,31 @@ class OutboxEvent(TimestampMixin, Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class OutreachMessage(TimestampMixin, Base):
+    """Human-reviewed outreach message and provider delivery state."""
+
+    __tablename__ = "outreach_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("opportunities.id", ondelete="RESTRICT"), nullable=False
+    )
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("persons.id", ondelete="RESTRICT"), nullable=False
+    )
+    recipient_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    subject: Mapped[str] = mapped_column(String(240), nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    generation_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="template")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="drafted", index=True)
+    approved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 # ---------------------------------------------------------------------------
 # Observations (raw extractor output before reconciliation)
 # ---------------------------------------------------------------------------
