@@ -203,7 +203,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-085 - Remove dead code, unused dependencies, and generated config drift.** Observed: unused UI/components and several declared packages; tracked `vite.config.js`/`.d.ts` diverged from `vite.config.ts`. **Partial completion:** removed the two generated Vite drift files so the TypeScript config is canonical. **Blocked:** dependency/export removal still needs a complete usage audit and CI drift/dependency gate; deleting packages based only on declaration-list inspection could break hidden/runtime paths.
 
-- [ ] **VCB-086 - Lazy-load routes and set a bundle budget.** Observed: App.tsx eagerly imports every route into a 350.5 kB bundle. Done when public form, admin shell, profiles, and decision pages are route chunks with accessible fallbacks and CI enforces a justified size budget.
+- [blocked] **VCB-086 - Lazy-load routes and set a bundle budget.** Observed: App.tsx eagerly imported every route into a 350.5 kB bundle. **Partial completion:** public form, dashboard, sourcing, inbound, investigated, profile, onboarding, and decision routes now load through `React.lazy` with an accessible loading fallback; the build now emits route chunks instead of one eager route module. **Blocked:** CI still lacks a justified bundle-size budget and chunk regression gate.
 
 - [ ] **VCB-087 - Add real integration, E2E, accessibility, and abuse coverage.** Observed: unit tests pass but heavily mock DB/worker paths; major pages have little/no rendered coverage. Done when clean PostgreSQL/Redis/MinIO tests cover migrations, session cleanup, reconciliation, merge rollback, outbox, concurrency, citations, and browser flows for discover-to-decision plus pitch-to-decision.
 
