@@ -207,7 +207,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-087 - Add real integration, E2E, accessibility, and abuse coverage.** Observed: unit tests pass but heavily mock DB/worker paths; major pages have little/no rendered coverage. Done when clean PostgreSQL/Redis/MinIO tests cover migrations, session cleanup, reconciliation, merge rollback, outbox, concurrency, citations, and browser flows for discover-to-decision plus pitch-to-decision.
 
-- [ ] **VCB-088 - Restore and enforce a green CI quality gate.** Observed: no CI workflow; backend Ruff fails in migration e093... lines 23/27; mypy fails inbound.py:19,24,77. Done when make check, migration smoke, frontend production build, security scans, and deterministic E2E pass from a clean clone and are required for merge.
+- [blocked] **VCB-088 - Restore and enforce a green CI quality gate.** Observed: no CI workflow; the earlier Ruff/mypy failures are now resolved in the current tree. **Partial completion:** `.github/workflows/quality.yml` now runs Docker-backed `make check` on pushes to `post-hackathon-polish` and pull requests with read-only repository permissions. **Blocked:** migration smoke, production build, security scans, deterministic E2E, and a branch-protection/required-check setting still need CI integration and repository-admin configuration.
 
 - [ ] **VCB-089 - Make clean quick start migrate and optionally seed automatically.** Observed: README says make up on a fresh DB but Compose API does not apply migrations. Done when a clean-volume start reaches the migration head before readiness, failure blocks API, and a separate one-command deterministic demo seeds known data.
 
