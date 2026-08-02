@@ -3,12 +3,15 @@ import { Mail, SearchCheck, ShieldCheck, Target } from "lucide-react";
 import { useNavigate } from "react-router";
 import { contactCandidate, useCandidates } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
+import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { candidateEvidencePercent, candidateThesisPercent, ratioPercent } from "../data/portfolioMetrics";
 
 export function InvestigatedPage() {
   const navigate = useNavigate();
-  const { data = [], isLoading, error, refetch } = useCandidates("investigating");
+  const investigatedQuery = useCandidates("investigating");
+  const { data = [], isLoading, error, refetch } = investigatedQuery;
+  const dataAvailable = investigatedQuery.data !== undefined;
   const [contacting, setContacting] = useState<string | null>(null);
 
   const contact = async (candidateId: string) => {
@@ -32,15 +35,15 @@ export function InvestigatedPage() {
         <p className="page-description">Candidates researched and scored, but not automatically contacted. Contact any candidate manually.</p>
       </div>
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-3">
+      {dataAvailable && !isLoading && <div className="mb-5 grid gap-3 sm:grid-cols-3">
         <KeyMetricCard icon={SearchCheck} label="Investigated" value={data.length} detail="Completed research and scoring" progress={100} progressLabel={`${data.length} profiles`} tone="blue" />
         <KeyMetricCard icon={Target} label="Strong thesis fit" value={strongThesis} detail="At least 70% thesis alignment" progress={ratioPercent(strongThesis, data.length)} progressLabel={`${strongThesis} of ${data.length}`} tone="purple" />
         <KeyMetricCard icon={ShieldCheck} label="Evidence ready" value={evidenceReady} detail="At least 60% evidence confidence" progress={ratioPercent(evidenceReady, data.length)} progressLabel={`${evidenceReady} of ${data.length}`} tone="green" />
-      </div>
+      </div>}
 
-      {isLoading && <div className="py-16 text-center text-sm text-muted">Loading investigated people…</div>}
-      {error && <div className="rounded-md bg-[#fff1df] p-4 text-xs text-[#a96e2d]">Unable to load investigated candidates.</div>}
-      {!isLoading && !error && data.length === 0 && <div className="panel rounded-lg py-16 text-center"><div className="text-sm font-bold">No investigated candidates waiting</div><p className="mt-2 text-xs text-muted">High-scoring candidates are contacted automatically; lower-scoring investigated profiles appear here.</p></div>}
+      {isLoading && !dataAvailable && <ApiStateNotice loading label="investigated candidates" />}
+      {error && <ApiStateNotice error={error} onRetry={() => void refetch()} label="investigated candidates" />}
+      {dataAvailable && !isLoading && !error && data.length === 0 && <div className="panel rounded-lg py-16 text-center"><div className="text-sm font-bold">No investigated candidates waiting</div><p className="mt-2 text-xs text-muted">High-scoring candidates are contacted automatically; lower-scoring investigated profiles appear here.</p></div>}
 
       <div className="space-y-3">
         {data.map((candidate) => (

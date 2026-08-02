@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, CircleGauge, ShieldCheck, Targ
 import { useCandidates } from "../api/candidates";
 import { useActiveThesis } from "../api/theses";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
+import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { InvestmentWorkflowTree } from "../components/overview/InvestmentWorkflowTree";
 import { formatDate, formatPredicate, percentage } from "../data/candidateProfile";
@@ -10,8 +11,12 @@ import { candidateThesisPercent, decisionReadiness, hasDecisionScore, median, ra
 
 export function HomePage() {
   const navigate = useNavigate();
-  const { data = [] } = useCandidates();
-  const { data: activeThesis } = useActiveThesis();
+  const candidatesQuery = useCandidates();
+  const thesisQuery = useActiveThesis();
+  const data = candidatesQuery.data ?? [];
+  const candidateDataAvailable = candidatesQuery.data !== undefined;
+  const thesisDataAvailable = thesisQuery.data !== undefined;
+  const activeThesis = thesisQuery.data ?? null;
   const inbound = data.filter((candidate) => candidate.origin === "inbound");
   const outbound = data.filter((candidate) => candidate.origin === "outbound");
   const scored = data.filter(hasDecisionScore);
@@ -27,16 +32,22 @@ export function HomePage() {
     activeThesis.stages.map(thesisLabel).join(" / "),
     activeThesis.regions.map(thesisLabel).join(" & "),
     formatCheckRange(activeThesis.check_size_min_k_eur, activeThesis.check_size_max_k_eur),
-  ] : ["No active thesis"];
+  ] : [];
+
+  const thesisTitle = thesisQuery.isPending ? "Loading thesis" : thesisQuery.error ? "Thesis unavailable" : activeThesis?.name ?? "Configure thesis";
+  const candidateDashboardReady = candidateDataAvailable && !candidatesQuery.isPending;
 
   return (
     <div className="mx-auto max-w-[1220px] pb-10">
       <section className="mb-7 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div><div className="eyebrow mb-2">Investment workspace</div><h1 className="page-title">Good morning, Sophie</h1><p className="page-description">Live sourcing and decision data from the FirstCheck24 database.</p></div>
-        <button onClick={() => navigate("/thesis")} className="flex w-fit items-center gap-3 rounded-md bg-white/75 px-4 py-2.5 shadow-[0_8px_24px_rgba(70,91,120,.08)] backdrop-blur-xl"><span className={`h-2 w-2 rounded-full ${activeThesis ? "bg-success" : "bg-warn"}`} /><div className="text-left"><div className="text-xs font-bold">{activeThesis?.name ?? "Configure thesis"}</div><div className="text-[10px] text-muted">{activeThesis ? `${activeThesis.version} · active` : "No active thesis"}</div></div><ArrowRight className="h-3.5 w-3.5 text-muted" /></button>
+        <button onClick={() => navigate("/thesis")} className="flex w-fit items-center gap-3 rounded-md bg-white/75 px-4 py-2.5 shadow-[0_8px_24px_rgba(70,91,120,.08)] backdrop-blur-xl"><span className={`h-2 w-2 rounded-full ${activeThesis ? "bg-success" : "bg-warn"}`} /><div className="text-left"><div className="text-xs font-bold">{thesisTitle}</div><div className="text-[10px] text-muted">{activeThesis ? `${activeThesis.version} · active` : thesisQuery.error ? "Request failed" : thesisQuery.isPending ? "Loading…" : "No active thesis"}</div></div><ArrowRight className="h-3.5 w-3.5 text-muted" /></button>
       </section>
 
-      <InvestmentWorkflowTree
+      {candidatesQuery.isPending && !candidateDataAvailable && <ApiStateNotice loading label="pipeline data" />}
+      {candidatesQuery.error && <ApiStateNotice error={candidatesQuery.error} onRetry={() => void candidatesQuery.refetch()} label="pipeline data" />}
+
+      {candidateDashboardReady && <InvestmentWorkflowTree
         thesisName={activeThesis?.name ?? "Configure thesis"}
         thesisVersion={activeThesis?.version}
         counts={{
@@ -48,16 +59,16 @@ export function HomePage() {
           highSignal: highSignal.length,
         }}
         onNavigate={navigate}
-      />
+      />}
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+      {candidateDashboardReady && <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <KeyMetricCard icon={ShieldCheck} label="Review ready" value={reviewReady.length} detail="Thesis fit ≥75% with sufficient evidence" progress={ratioPercent(reviewReady.length, data.length)} progressLabel={`${reviewReady.length} of ${data.length} opportunities`} tone="green" />
         <KeyMetricCard icon={Target} label="Median thesis fit" value={medianThesis} suffix="%" detail="Central strategy-fit score across assessed deals" progress={medianThesis} progressLabel={`${measuredThesisScores.length} opportunities measured`} tone="purple" />
         <KeyMetricCard icon={CircleGauge} label="Scoring coverage" value={scoringCoverage} suffix="%" detail="Share of the pipeline with a decision signal" progress={scoringCoverage} progressLabel={`${scored.length} of ${data.length} profiles`} tone="blue" />
-      </div>
+      </div>}
 
-      <div className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
-        <section className="panel space-y-1 rounded-lg p-2">
+      <div className={`grid gap-5 ${candidateDashboardReady ? "xl:grid-cols-[1.6fr_1fr]" : ""}`}>
+        {candidateDashboardReady && <section className="panel space-y-1 rounded-lg p-2">
           <div className="flex items-center justify-between rounded-md bg-gradient-to-r from-[#edf3fb] to-transparent px-3 py-3"><div><h2 className="section-title">Priority candidates</h2><p className="supporting-text">Ordered by recorded thesis or discovery signal</p></div><button onClick={() => navigate("/investigated")} className="text-xs font-bold text-accent">View all</button></div>
           {priorities.length === 0 && <div className="px-3 py-10 text-center text-xs text-muted">No live candidates yet.</div>}
           {priorities.map((candidate, index) => {
@@ -71,9 +82,8 @@ export function HomePage() {
               </button>
             );
           })}
-        </section>
-
-        <section className="panel rounded-lg p-5"><div className="mb-5 flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-accent-soft text-accent"><Target className="h-4 w-4" /></span><div><h2 className="section-title">Active thesis</h2><p className="supporting-text">{activeThesis?.name ?? "Not configured"}</p></div></div>{thesisItems.map((item) => <div key={item} className="mb-2 flex items-center gap-2 rounded-md bg-white/60 px-3 py-2.5 text-xs font-semibold leading-5 shadow-sm"><CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />{item}</div>)}<button onClick={() => navigate("/thesis")} className="mt-4 flex items-center gap-1 text-xs font-bold text-accent">Edit thesis <ArrowRight className="h-3.5 w-3.5" /></button></section>
+        </section>}
+        <section className="panel rounded-lg p-5"><div className="mb-5 flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-accent-soft text-accent"><Target className="h-4 w-4" /></span><div><h2 className="section-title">Active thesis</h2><p className="supporting-text">{activeThesis?.name ?? (thesisQuery.error ? "Thesis unavailable" : thesisQuery.isPending ? "Loading thesis…" : "Not configured")}</p></div></div>{thesisQuery.isPending && !thesisDataAvailable && <ApiStateNotice loading label="active thesis" />}{thesisQuery.error && <ApiStateNotice error={thesisQuery.error} onRetry={() => void thesisQuery.refetch()} label="active thesis" />}{!thesisQuery.isPending && !thesisQuery.error && activeThesis && thesisItems.map((item) => <div key={item} className="mb-2 flex items-center gap-2 rounded-md bg-white/60 px-3 py-2.5 text-xs font-semibold leading-5 shadow-sm"><CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />{item}</div>)}{!thesisQuery.isPending && !thesisQuery.error && activeThesis === null && <div className="rounded-md bg-white/60 px-3 py-3 text-xs text-muted">No active thesis is configured. This is an empty configuration state, not a score.</div>}<button onClick={() => navigate("/thesis")} className="mt-4 flex items-center gap-1 text-xs font-bold text-accent">Edit thesis <ArrowRight className="h-3.5 w-3.5" /></button></section>
       </div>
     </div>
   );

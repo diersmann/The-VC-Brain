@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { ApiError } from "./errors";
 import type { Candidate, CandidateDetail } from "../types/candidate";
 
 export type OutreachEmailType = "founder_intro" | "request_deck" | "diligence" | "follow_up";
@@ -28,7 +29,7 @@ export async function fetchCandidates(signal?: AbortSignal, stage?: string): Pro
   const response = await fetch(`/api/v1/candidates?${params.toString()}`, { signal });
 
   if (!response.ok) {
-    throw new Error(`Candidates request failed with status ${response.status}`);
+    throw new ApiError(`Candidates request failed with status ${response.status}`, response.status);
   }
 
   return (await response.json()) as Candidate[];
@@ -44,14 +45,14 @@ export function useCandidates(stage?: string) {
 
 export async function contactCandidate(candidateId: string): Promise<void> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/contact`, { method: "POST" });
-  if (!response.ok) throw new Error(`Contact request failed with status ${response.status}`);
+  if (!response.ok) throw new ApiError(`Contact request failed with status ${response.status}`, response.status);
 }
 
 export async function fetchCandidate(candidateId: string, signal?: AbortSignal): Promise<CandidateDetail> {
   const response = await fetch(`/api/v1/candidates/${candidateId}`, { signal });
 
   if (!response.ok) {
-    throw new Error(`Candidate request failed with status ${response.status}`);
+    throw new ApiError(`Candidate request failed with status ${response.status}`, response.status);
   }
 
   return (await response.json()) as CandidateDetail;

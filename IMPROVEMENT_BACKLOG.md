@@ -63,7 +63,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-017 - Make identity resolution conservative, auditable, and reversible.** Observed: matchers.py:193-212 auto-merges fuzzy name plus company/location at 0.85; merge.py:84-125 rewrites evidence, omits Claim subjects and conflict handling, and deletes self-relationships. Done when only verified stable identifiers auto-merge, fuzzy matches require review, original subjects/provenance remain immutable, all dependents are covered, and merge rollback is tested.
 
-- [ ] **VCB-018 - Never present operational failure as valid investment data.** Observed in live QA: HomePage.tsx:11-30 turns API 500s into a healthy zero pipeline/no thesis; PitchSubmissionPage.tsx:21-29 reduces submit failure to an alert and returns to an apparently normal form. Done when loading, empty, partial, offline, permission, and failure states are distinct, persistent, accessible, retryable, and never mutate or imply investment conclusions.
+- [x] **VCB-018 - Never present operational failure as valid investment data.** Observed in live QA: HomePage.tsx:11-30 turns API 500s into a healthy zero pipeline/no thesis; PitchSubmissionPage.tsx:21-29 reduces submit failure to an alert and returns to an apparently normal form. Done when loading, empty, partial, offline, permission, and failure states are distinct, persistent, accessible, retryable, and never mutate or imply investment conclusions. **Completed:** typed API failures now distinguish permission, offline, server, and request errors; Home and Investigated keep failed data from becoming zero-valued metrics and expose persistent accessible retry notices; empty thesis/pipeline states are explicit; submission failures remain inline and retryable. Added API failure, dashboard failure/empty/partial/retry tests. Frontend lint, typecheck, 33 tests, and production build pass. `make check` was attempted at the milestone boundary but remains blocked by the pre-existing unavailable Docker daemon.
 
 ## P1 - Complete the trustworthy product loop
 
@@ -268,6 +268,10 @@ The main conclusion is simple: make the product truthful before making it broade
 - git diff --check: passed.
 - Docker Compose/runtime migration check: not run because Docker Desktop was not running.
 - Live browser QA: reproduced false-zero outage state, silent failed submission, and missing mobile navigation. Temporary evidence was kept outside the repository.
+
+## Progress notes
+
+- 2026-08-02: VCB-018 frontend validation passed. `make check` could not start because Docker Compose could not connect to the local Docker daemon; no repository check was executed by the target container.
 
 ## First practical milestone
 
