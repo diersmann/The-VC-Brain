@@ -207,7 +207,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-087 - Add real integration, E2E, accessibility, and abuse coverage.** Observed: unit tests pass but heavily mock DB/worker paths; major pages have little/no rendered coverage. Done when clean PostgreSQL/Redis/MinIO tests cover migrations, session cleanup, reconciliation, merge rollback, outbox, concurrency, citations, and browser flows for discover-to-decision plus pitch-to-decision.
 
-- [blocked] **VCB-088 - Restore and enforce a green CI quality gate.** Observed: no CI workflow; the earlier Ruff/mypy failures are now resolved in the current tree. **Partial completion:** `.github/workflows/quality.yml` now runs Docker-backed `make check` on pushes to `post-hackathon-polish` and pull requests with read-only repository permissions. **Blocked:** migration smoke, production build, security scans, deterministic E2E, and a branch-protection/required-check setting still need CI integration and repository-admin configuration.
+- [blocked] **VCB-088 - Restore and enforce a green CI quality gate.** Observed: no CI workflow; the earlier Ruff/mypy failures are now resolved in the current tree. **Partial completion:** `.github/workflows/quality.yml` now runs Docker-backed `make check`, while `.github/workflows/security.yml` adds dependency, image, secret, and license scans on pushes to `post-hackathon-polish` and pull requests with read-only repository permissions. **Blocked:** clean-database migration smoke, deterministic E2E, and a branch-protection/required-check setting still need CI integration and repository-admin configuration.
 
 - [blocked] **VCB-089 - Make clean quick start migrate and optionally seed automatically.** Observed: README said `make up` on a fresh DB but Compose API did not apply migrations. **Partial completion:** Compose now runs a one-shot `migrate` service before API and worker readiness; `make migrate` uses that same service, and `make seed-demo` adds two clearly labelled, synthetic, deterministic, idempotent local records without network access. **Blocked:** a clean-volume acceptance run and service-failure/readiness assertion still require a dedicated disposable Docker environment or CI integration; the repository now has the wiring and focused fixture tests but this goal does not destroy the existing developer volumes.
 
@@ -233,7 +233,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-100 - Replace or govern committed public-profile demo data.** Observed: seed README describes 112 public people and includes pending-consent profile content/avatar bytes; importer labels non-submitted demos as inbound and mutates evidence. Done when fixtures are synthetic/anonymized or have a source-by-source license/legal manifest, unnecessary PII/avatar data is removed, and demo/reference data is excluded from operational metrics.
 
-- [ ] **VCB-101 - Add automated dependency, image, secret, and license scanning.** Missing: CI security gates. Done when Python/npm dependencies, container images, repository secrets, and licenses are scanned; critical findings block release; exceptions are time-bounded and documented.
+- [blocked] **VCB-101 - Add automated dependency, image, secret, and license scanning.** Missing: CI security gates. **Partial completion:** `.github/workflows/security.yml` now audits locked npm/Python dependencies, inventories Python/Node licenses, builds both production images, scans them with Trivy, and scans repository history with Gitleaks; critical dependency findings and critical/high image findings fail the security jobs, while current known npm high findings are reported without being promoted to release-blocking critical findings. **Blocked:** completion requires an approved license allowlist/severity policy, time-bounded exception storage, and repository-admin configuration to require the security jobs before merge/release.
 
 ## P3 - Differentiated learning and workflow features
 
@@ -291,6 +291,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-02: VCB-092 focused lifecycle cleanup tests passed for API and worker shutdown; full shared AI/Redis ownership remains explicitly blocked pending a client-lifecycle design.
 - 2026-08-02: VCB-099 canonical JSON serialization passed focused round-trip/stability coverage and source audit; all `application/json` snapshot writers now emit valid deterministic UTF-8 JSON.
 - 2026-08-02: VCB-095 documentation review passed; README and architecture status now match the current repository, and the clean/demo/reset/troubleshooting/workflow paths are documented.
+- 2026-08-02: VCB-101 security workflow added and locally exercised: npm critical-level audit (two known high advisories reported), pip-audit (no known vulnerabilities), Gitleaks (no leaks), license inventory, and both production image builds passed. The workflow blocks critical dependency/image findings; governance and allowlist decisions remain blocked.
 
 ## First practical milestone
 
