@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from typing import Any
 
@@ -12,6 +13,7 @@ from sqlalchemy import select
 
 from app.agents.memo import generate_memo
 from app.agents.scoring import build_evidence_text
+from app.artifact_provenance import build_artifact_metadata, fingerprint_payload
 from app.collectors.jobs import _session_ctx
 from app.db.models import (
     Assessment,
@@ -81,6 +83,8 @@ async def generate_memo_job(
     from app.config import get_settings
 
     settings = ctx.get("settings") or get_settings()
+    run_id = uuid.uuid4()
+    memo_started = time.perf_counter()
     logger.info("generate_memo_job_started", person_id=person_id, opportunity_id=opportunity_id)
 
     async with _session_ctx(ctx) as session:
@@ -234,6 +238,26 @@ async def generate_memo_job(
             f"{thesis.name} ({thesis.version}) — stages: {thesis.stages}, "
             f"sectors: {thesis.sectors}, regions: {thesis.regions}"
         )
+        input_fingerprint = fingerprint_payload(
+            {
+                "claim_ids": claim_ids,
+                "observation_ids": obs_ids,
+                "assessment_ids": assessment_ids,
+                "thesis_version": thesis.version,
+                "scorecard": scorecard_summary,
+            }
+        )
+        pending_metadata = build_artifact_metadata(
+            run_id=run_id,
+            artifact_type="investment_memo",
+            code_version="memo-job-v2",
+            input_fingerprint=input_fingerprint,
+            rubric_versions=("founder-agent-v1", "opportunity-axes-v1"),
+            prompt_version="memo-prompts-v1",
+            model_version=settings.agent_model,
+            parameters={"required_sections": 5},
+            validator_status="pending",
+        )
 
         # Persist a pending run before calling the external model. If the
         # worker crashes, the pipeline retains an honest in-progress state.
@@ -246,6 +270,7 @@ async def generate_memo_job(
             sections={"sections": [], "generation_mode": "pending"},
             evidence_ids=sorted(obs_ids),
             model_version=settings.agent_model,
+            artifact_metadata=pending_metadata,
         )
         session.add(memo_record)
         await session.flush()
@@ -260,6 +285,17 @@ async def generate_memo_job(
                 memo_model_version=settings.agent_model,
                 rubric_versions=("founder-agent-v1", "opportunity-axes-v1"),
             ),
+        )
+        proposal.artifact_metadata = build_artifact_metadata(
+            run_id=run_id,
+            artifact_type="decision_proposal",
+            code_version="decision-proposal-v1",
+            input_fingerprint=input_fingerprint,
+            rubric_versions=("founder-agent-v1", "opportunity-axes-v1"),
+            prompt_version="memo-prompts-v1",
+            model_version=settings.agent_model,
+            parameters={"source": "memo-job"},
+            validator_status="pending",
         )
         session.add(proposal)
         await session.commit()
@@ -304,6 +340,25 @@ async def generate_memo_job(
                     rubric_versions=("founder-agent-v1", "opportunity-axes-v1"),
                 ),
             )
+            failed_metadata = build_artifact_metadata(
+                run_id=run_id,
+                artifact_type="investment_memo",
+                code_version="memo-job-v2",
+                input_fingerprint=input_fingerprint,
+                rubric_versions=("founder-agent-v1", "opportunity-axes-v1"),
+                prompt_version="memo-prompts-v1",
+                model_version=settings.agent_model,
+                parameters={"required_sections": 5},
+                latency_ms=round((time.perf_counter() - memo_started) * 1000),
+                validator_status="failed",
+                validator_errors=["memo generation failed"],
+            )
+            memo_record.artifact_metadata = failed_metadata
+            proposal.artifact_metadata = {
+                **failed_metadata,
+                "artifact_type": "decision_proposal",
+                "code_version": "decision-proposal-v1",
+            }
             await session.commit()
             logger.exception("memo_generation_failed", person_id=person_id, error=str(exc))
             return {"person_id": person_id, "status": "failed"}
@@ -318,6 +373,21 @@ async def generate_memo_job(
         # to the accepted claims. Citation validation is a separate contract.
         memo_record.evidence_ids = obs_ids
         memo_record.model_version = memo.model_version or settings.agent_model
+        validator_status = "failed" if memo.validation_errors else "passed"
+        completed_metadata = build_artifact_metadata(
+            run_id=run_id,
+            artifact_type="investment_memo",
+            code_version="memo-job-v2",
+            input_fingerprint=input_fingerprint,
+            rubric_versions=("founder-agent-v1", "opportunity-axes-v1"),
+            prompt_version="memo-prompts-v1",
+            model_version=memo_record.model_version,
+            parameters={"required_sections": 5},
+            latency_ms=round((time.perf_counter() - memo_started) * 1000),
+            validator_status=validator_status,
+            validator_errors=memo.validation_errors,
+        )
+        memo_record.artifact_metadata = completed_metadata
         _apply_proposal_values(
             proposal,
             build_decision_proposal(
@@ -329,6 +399,11 @@ async def generate_memo_job(
                 rubric_versions=("founder-agent-v1", "opportunity-axes-v1"),
             ),
         )
+        proposal.artifact_metadata = {
+            **completed_metadata,
+            "artifact_type": "decision_proposal",
+            "code_version": "decision-proposal-v1",
+        }
         await session.commit()
 
     logger.info(

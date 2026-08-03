@@ -69,6 +69,8 @@ Every observation, claim, relationship, score, and recommendation retains proven
 
 Claim evidence is migrating from the legacy `Claim.observation_ids` JSON list to the FK-backed `claim_observations` join table. Reconciliation writes both representations during the compatibility window; historical backfill, typed subject unions, and database-level wrong-scope enforcement remain a tracked migration follow-up.
 
+Derived artifacts carry a shared `artifact_metadata` contract (`artifact-provenance-v1`) with a run ID, code/rubric/prompt/model versions, parameters, input fingerprint, measured latency, explicit unknown cost, validator status, and reader compatibility. Existing rows may have empty metadata until a controlled historical backfill is approved; relationship production and provider billing telemetry remain incomplete.
+
 ### Source Quality and Collection Policy
 
 Collection is prioritized by expected decision value rather than volume:

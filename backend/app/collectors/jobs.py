@@ -19,6 +19,7 @@ import hashlib
 import json
 import math
 import re
+import time
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -29,6 +30,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.artifact_provenance import build_artifact_metadata, fingerprint_payload
 from app.collectors.avatars import fetch_and_store_avatar
 from app.collectors.base import (
     Collected,
@@ -421,6 +423,8 @@ async def _compute_and_store_signal(
     source_type: str,
 ) -> dict[str, float]:
     """Compute a signal score from existing observations and store as ScoreSnapshot."""
+    signal_started = time.perf_counter()
+    run_id = uuid.uuid4()
     # Fetch all observations for this person
     result = await session.execute(select(Observation).where(Observation.subject_id == person.id))
     observations = result.scalars().all()
@@ -515,6 +519,16 @@ async def _compute_and_store_signal(
         evidence_ids=evidence_ids,
         input_fingerprint=fingerprint,
         provenance=provenance,
+        artifact_metadata=build_artifact_metadata(
+            run_id=run_id,
+            artifact_type="score_snapshot",
+            code_version="signal-scoring-v2",
+            input_fingerprint=fingerprint,
+            rubric_versions=("signal-v1",),
+            parameters={"source_type": source_type},
+            latency_ms=round((time.perf_counter() - signal_started) * 1000),
+            validator_status="not_applicable",
+        ),
     )
     session.add(score_snapshot)
     await session.flush()
@@ -1074,6 +1088,8 @@ async def research_candidate_job(
     settings = ctx["settings"]
     if not settings.tavily_api_key:
         raise RuntimeError("TAVILY_API_KEY is not configured")
+    run_id = uuid.uuid4()
+    research_started = time.perf_counter()
 
     async with _session_ctx(ctx) as session:
         person = await session.get(Person, uuid.UUID(person_id))
@@ -1229,6 +1245,26 @@ async def research_candidate_job(
                     unknowns=_axis_unknowns(
                         axis, int(scored["result_count"]), scored["confidence"]
                     ),
+                    artifact_metadata=build_artifact_metadata(
+                        run_id=run_id,
+                        artifact_type="assessment",
+                        code_version="research-job-v2",
+                        input_fingerprint=fingerprint_payload(
+                            {
+                                "person_id": person.id,
+                                "opportunity_id": opportunity.id,
+                                "axis": axis,
+                                "evidence_ids": axis_evidence[axis],
+                            }
+                        ),
+                        rubric_versions=("opportunity-axes-v1",),
+                        parameters={
+                            "axis": axis,
+                            "query_fingerprint": fingerprint_payload(queries[axis]),
+                        },
+                        latency_ms=round((time.perf_counter() - research_started) * 1000),
+                        validator_status="not_applicable",
+                    ),
                 )
             )
 
@@ -1260,6 +1296,22 @@ async def research_candidate_job(
                     for axis, scored in axis_scores.items()
                 },
                 evidence_ids=[item for ids in axis_evidence.values() for item in ids],
+                artifact_metadata=build_artifact_metadata(
+                    run_id=run_id,
+                    artifact_type="score_snapshot",
+                    code_version="research-job-v2",
+                    input_fingerprint=fingerprint_payload(
+                        {
+                            "person_id": person.id,
+                            "opportunity_id": opportunity.id,
+                            "evidence_ids": axis_evidence,
+                        }
+                    ),
+                    rubric_versions=("opportunity-axes-v1",),
+                    parameters={"axes": list(queries)},
+                    latency_ms=round((time.perf_counter() - research_started) * 1000),
+                    validator_status="not_applicable",
+                ),
             )
         )
         await session.commit()

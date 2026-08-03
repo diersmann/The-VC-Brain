@@ -410,6 +410,9 @@ class Claim(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     observation_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    artifact_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
     subject_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
@@ -477,6 +480,9 @@ class Relationship(TimestampMixin, Base):
     )
     relationship_type: Mapped[str] = mapped_column(String(32), nullable=False)
     evidence: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    artifact_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -509,6 +515,9 @@ class ScoreSnapshot(TimestampMixin, Base):
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     input_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     provenance: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    artifact_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -547,6 +556,9 @@ class Assessment(TimestampMixin, Base):
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     counter_evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     unknowns: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    artifact_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
 
     opportunity: Mapped["Opportunity"] = relationship(back_populates="assessments")
 
@@ -637,6 +649,9 @@ class InvestmentMemo(TimestampMixin, Base):
     sections: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -697,5 +712,8 @@ class DecisionProposal(TimestampMixin, Base):
     thesis_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     rubric_versions: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     memo_model_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    artifact_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
     override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")

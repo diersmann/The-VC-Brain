@@ -14,6 +14,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.artifact_provenance import build_artifact_metadata, fingerprint_payload
 from app.db.models import Claim, ClaimObservationLink, Observation
 
 logger = structlog.get_logger(__name__)
@@ -177,6 +178,26 @@ def _link_claim_observations(session: AsyncSession, claim: Claim) -> None:
         )
 
 
+def _claim_artifact_metadata(
+    *,
+    run_id: uuid.UUID,
+    observation_ids: list[str],
+    predicate: str,
+    opportunity_id: uuid.UUID | None,
+) -> dict[str, object]:
+    """Describe deterministic reconciliation inputs for a newly derived claim."""
+    return build_artifact_metadata(
+        run_id=run_id,
+        artifact_type="claim",
+        code_version="reconcile-v2",
+        input_fingerprint=fingerprint_payload(sorted(observation_ids)),
+        parameters={
+            "predicate": predicate,
+            "opportunity_id": str(opportunity_id) if opportunity_id else None,
+        },
+    )
+
+
 async def reconcile_observations(
     session: AsyncSession,
     person_id: uuid.UUID,
@@ -196,6 +217,7 @@ async def reconcile_observations(
     if not observations:
         return 0
 
+    run_id = uuid.uuid4()
     claims_result = await session.execute(select(Claim).where(Claim.subject_id == person_id))
     existing_claims: list[Claim] = list(claims_result.scalars().all())
 
@@ -225,6 +247,12 @@ async def reconcile_observations(
                 continue
             claim = Claim(
                 observation_ids=observation_ids,
+                artifact_metadata=_claim_artifact_metadata(
+                    run_id=run_id,
+                    observation_ids=observation_ids,
+                    predicate=predicate,
+                    opportunity_id=opportunity_id,
+                ),
                 subject_id=person_id,
                 opportunity_id=opportunity_id,
                 predicate=predicate,
@@ -255,6 +283,12 @@ async def reconcile_observations(
                 continue
             claim = Claim(
                 observation_ids=observation_ids,
+                artifact_metadata=_claim_artifact_metadata(
+                    run_id=run_id,
+                    observation_ids=observation_ids,
+                    predicate=predicate,
+                    opportunity_id=opportunity_id,
+                ),
                 subject_id=person_id,
                 opportunity_id=opportunity_id,
                 predicate=predicate,
@@ -287,6 +321,12 @@ async def reconcile_observations(
         if winner_claim is None:
             winner_claim = Claim(
                 observation_ids=winner_ids,
+                artifact_metadata=_claim_artifact_metadata(
+                    run_id=run_id,
+                    observation_ids=winner_ids,
+                    predicate=predicate,
+                    opportunity_id=opportunity_id,
+                ),
                 subject_id=person_id,
                 opportunity_id=opportunity_id,
                 predicate=predicate,
@@ -316,6 +356,12 @@ async def reconcile_observations(
                 continue
             counter_claim = Claim(
                 observation_ids=loser_ids,
+                artifact_metadata=_claim_artifact_metadata(
+                    run_id=run_id,
+                    observation_ids=loser_ids,
+                    predicate=predicate,
+                    opportunity_id=opportunity_id,
+                ),
                 subject_id=person_id,
                 opportunity_id=opportunity_id,
                 predicate=predicate,

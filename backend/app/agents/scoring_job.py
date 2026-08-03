@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any
 
@@ -9,6 +10,7 @@ import structlog
 from sqlalchemy import select
 
 from app.agents.scoring import build_evidence_text, score_candidate
+from app.artifact_provenance import build_artifact_metadata, fingerprint_payload
 from app.collectors.jobs import _session_ctx
 from app.db.models import (
     Observation,
@@ -71,6 +73,11 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
 
         # Build evidence package
         evidence_text, obs_ids = build_evidence_text(observations, person)
+        run_id = uuid.uuid4()
+        input_fingerprint = fingerprint_payload(
+            {"observation_ids": obs_ids, "model": settings.agent_model}
+        )
+        scoring_started = time.perf_counter()
 
         # Run the scoring committee
         scorecard, _metadata = await score_candidate(
@@ -95,6 +102,20 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
             "critique": [i.model_dump() for i in scorecard.critique],
             "agents": {dim: a.model_dump() for dim, a in scorecard.agents.items()},
         }
+        artifact_metadata = build_artifact_metadata(
+            run_id=run_id,
+            artifact_type="score_snapshot",
+            code_version="scoring-job-v2",
+            input_fingerprint=input_fingerprint,
+            rubric_versions=("founder-agent-v1",),
+            prompt_version="scoring-prompts-v1",
+            model_version=settings.agent_model,
+            parameters={"concurrency": settings.agent_concurrency},
+            latency_ms=round((time.perf_counter() - scoring_started) * 1000),
+            validator_status=scorecard.validator_status,
+            validator_errors=scorecard.validation_errors,
+            compatibility={"reader": "score-snapshot-v1"},
+        )
 
         session.add(
             ScoreSnapshot(
@@ -113,6 +134,7 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
                     }
                 },
                 evidence_ids=obs_ids[:50],  # cap to avoid huge rows
+                artifact_metadata=artifact_metadata,
             )
         )
 

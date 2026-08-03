@@ -11,6 +11,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.artifact_provenance import build_artifact_metadata, fingerprint_payload
 from app.db.models import (
     InvestmentThesis,
     Observation,
@@ -333,6 +334,7 @@ async def score_all_candidates(session: AsyncSession, thesis: InvestmentThesis) 
     people = list(people_result.scalars().all())
     if not people:
         return 0
+    run_id = uuid.uuid4()
 
     person_ids = [person.id for person in people]
     observations_result = await session.execute(
@@ -380,6 +382,21 @@ async def score_all_candidates(session: AsyncSession, thesis: InvestmentThesis) 
                     }
                 },
                 evidence_ids=result.evidence_ids,
+                artifact_metadata=build_artifact_metadata(
+                    run_id=run_id,
+                    artifact_type="score_snapshot",
+                    code_version="thesis-scoring-v2",
+                    input_fingerprint=fingerprint_payload(
+                        {
+                            "person_id": person.id,
+                            "thesis_version": thesis.version,
+                            "evidence_ids": result.evidence_ids,
+                        }
+                    ),
+                    rubric_versions=(f"thesis-match-v1:{thesis.version}",),
+                    parameters={"weights": DEFAULT_WEIGHTS},
+                    validator_status="not_applicable",
+                ),
             )
         )
         opportunity = latest_opportunity.get(person.id)
