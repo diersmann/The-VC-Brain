@@ -165,7 +165,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-066 - Replace hard-coded Sophie, actor identity, and 12-of-18 progress.** Observed: LeftNav.tsx:30-35 and HomePage.tsx:35 show fake user/workload values that conflict with live zero data. Done when authenticated session/workspace data drives identity and workload, or demo values are visibly labeled and never enter audit events.
 
-- [ ] **VCB-067 - Correct candidate list semantics and add cursor pagination.** Observed: list query omits canonical filter, uses unsafe concurrent queries on one AsyncSession, stage/origin can match a historical opportunity, and frontend caps at 200. Done when current opportunity is explicit, ordering/ties are stable, filters match displayed data, and indexed cursor pagination/server search work at target scale.
+- [blocked] **VCB-067 - Correct candidate list semantics and add cursor pagination.** Observed: list query omits canonical filter, uses unsafe concurrent queries on one AsyncSession, stage/origin can match a historical opportunity, and frontend caps at 200. **Partial completion:** origin and lifecycle filters now use one deterministic latest-opportunity row per person, person ordering has an ID tie-breaker, lifecycle values are canonicalized at the API boundary, and batch reads are sequential on the shared session. **Blocked:** indexed cursor pagination, server-side search, and a versioned list envelope/count contract remain required for target-scale consumers.
 
 - [blocked] **VCB-068 - Make mutations update all affected caches and lock conflicting actions.** Observed: decision action buttons remain usable during save and only detail refetches; Contact/discovery errors are often silent. **Partial completion:** existing decision idempotency and mutation locks remain in place; discovery and contact queue failures now surface announced retryable errors without losing the user's query/action state, with focused rendered tests. **Blocked:** full completion still needs coordinated cache invalidation/optimistic updates for every affected list/detail query and a shared mutation request/error contract.
 
@@ -311,6 +311,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-03: VCB-068 mutation-feedback slice added retryable discovery/contact error states, query-label semantics, and focused rendered tests; cross-query cache reconciliation remains blocked scope.
 - 2026-08-03: VCB-062 profile-insights slice rendered the existing score history, evidence timeline, coverage/gaps, affiliations, and relationship semantics with focused component coverage; correction history and richer provenance remain blocked on API/auth contracts.
 - 2026-08-03: VCB-061 memo-provenance slice preserved observation/claim IDs in the candidate API and added accessible memo disclosures for available source coordinates, timestamps, Trust intervals, and explanations; richer evidence graph metadata remains blocked on the expanded contract.
+- 2026-08-03: VCB-067 candidate-list slice fixed latest-opportunity filter semantics, deterministic person tie ordering, canonical stage validation, and shared-session query safety; cursor pagination and the list envelope remain blocked scope.
 
 ## First practical milestone
 

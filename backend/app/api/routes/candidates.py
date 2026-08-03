@@ -7,7 +7,6 @@ ScoreSnapshot exists for that person.
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -529,6 +528,25 @@ async def _fetch_candidate_profiles(
     return profiles
 
 
+def _latest_opportunity_rows(person_ids: list[uuid.UUID] | None = None) -> Any:
+    """Select one deterministic, newest opportunity row per person."""
+    row_number = func.row_number().over(
+        partition_by=OpportunityFounder.person_id,
+        order_by=(Opportunity.created_at.desc(), Opportunity.id.desc()),
+    ).label("row_number")
+    query = (
+        select(
+            OpportunityFounder.person_id.label("person_id"),
+            Opportunity.source_kind.label("source_kind"),
+            Opportunity.lifecycle_state.label("lifecycle_state"),
+            row_number,
+        )
+        .select_from(OpportunityFounder)
+        .join(Opportunity, Opportunity.id == OpportunityFounder.opportunity_id)
+    )
+    return query.where(OpportunityFounder.person_id.in_(person_ids)) if person_ids else query
+
+
 async def _fetch_origin(
     session: AsyncSession,
     person_ids: list[uuid.UUID],
@@ -537,31 +555,14 @@ async def _fetch_origin(
     if not person_ids:
         return {}
 
-    # Subquery: latest opportunity per person
-    latest_opp = (
-        select(
-            OpportunityFounder.person_id,
-            func.max(Opportunity.created_at).label("max_created"),
-        )
-        .select_from(OpportunityFounder)
-        .join(Opportunity, Opportunity.id == OpportunityFounder.opportunity_id)
-        .where(OpportunityFounder.person_id.in_(person_ids))
-        .group_by(OpportunityFounder.person_id)
-        .subquery()
-    )
+    latest_opp = _latest_opportunity_rows(person_ids).subquery()
 
     result = await session.execute(
         select(
-            OpportunityFounder.person_id,
-            Opportunity.source_kind,
+            latest_opp.c.person_id,
+            latest_opp.c.source_kind,
         )
-        .select_from(OpportunityFounder)
-        .join(Opportunity, Opportunity.id == OpportunityFounder.opportunity_id)
-        .join(
-            latest_opp,
-            (OpportunityFounder.person_id == latest_opp.c.person_id)
-            & (Opportunity.created_at == latest_opp.c.max_created),
-        )
+        .where(latest_opp.c.row_number == 1)
     )
     return {row.person_id: row.source_kind for row in result}
 
@@ -574,31 +575,14 @@ async def _fetch_lifecycle_stages(
     if not person_ids:
         return {}
 
-    # Subquery: latest opportunity per person
-    latest_opp = (
-        select(
-            OpportunityFounder.person_id,
-            func.max(Opportunity.created_at).label("max_created"),
-        )
-        .select_from(OpportunityFounder)
-        .join(Opportunity, Opportunity.id == OpportunityFounder.opportunity_id)
-        .where(OpportunityFounder.person_id.in_(person_ids))
-        .group_by(OpportunityFounder.person_id)
-        .subquery()
-    )
+    latest_opp = _latest_opportunity_rows(person_ids).subquery()
 
     result = await session.execute(
         select(
-            OpportunityFounder.person_id,
-            Opportunity.lifecycle_state,
+            latest_opp.c.person_id,
+            latest_opp.c.lifecycle_state,
         )
-        .select_from(OpportunityFounder)
-        .join(Opportunity, Opportunity.id == OpportunityFounder.opportunity_id)
-        .join(
-            latest_opp,
-            (OpportunityFounder.person_id == latest_opp.c.person_id)
-            & (Opportunity.created_at == latest_opp.c.max_created),
-        )
+        .where(latest_opp.c.row_number == 1)
     )
     return {row.person_id: row.lifecycle_state for row in result}
 
@@ -617,34 +601,34 @@ async def list_candidates(
         pattern=r"^(inbound|outbound)$",
         description="Filter by opportunity origin (inbound/outbound)",
     ),
-    stage: str | None = Query(
-        default=None,
-        description="Filter by lifecycle stage (e.g. investigating, memo_ready, contacted)",
-    ),
+    stage: Annotated[
+        LifecycleStage | None,
+        Query(description="Filter by lifecycle stage (e.g. investigating, memo_ready, contacted)"),
+    ] = None,
 ) -> list[CandidateResponse]:
     """List sourcing candidates (persons) with optional origin and stage filters.
 
-    Returns persons ordered by creation date (newest first). Scores are
+    Returns persons ordered by creation date and ID (newest first with a
+    deterministic tie-break). Origin and stage filters use the same latest
+    opportunity row. Scores are
     populated from the latest ScoreSnapshot with a founder-score rubric,
     if one exists.
     """
     # Base query: all persons, newest first
-    query = select(Person).order_by(Person.created_at.desc()).limit(limit)
+    query = select(Person).order_by(Person.created_at.desc(), Person.id.desc())
 
-    if origin:
-        query = query.join(Person.opportunities).where(Opportunity.source_kind == origin).distinct()
-
-    if stage:
-        # Filter to persons whose latest opportunity is in the given stage
-        latest_opp = (
-            select(OpportunityFounder.person_id, Opportunity.lifecycle_state)
-            .distinct(OpportunityFounder.person_id)
-            .join(Opportunity, Opportunity.id == OpportunityFounder.opportunity_id)
-            .where(Opportunity.lifecycle_state == stage)
-            .order_by(OpportunityFounder.person_id, Opportunity.created_at.desc())
-            .subquery()
+    if origin or stage:
+        latest_opp = _latest_opportunity_rows().subquery()
+        query = query.join(
+            latest_opp,
+            (Person.id == latest_opp.c.person_id) & (latest_opp.c.row_number == 1),
         )
-        query = query.join(latest_opp, Person.id == latest_opp.c.person_id)
+        if origin:
+            query = query.where(latest_opp.c.source_kind == origin)
+        if stage:
+            query = query.where(latest_opp.c.lifecycle_state == stage)
+
+    query = query.limit(limit)
 
     result = await session.execute(query)
     persons: list[Person] = list(result.scalars().all())
@@ -655,14 +639,11 @@ async def list_candidates(
     person_ids = [p.id for p in persons]
 
     # Batch-fetch latest scores, origins, and lifecycle stages
-    scores_task = _fetch_score_snapshots(session, person_ids)
-    origins_task = _fetch_origin(session, person_ids)
-    profiles_task = _fetch_candidate_profiles(session, person_ids)
-    stages_task = _fetch_lifecycle_stages(session, person_ids)
-    opportunity_scores_task = _fetch_opportunity_scores(session, person_ids)
-    score_snapshots, origins, profiles, lifecycle_stages, opportunity_scores = await asyncio.gather(
-        scores_task, origins_task, profiles_task, stages_task, opportunity_scores_task
-    )
+    score_snapshots = await _fetch_score_snapshots(session, person_ids)
+    origins = await _fetch_origin(session, person_ids)
+    profiles = await _fetch_candidate_profiles(session, person_ids)
+    lifecycle_stages = await _fetch_lifecycle_stages(session, person_ids)
+    opportunity_scores = await _fetch_opportunity_scores(session, person_ids)
 
     return [
         map_person_to_candidate(

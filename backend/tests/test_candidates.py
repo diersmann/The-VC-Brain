@@ -309,3 +309,9 @@ def test_list_candidates_rejects_excessive_limit(client: TestClient) -> None:
     """Limit > 200 should return 422."""
     response = client.get("/api/v1/candidates?limit=500")
     assert response.status_code == 422
+
+
+def test_list_candidates_rejects_invalid_stage(client: TestClient) -> None:
+    """Lifecycle filters accept only the canonical stage vocabulary."""
+    response = client.get("/api/v1/candidates?stage=not-a-stage")
+    assert response.status_code == 422
