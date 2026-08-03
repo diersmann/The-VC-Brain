@@ -71,6 +71,7 @@ from app.db.models import (
 )
 from app.job_ledger import update_job
 from app.privacy import external_ai_use_decision
+from app.source_policy import build_source_use_policy, source_allows_model_use
 from app.storage import put_snapshot
 
 logger = structlog.get_logger(__name__)
@@ -194,6 +195,9 @@ async def _write_snapshot(
         content_hash=content_hash,
         storage_path=storage_path,
         license_metadata=collected.license_hint,
+        source_use_policy=build_source_use_policy(
+            collected.source_type, collected.license_hint
+        ),
         collected_at=datetime.now(UTC),
     )
     session.add(snapshot)
@@ -209,6 +213,14 @@ async def _write_observations(
     opportunity_id: uuid.UUID | None = None,
 ) -> list[uuid.UUID]:
     """Write Observation rows linked to a SourceSnapshot."""
+    policy = getattr(snapshot, "source_use_policy", None)
+    if isinstance(policy, dict) and not source_allows_model_use(snapshot):
+        logger.warning(
+            "source_observations_quarantined",
+            snapshot_id=str(snapshot.id),
+            source_type=snapshot.source_type,
+        )
+        return []
     now = datetime.now(UTC)
     observation_ids: list[uuid.UUID] = []
     for obs in observations:

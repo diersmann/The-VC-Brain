@@ -226,6 +226,9 @@ class SourceSnapshot(TimestampMixin, Base):
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     license_metadata: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    source_use_policy: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     observations: Mapped[list["Observation"]] = relationship(back_populates="snapshot")

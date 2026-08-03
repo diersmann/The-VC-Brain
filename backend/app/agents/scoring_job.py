@@ -14,6 +14,7 @@ from app.db.models import (
     Observation,
     Person,
     ScoreSnapshot,
+    SourceSnapshot,
 )
 from app.privacy import external_ai_use_decision
 
@@ -43,7 +44,9 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
         # Fetch all observations for the person
         result = await session.execute(
             select(Observation)
+            .join(SourceSnapshot, SourceSnapshot.id == Observation.snapshot_id)
             .where(Observation.subject_id == person.id)
+            .where(SourceSnapshot.source_use_policy["model_use"].as_string() == "allowed")
             .order_by(Observation.observed_at.desc())
             .limit(500)
         )

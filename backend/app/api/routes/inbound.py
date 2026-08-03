@@ -11,6 +11,7 @@ from app.db.models import InboundSubmission, Person, SourceSnapshot
 from app.db.session import get_session
 from app.opportunity_service import create_inbound_opportunity
 from app.outbox import inbound_outbox_event
+from app.source_policy import build_source_use_policy
 from app.storage import put_snapshot
 from app.uploads import UploadRejected, quarantine_pitch_upload
 
@@ -61,7 +62,10 @@ async def submit_pitch(
         source_type="inbound_deck",
         content_hash=content_hash,
         storage_path=storage_path,
-        collected_at=datetime.now(UTC)
+        collected_at=datetime.now(UTC),
+        source_use_policy=build_source_use_policy(
+            "inbound_deck", {"source": "founder-provided", "model_use": "allowed"}
+        ),
     )
     db.add(snapshot)
     

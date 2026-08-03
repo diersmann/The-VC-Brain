@@ -26,6 +26,7 @@ from app.db.models import (
 )
 from app.outreach_delivery import contact_block_reason
 from app.privacy import external_ai_use_decision, redact_direct_identifiers
+from app.source_policy import build_source_use_policy
 from app.storage import put_snapshot
 
 logger = structlog.get_logger(__name__)
@@ -125,6 +126,7 @@ async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str,
             source_type="outreach",
             content_hash=content_hash,
             storage_path=storage_path,
+            source_use_policy=build_source_use_policy("outreach", {"model_use": "allowed"}),
             collected_at=now,
         )
         session.add(snapshot)

@@ -525,6 +525,13 @@ an allowed call, direct email and phone identifiers are redacted; when policy
 metadata is incomplete, scoring and research are blocked and memo/outreach
 paths use local fallbacks without transmitting the evidence.
 
+Source snapshots separately carry the versioned `source-use-v1` policy. A
+license hint alone is not treated as a model-use grant: connector material is
+retained with `model_use: denied` until an explicit permitted-use decision is
+recorded. Founder-provided inbound decks and internally generated outreach
+artifacts have explicit internal-use policies. Unknown or disallowed connector
+material remains quarantined and cannot create new model-scored observations.
+
 ## Initial Deployment
 
 Keep logical boundaries while minimizing operational complexity:

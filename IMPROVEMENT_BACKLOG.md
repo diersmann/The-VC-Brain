@@ -91,7 +91,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-030 - Add correction, export, deletion, retention, and outreach-suppression workflows.** Missing: only a free-form consent_state exists. Done when authenticated rights requests, global/channel do-not-contact, retention jobs, correction review, export, restricted processing, deletion propagation, and audit events are complete.
 
-- [ ] **VCB-031 - Enforce source-use and licensing policy.** Observed: SourceSnapshot.license_metadata is nullable and no central connector policy gate exists. Done when every source declares allowed collection, retention, display, model, contact, and export uses, and disallowed/unknown content is quarantined rather than scored.
+- [blocked] **VCB-031 - Enforce source-use and licensing policy.** Observed: `SourceSnapshot.license_metadata` was nullable and no central connector policy gate existed. **Partial completion:** Migration 023 adds versioned `source-use-v1` policy metadata with collection, retention, display, model, contact, and export decisions; connector license hints remain deny-by-default for model use; founder-provided decks and internal outreach are explicitly allowed; unknown/disallowed connector snapshots are retained but observation writes and scoring inputs are quarantined. **Blocked:** source-owner/legal review and connector-specific production licenses are required to populate explicit allowed-use grants across every source.
 
 - [ ] **VCB-032 - Normalize Organization, Opportunity, and founder-role relationships.** Observed: Opportunity stores company_name instead of an Organization FK; Organization is minimally used. Done when company identity, founder roles with valid time, applications, source channel, and multi-founder teams are first-class and company research no longer attaches to a person.
 
@@ -325,6 +325,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-03: VCB-026 canonical-lifecycle slice added the versioned `unified-v2` state machine, API contract, staged inbound worker transitions, domain vocabulary reuse, and workflow-diagram contract coverage; authenticated outreach ownership/provider transitions remain blocked in VCB-028/VCB-025.
 - 2026-08-03: VCB-027 decision-proposal slice added Migration 021, deterministic proposal/readiness construction from memo and assessment records, candidate-detail exposure, human override persistence, and frontend consumption; investor-entered capital/conviction fields, complete provenance, and authenticated actors remain blocked.
 - 2026-08-03: VCB-029 privacy-gate slice added Migration 022, versioned deny-by-default external AI policy metadata, per-purpose consent checks, direct-identifier redaction, and scoring/research/embedding/memo/outreach gating with safe local fallback; authenticated rights workflows and production provider policy remain blocked.
+- 2026-08-03: VCB-031 source-policy slice added Migration 023, versioned snapshot use decisions, deny-by-default connector model use, explicit founder-provided/internal policies, and observation/scoring quarantine for unknown or disallowed material; source-owner/legal grants remain blocked.
 
 ## First practical milestone
 
