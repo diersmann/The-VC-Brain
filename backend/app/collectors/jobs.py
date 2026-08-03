@@ -23,7 +23,7 @@ import uuid
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 import structlog
 from sqlalchemy import select
@@ -366,6 +366,42 @@ def _collection_source_for_seed(requested_source: str, seed: Seed) -> str | None
     return None
 
 
+EntityKind = Literal["person", "organization", "project", "channel", "event", "unknown"]
+
+_SEED_ENTITY_CLASSIFICATIONS: dict[str, tuple[EntityKind, float]] = {
+    "arxiv": ("person", 0.92),
+    "github": ("person", 0.95),
+    "hackernews": ("person", 0.9),
+    "linkedin": ("person", 0.9),
+    "producthunt": ("person", 0.88),
+    "hackathons": ("project", 0.98),
+    "podcasts": ("event", 0.9),
+    "youtube": ("channel", 0.98),
+    "tavily_entity": ("unknown", 0.35),
+    "web": ("unknown", 0.35),
+}
+
+
+def classify_seed_entity(requested_source: str, seed: Seed) -> tuple[EntityKind, float]:
+    """Classify a discovery seed before it can create a founder Person row.
+
+    Connector semantics are a conservative prior, not proof of identity. A
+    future entity-resolution stage can replace this with evidence-backed
+    classification; for now, only high-confidence person sources enter the
+    founder scoring path.
+    """
+    metadata_type = seed.metadata.get("entity_type")
+    valid_types: set[str] = {"person", "organization", "project", "channel", "event"}
+    if isinstance(metadata_type, str) and metadata_type in valid_types:
+        raw_confidence = seed.metadata.get("entity_confidence", 0.75)
+        confidence = float(raw_confidence) if isinstance(raw_confidence, (int, float)) else 0.75
+        return metadata_type, max(0.0, min(1.0, confidence))  # type: ignore[return-value]
+    return _SEED_ENTITY_CLASSIFICATIONS.get(
+        seed.source_type or requested_source,
+        ("unknown", 0.0),
+    )
+
+
 async def _compute_and_store_signal(
     session: AsyncSession,
     person: Person,
@@ -523,6 +559,7 @@ async def discover_job(
     logger.info("discover_job_seeds", source=source, seed_count=len(seeds))
 
     above_count = 0
+    entity_counts: dict[str, int] = {}
     from app.config import get_settings as _get_settings
 
     settings = ctx.get("settings") or _get_settings()
@@ -532,6 +569,18 @@ async def discover_job(
         if job_id:
             await update_job(session, job_id, status="running", phase="collect", attempt=1)
         for seed in seeds:
+            entity_type, entity_confidence = classify_seed_entity(source, seed)
+            entity_counts[entity_type] = entity_counts.get(entity_type, 0) + 1
+            if entity_type != "person" or entity_confidence < 0.8:
+                logger.info(
+                    "discovery_seed_excluded_from_founder_scoring",
+                    source=source,
+                    seed_type=seed.source_type,
+                    entity_type=entity_type,
+                    entity_confidence=entity_confidence,
+                    handle=seed.handle,
+                )
+                continue
             collection_source = _collection_source_for_seed(source, seed)
             if collection_source is None:
                 logger.info(
@@ -688,6 +737,7 @@ async def discover_job(
             "query": query,
             "source": source,
             "seeds": len(seeds),
+            "entity_counts": entity_counts,
             "above_threshold": above_count,
         }
         if job_id:

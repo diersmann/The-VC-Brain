@@ -1,5 +1,31 @@
 from app.collectors.base import Seed, classify_connector_failure
-from app.collectors.jobs import _collection_source_for_seed, _rating, score_research_axis
+from app.collectors.jobs import (
+    _collection_source_for_seed,
+    _rating,
+    classify_seed_entity,
+    score_research_axis,
+)
+
+
+def test_discovery_seed_entity_classification_keeps_non_people_out_of_founder_scoring() -> None:
+    assert classify_seed_entity("hackathons", Seed(source_type="hackathons", handle="project")) == (
+        "project",
+        0.98,
+    )
+    assert classify_seed_entity("youtube", Seed(source_type="youtube", handle="channel")) == (
+        "channel",
+        0.98,
+    )
+    assert classify_seed_entity("github", Seed(source_type="github", handle="founder")) == (
+        "person",
+        0.95,
+    )
+    assert classify_seed_entity(
+        "tavily_search", Seed(source_type="web", handle="https://example.test")
+    ) == (
+        "unknown",
+        0.35,
+    )
 
 
 def test_tavily_url_seeds_route_to_web_and_entity_leads_are_not_collected() -> None:
