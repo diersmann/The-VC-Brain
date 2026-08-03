@@ -237,7 +237,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 ## P3 - Differentiated learning and workflow features
 
-- [ ] **VCB-102 - Define outcome labels without equating VC selection with founder merit.** Done when sourcing, process, decision, and longitudinal outcomes have separate definitions, provenance, horizon, censoring, and confidence, and historical VC decisions are never treated as universal success truth.
+- [blocked] **VCB-102 - Define outcome labels without equating VC selection with founder merit.** **Partial completion:** Migration 029 adds append-only `opportunity_outcomes` records with separate sourcing/process/decision/longitudinal domains, typed outcome values, source provenance, observation time, horizon, censoring, and confidence; decision-domain records are explicitly selection signals rather than universal founder-success truth. **Blocked:** authoritative longitudinal sources, outcome collection workflows, censoring rules by metric, and a maintained label dictionary still require product/evaluation ownership and real post-decision data.
 
 - [ ] **VCB-103 - Calibrate scores and uncertainty empirically.** Done when each rubric/version has held-out, time/entity-separated evaluation, reliability diagrams/Brier metrics, missing-evidence analysis, uncertainty intervals, subgroup coverage/error reporting, and historical scores remain immutable.
 
@@ -337,6 +337,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-03: VCB-059 channel-attribution slice added Migration 028 and append-only inbound/discovery touch persistence with source/query/ref metadata; conversion, cost, outcome labels, and funnel metrics remain blocked.
 - 2026-08-03: VCB-100 data-governance slice removed the committed public-profile PostgreSQL snapshot, made the synthetic seed the supported demo path, and isolated the optional public importer as `public_demo` with an explicit metrics-exclusion policy; source-owner/legal review remains blocked.
 - 2026-08-03: VCB-098 evidence-depth slice retained deep arXiv PDFs and added bounded page-coordinate observations with author-identity confidence; transcript/timestamp providers, licensing, and durable cursors remain blocked for podcast, YouTube, and generic/Tavily sources.
+- 2026-08-03: VCB-102 outcome-contract slice added Migration 029 and append-only domain-separated outcome records with provenance, horizon, censoring, and confidence; authoritative longitudinal collection and label governance remain blocked.
 
 ## First practical milestone
 

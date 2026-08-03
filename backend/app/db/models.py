@@ -214,6 +214,27 @@ class OpportunityChannelTouch(Base):
     )
 
 
+class OpportunityOutcome(Base):
+    """Append-only, outcome-specific observation for an opportunity."""
+
+    __tablename__ = "opportunity_outcomes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("opportunities.id", ondelete="RESTRICT"), nullable=False
+    )
+    outcome_domain: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    outcome_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    outcome_value: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    horizon_days: Mapped[int | None] = mapped_column(nullable=True)
+    censoring: Mapped[str] = mapped_column(String(32), nullable=False, default="observed")
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    provenance: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+
+
 # ---------------------------------------------------------------------------
 # Investment theses
 # ---------------------------------------------------------------------------

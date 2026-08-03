@@ -20,11 +20,14 @@ from app.db.models import (
     Opportunity,
     OpportunityChannelTouch,
     OpportunityFounder,
+    OpportunityOutcome,
     Organization,
     Person,
 )
 
 logger = structlog.get_logger(__name__)
+
+OUTCOME_DOMAINS = frozenset({"sourcing", "process", "decision", "longitudinal"})
 
 
 def organization_stable_id(name: str) -> str:
@@ -74,6 +77,45 @@ def record_channel_touch(
     )
     session.add(touch)
     return touch
+
+
+def record_opportunity_outcome(
+    session: AsyncSession,
+    opportunity_id: uuid.UUID,
+    *,
+    outcome_domain: str,
+    outcome_type: str,
+    source_type: str,
+    observed_at: datetime,
+    outcome_value: dict[str, object] | None = None,
+    source_ref: str | None = None,
+    horizon_days: int | None = None,
+    censoring: str = "observed",
+    confidence: float = 1.0,
+    provenance: dict[str, object] | None = None,
+) -> OpportunityOutcome:
+    """Append an outcome observation without treating decisions as merit truth."""
+    if outcome_domain not in OUTCOME_DOMAINS:
+        raise ValueError(f"unsupported outcome domain: {outcome_domain}")
+    if horizon_days is not None and horizon_days < 0:
+        raise ValueError("horizon_days must be non-negative")
+    if not 0.0 <= confidence <= 1.0:
+        raise ValueError("confidence must be between 0 and 1")
+    outcome = OpportunityOutcome(
+        opportunity_id=opportunity_id,
+        outcome_domain=outcome_domain,
+        outcome_type=outcome_type,
+        source_type=source_type,
+        source_ref=source_ref,
+        observed_at=observed_at,
+        horizon_days=horizon_days,
+        censoring=censoring,
+        confidence=confidence,
+        outcome_value=outcome_value or {},
+        provenance=provenance or {},
+    )
+    session.add(outcome)
+    return outcome
 
 
 async def get_or_create_opportunity(

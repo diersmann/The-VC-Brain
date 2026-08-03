@@ -512,6 +512,8 @@ Evidence-aware source depth is connector-specific. Deep arXiv collection retains
 
 The system records investor decisions, overrides, founder corrections, application conversion, and later observable milestones. Labels remain outcome-specific, such as `shipped_product_within_6_months`, rather than collapsing into "successful founder." Historical decisions are not treated as ground truth; they are analyzed for selection bias and missing counterfactuals.
 
+The persistence contract is append-only `opportunity_outcomes`: sourcing, process, decision, and longitudinal domains carry typed values, source provenance, observation time, horizon, censoring status, and confidence. Decision-domain records describe selection behavior and cannot be interpreted as universal founder merit; longitudinal labels require an authoritative source and explicit censoring policy before evaluation use.
+
 Two research questions remain explicit evaluation tracks rather than assumed capabilities. First, prediction intervals around inferred soft skills such as resilience and founder-market fit must be calibrated against observable behavior and should remain wide when evidence is indirect. Second, the predictive value of public footprints must be tested on held-out, time-separated outcome labels with subgroup analysis before any such signal becomes a merit feature; social visibility alone is never treated as founder quality.
 
 Score or model updates require:
