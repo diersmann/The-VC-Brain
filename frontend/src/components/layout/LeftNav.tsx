@@ -30,9 +30,8 @@ export function LeftNav() {
       </div>
       <div className="mt-auto p-4">
         <div className="rounded-lg bg-white/60 p-3.5 shadow-[0_10px_28px_rgba(70,91,120,.07)] backdrop-blur-xl">
-          <div className="mb-3 flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#dce5f1] text-xs font-bold text-accent">SW</div><div><div className="text-xs font-semibold">Sophie Werner</div><div className="text-[11px] text-muted">Investment Partner</div></div></div>
-          <div className="h-1.5 rounded-full bg-surface-3"><div className="h-full w-[72%] rounded-full bg-accent-muted" /></div>
-          <div className="numeric mt-2 text-[11px] text-muted">12 of 18 candidates reviewed</div>
+          <div className="flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#dce5f1] text-xs font-bold text-accent">FC</div><div><div className="text-xs font-semibold">Demo workspace</div><div className="text-[11px] text-muted">Analyst identity not connected</div></div></div>
+          <div className="mt-3 text-[10px] leading-4 text-muted-2">Review workload is unavailable until an authenticated session is connected.</div>
         </div>
       </div>
     </aside>

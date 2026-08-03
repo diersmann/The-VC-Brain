@@ -41,7 +41,7 @@ export function HomePage() {
   return (
     <div className="mx-auto max-w-[1220px] pb-10">
       <section className="mb-7 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-        <div><div className="eyebrow mb-2">Investment workspace</div><h1 className="page-title">Good morning, Sophie</h1><p className="page-description">Live sourcing and decision data from the FirstCheck24 database.</p></div>
+        <div><div className="eyebrow mb-2">Investment workspace</div><h1 className="page-title">Pipeline overview</h1><p className="page-description">Live sourcing and decision data from the FirstCheck24 database.</p></div>
         <button onClick={() => navigate("/thesis")} className="flex w-fit items-center gap-3 rounded-md bg-white/75 px-4 py-2.5 shadow-[0_8px_24px_rgba(70,91,120,.08)] backdrop-blur-xl"><span className={`h-2 w-2 rounded-full ${activeThesis ? "bg-success" : "bg-warn"}`} /><div className="text-left"><div className="text-xs font-bold">{thesisTitle}</div><div className="text-[10px] text-muted">{activeThesis ? `${activeThesis.version} · active` : thesisQuery.error ? "Request failed" : thesisQuery.isPending ? "Loading…" : "No active thesis"}</div></div><ArrowRight className="h-3.5 w-3.5 text-muted" /></button>
       </section>
 

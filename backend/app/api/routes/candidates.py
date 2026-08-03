@@ -916,7 +916,7 @@ async def record_candidate_decision(
         opportunity_id=opportunity.id,
         prior_state=prior_state,
         new_state=new_state,
-        actor="vc-ui:sophie-werner",
+        actor="vc-ui:unattributed",
         idempotency_key=idempotency_key,
         reason=reason,
         sla_metadata={

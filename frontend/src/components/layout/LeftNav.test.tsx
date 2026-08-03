@@ -34,5 +34,7 @@ describe("workspace navigation", () => {
     render(<MemoryRouter><LeftNav /></MemoryRouter>);
     expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Investigated" })).toHaveAttribute("href", "/investigated");
+    expect(screen.getByText("Demo workspace")).toBeInTheDocument();
+    expect(screen.getByText(/Review workload is unavailable/)).toBeInTheDocument();
   });
 });
