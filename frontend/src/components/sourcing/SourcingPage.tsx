@@ -4,7 +4,7 @@ import { Radar, Search, ShieldCheck, Sparkles, Target } from "lucide-react";
 import { triggerDiscovery, useCandidates } from "../../api/candidates";
 import { KeyMetricCard } from "../common/KeyMetricCard";
 import { isEvidenceReady, isThesisAligned, ratioPercent } from "../../data/portfolioMetrics";
-import { hasHighMultiAxisSignal } from "../../data/sourcingSignals";
+import { hasHighMultiAxisSignal, rankCandidates, rankingExplanation } from "../../data/sourcingSignals";
 import { DECISION_RUBRIC } from "../../data/rubric";
 import type { Candidate } from "../../types/candidate";
 import { CandidateCard } from "./CandidateCard";
@@ -15,7 +15,7 @@ import { OutreachComposer } from "./OutreachComposer";
 export function SourcingPage() {
   const navigate=useNavigate(); const {data,isLoading,error,refetch}=useCandidates();
   const records=data??[];
-  const candidates=records.filter(hasPublicName).sort((left,right)=>axisScore(right)-axisScore(left));
+  const candidates=rankCandidates(records.filter(hasPublicName));
   const unresolvedLeads=records.length-candidates.length;
   const [query,setQuery]=useState("technical founder, Berlin, AI infra, enterprise traction, no prior VC backing, top-tier accelerator.");
   const [discovering,setDiscovering]=useState(false);
@@ -42,11 +42,11 @@ export function SourcingPage() {
       {discoveryError && <div role="alert" className="mt-3 rounded-md border border-danger/20 bg-[#fbe8e9] px-3 py-2 text-xs font-semibold text-danger">Unable to queue discovery. Check the API service and retry.</div>}
     </section>
 
-    <div className="mb-4"><h2 className="section-title">Ranked candidates</h2><p className="supporting-text"><span className="numeric">{candidates.length}</span> verified profiles · <span className="numeric">{unresolvedLeads}</span> handle-only leads excluded pending identity verification</p></div>
+    <div className="mb-4"><h2 className="section-title">Ranked candidates</h2><p className="supporting-text"><span className="numeric">{candidates.length}</span> verified profiles · <span className="numeric">{unresolvedLeads}</span> handle-only leads excluded pending identity verification</p><p className="mt-1 text-[10px] text-muted-2">Complete profiles: lowest independent axis first. Incomplete profiles remain discovery leads and are not assigned a zero merit score.</p></div>
     {isLoading && <div className="py-16 text-center text-sm text-muted">Building evidence-backed ranking…</div>}
     {error && !isLoading && <div className="mb-3 rounded-md bg-[#fff8ed] px-4 py-2.5 text-xs text-[#9a6a2d]">The live candidate API is unavailable. No fallback data is being shown.</div>}
     {!isLoading&&!error&&candidates.length===0&&<div className="panel py-16 text-center"><div className="text-sm font-bold">No candidates with a public real name yet</div><p className="mt-2 text-xs text-muted">Run GitHub discovery above. Profiles without a published name are intentionally hidden.</p></div>}
-    {!isLoading && <div className="grid gap-4 xl:grid-cols-2">{candidates.map(c=><CandidateCard key={c.id} candidate={c} onViewFounder={()=>navigate(`/founders/${c.id}`)} onOutreach={()=>setOutreachCandidate(c)} />)}</div>}
+    {!isLoading && <div className="grid gap-4 xl:grid-cols-2">{candidates.map(c=><div key={c.id}><div className="mb-1 text-[10px] font-semibold text-muted-2">{rankingExplanation(c)}</div><CandidateCard candidate={c} onViewFounder={()=>navigate(`/founders/${c.id}`)} onOutreach={()=>setOutreachCandidate(c)} /></div>)}</div>}
     {outreachCandidate && <OutreachComposer key={outreachCandidate.id} candidate={outreachCandidate} onClose={()=>setOutreachCandidate(null)} />}
   </div>;
 }
@@ -55,14 +55,4 @@ function hasPublicName(candidate: Candidate): boolean {
   if (!candidate.display_name) return false;
   const handles = Object.values(candidate.handles ?? {}).map((value) => value.toLowerCase());
   return !handles.includes(candidate.display_name.toLowerCase());
-}
-
-function axisScore(candidate: Candidate): number {
-  const values = [
-    candidate.scores?.founder ?? candidate.scores?.raw?.founder,
-    candidate.scores?.market ?? candidate.scores?.raw?.market,
-    candidate.scores?.idea_market ?? candidate.scores?.raw?.idea_market,
-  ].filter((value): value is number => typeof value === "number");
-  if (values.length) return values.reduce((sum,value)=>sum+value,0)/values.length;
-  return candidate.scores?.discovery_signal ?? candidate.scores?.raw?.composite ?? 0;
 }
