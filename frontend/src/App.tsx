@@ -11,6 +11,7 @@ const HomePage = lazy(() => import("./pages/HomePage").then((module) => ({ defau
 const DecisionQueuePage = lazy(() => import("./pages/DecisionQueuePage").then((module) => ({ default: module.DecisionQueuePage })));
 const DecisionDetailPage = lazy(() => import("./pages/DecisionDetailPage").then((module) => ({ default: module.DecisionDetailPage })));
 const InboundInboxPage = lazy(() => import("./pages/InboundInboxPage").then((module) => ({ default: module.InboundInboxPage })));
+const OpportunityInboxPage = lazy(() => import("./pages/OpportunityInboxPage").then((module) => ({ default: module.OpportunityInboxPage })));
 const InvestigatedPage = lazy(() => import("./pages/InvestigatedPage").then((module) => ({ default: module.InvestigatedPage })));
 const PitchSubmissionPage = lazy(() => import("./pages/PitchSubmissionPage").then((module) => ({ default: module.PitchSubmissionPage })));
 
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="sourcing" element={<SourcingPage />} />
             <Route path="investigated" element={<InvestigatedPage />} />
             <Route path="inbound" element={<InboundInboxPage />} />
+            <Route path="inbox" element={<OpportunityInboxPage />} />
             <Route path="decisions" element={<DecisionQueuePage />} />
             <Route path="decisions/:founderId" element={<DecisionDetailPage />} />
             <Route path="founders/:founderId" element={<FounderProfilePage />} />

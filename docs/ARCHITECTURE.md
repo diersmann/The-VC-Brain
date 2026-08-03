@@ -96,6 +96,8 @@ The investor-facing application provides:
 - A unified opportunity inbox showing stage, deadline, owner, and SLA risk
 - Human approval controls for outreach and investment decisions
 
+The current `/inbox` view composes these persisted candidate and SLA fields into saved URL views and shows derived next actions only as workflow guidance. It must label missing ownership, ancestry, or blockers as unavailable until authenticated assignment and opportunity-level contracts exist.
+
 ### 2. Backend API
 
 The backend coordinates the application:
