@@ -132,6 +132,10 @@ class Opportunity(TimestampMixin, Base):
             "'memo_ready','hold','approved','closed','screening','triage','diligence')",
             name="ck_opportunities_lifecycle_state",
         ),
+        CheckConstraint(
+            "sla_attainment IN ('pending','met','breached')",
+            name="ck_opportunities_sla_attainment",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -139,6 +143,13 @@ class Opportunity(TimestampMixin, Base):
     source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="inbound")
     lifecycle_state: Mapped[str] = mapped_column(String(32), nullable=False, default="received")
     thesis_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stage_deadlines: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    sla_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    sla_pause_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sla_attainment: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    sla_decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # relationships
     founders: Mapped[list["Person"]] = relationship(

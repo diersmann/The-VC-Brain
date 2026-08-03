@@ -6,7 +6,7 @@ The VC Brain discovers promising founders, maintains evidence-backed profiles, a
 
 ## Implementation status
 
-This document is the target architecture and contract, not a claim that every surface is shipped. The current repository has a working local Docker stack, provenance-aware source collection, inbound PDF submission, deterministic scoring foundations, and tested sourcing/inbound/decision UI states. Authentication and tenant scoping, the complete triage-to-decision lifecycle, real SLA clocks, production observability, and several connector depth requirements remain partial or proposed. The durable implementation status is tracked in [`IMPROVEMENT_BACKLOG.md`](../IMPROVEMENT_BACKLOG.md).
+This document is the target architecture and contract, not a claim that every surface is shipped. The current repository has a working local Docker stack, provenance-aware source collection, inbound PDF submission, deterministic scoring foundations, a persisted inbound decision clock, and tested sourcing/inbound/decision UI states. Authentication and tenant scoping, the complete triage-to-decision lifecycle, authenticated SLA ownership/alerting/metrics, production observability, and several connector depth requirements remain partial or proposed. The durable implementation status is tracked in [`IMPROVEMENT_BACKLOG.md`](../IMPROVEMENT_BACKLOG.md).
 
 ## Evaluation Criteria Coverage
 

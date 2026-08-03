@@ -44,6 +44,22 @@ export type AssessmentRating = "Bullish" | "Neutral" | "Bearish";
 export type AssessmentTrend = "Improving" | "Stable" | "Declining";
 export type LifecycleStage = "discovered" | "interesting" | "investigating" | "contacted" | "received" | "memo_ready" | "hold" | "approved" | "closed" | "screening" | "triage" | "diligence";
 
+export type CandidateSLA = {
+  received_at: string | null;
+  decision_due_at: string | null;
+  stage_deadlines: Record<string, string>;
+  owner: string | null;
+  pause_reason: string | null;
+  stage: string | null;
+  status: "not_started" | "on_track" | "at_risk" | "breached" | "paused" | "met";
+  attainment: "pending" | "met" | "breached";
+  remaining_seconds: number | null;
+  stage_remaining_seconds: number | null;
+  elapsed_seconds: number | null;
+  alert: boolean;
+  alert_level: "none" | "warning" | "breach" | "paused";
+};
+
 export interface Candidate {
   id: string;
   stable_id: string;
@@ -60,6 +76,7 @@ export interface Candidate {
   latest_score_at: string | null;
   created_at: string | null;
   lifecycle_stage?: string | null;
+  sla?: CandidateSLA | null;
 }
 
 export interface CandidateObservation {

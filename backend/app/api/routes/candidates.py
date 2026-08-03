@@ -48,6 +48,7 @@ from app.domain_status import (
     normalize_lifecycle_stage,
 )
 from app.lifecycle import is_valid_transition
+from app.sla import evaluate_sla, finalize_sla
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
@@ -107,6 +108,24 @@ class CandidateThesisMatch(BaseModel):
     criteria: dict[str, dict[str, object]] = Field(default_factory=dict)
 
 
+class CandidateSLAResponse(BaseModel):
+    """Persisted decision clock plus its current derived risk state."""
+
+    received_at: datetime | None = None
+    decision_due_at: datetime | None = None
+    stage_deadlines: dict[str, datetime] = Field(default_factory=dict)
+    owner: str | None = None
+    pause_reason: str | None = None
+    stage: str | None = None
+    status: Literal["not_started", "on_track", "at_risk", "breached", "paused", "met"]
+    attainment: Literal["pending", "met", "breached"]
+    remaining_seconds: int | None = None
+    stage_remaining_seconds: int | None = None
+    elapsed_seconds: int | None = None
+    alert: bool = False
+    alert_level: Literal["none", "warning", "breach", "paused"]
+
+
 class CandidateResponse(BaseModel):
     """Public DTO for a sourcing candidate (a Person with optional scores)."""
 
@@ -127,6 +146,7 @@ class CandidateResponse(BaseModel):
     latest_score_at: datetime | None = None
     created_at: datetime | None = None
     lifecycle_stage: LifecycleStage | None = None
+    sla: CandidateSLAResponse | None = None
 
     @field_validator("lifecycle_stage", mode="before")
     @classmethod
@@ -297,6 +317,7 @@ def map_person_to_candidate(
     opportunity_score: ScoreSnapshot | None = None,
     profile: CandidateProfileSummary | None = None,
     lifecycle_stage: str | None = None,
+    sla: CandidateSLAResponse | None = None,
 ) -> CandidateResponse:
     """Map a Person ORM row (with optional ScoreSnapshot) to a CandidateResponse.
 
@@ -406,6 +427,7 @@ def map_person_to_candidate(
         latest_score_at=latest_score_at,
         created_at=person.created_at,
         lifecycle_stage=lifecycle_stage,
+        sla=sla,
     )
 
 
@@ -539,6 +561,12 @@ def _latest_opportunity_rows(person_ids: list[uuid.UUID] | None = None) -> Any:
             OpportunityFounder.person_id.label("person_id"),
             Opportunity.source_kind.label("source_kind"),
             Opportunity.lifecycle_state.label("lifecycle_state"),
+            Opportunity.received_at.label("received_at"),
+            Opportunity.decision_due_at.label("decision_due_at"),
+            Opportunity.stage_deadlines.label("stage_deadlines"),
+            Opportunity.sla_owner.label("sla_owner"),
+            Opportunity.sla_pause_reason.label("sla_pause_reason"),
+            Opportunity.sla_attainment.label("sla_attainment"),
             row_number,
         )
         .select_from(OpportunityFounder)
@@ -585,6 +613,57 @@ async def _fetch_lifecycle_stages(
         .where(latest_opp.c.row_number == 1)
     )
     return {row.person_id: row.lifecycle_state for row in result}
+
+
+def _sla_response(opportunity: Opportunity) -> CandidateSLAResponse:
+    """Map an opportunity's persisted clock fields to the API contract."""
+    return CandidateSLAResponse.model_validate(
+        evaluate_sla(
+            lifecycle_state=opportunity.lifecycle_state,
+            received_at=opportunity.received_at,
+            decision_due_at=opportunity.decision_due_at,
+            stage_deadlines=opportunity.stage_deadlines,
+            sla_owner=opportunity.sla_owner,
+            sla_pause_reason=opportunity.sla_pause_reason,
+            sla_attainment=opportunity.sla_attainment,
+        )
+    )
+
+
+async def _fetch_sla_statuses(
+    session: AsyncSession,
+    person_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, CandidateSLAResponse]:
+    """Return current SLA status for each person's latest opportunity."""
+    if not person_ids:
+        return {}
+    latest_opp = _latest_opportunity_rows(person_ids).subquery()
+    result = await session.execute(
+        select(
+            latest_opp.c.person_id,
+            latest_opp.c.lifecycle_state,
+            latest_opp.c.received_at,
+            latest_opp.c.decision_due_at,
+            latest_opp.c.stage_deadlines,
+            latest_opp.c.sla_owner,
+            latest_opp.c.sla_pause_reason,
+            latest_opp.c.sla_attainment,
+        ).where(latest_opp.c.row_number == 1)
+    )
+    statuses: dict[uuid.UUID, CandidateSLAResponse] = {}
+    for row in result:
+        statuses[row.person_id] = CandidateSLAResponse.model_validate(
+            evaluate_sla(
+                lifecycle_state=row.lifecycle_state,
+                received_at=row.received_at,
+                decision_due_at=row.decision_due_at,
+                stage_deadlines=row.stage_deadlines,
+                sla_owner=row.sla_owner,
+                sla_pause_reason=row.sla_pause_reason,
+                sla_attainment=row.sla_attainment,
+            )
+        )
+    return statuses
 
 
 # ---------------------------------------------------------------------------
@@ -644,6 +723,7 @@ async def list_candidates(
     profiles = await _fetch_candidate_profiles(session, person_ids)
     lifecycle_stages = await _fetch_lifecycle_stages(session, person_ids)
     opportunity_scores = await _fetch_opportunity_scores(session, person_ids)
+    sla_statuses = await _fetch_sla_statuses(session, person_ids)
 
     return [
         map_person_to_candidate(
@@ -653,6 +733,7 @@ async def list_candidates(
             opportunity_score=opportunity_scores.get(p.id),
             profile=profiles.get(p.id),
             lifecycle_stage=lifecycle_stages.get(p.id),
+            sla=sla_statuses.get(p.id),
         )
         for p in persons
     ]
@@ -690,6 +771,8 @@ async def get_candidate(
         .limit(1)
     )
     opportunity = opportunity_result.scalar_one_or_none()
+    if opportunity is not None:
+        candidate = candidate.model_copy(update={"sla": _sla_response(opportunity)})
 
     observation_result = await session.execute(
         select(Observation, SourceSnapshot)
@@ -912,6 +995,8 @@ async def record_candidate_decision(
     if memo is None:
         raise HTTPException(status_code=409, detail="A validated memo is required before deciding")
 
+    decision_at = datetime.now(UTC)
+    sla = finalize_sla(opportunity, decision_at)
     event = DecisionEvent(
         opportunity_id=opportunity.id,
         prior_state=prior_state,
@@ -926,6 +1011,9 @@ async def record_candidate_decision(
             "claim_ids": memo.claim_ids,
             "assessment_ids": memo.assessment_ids,
             "thesis_version": memo.thesis_version,
+            "sla_attainment": sla["attainment"],
+            "sla_status": sla["status"],
+            "decision_at": decision_at.isoformat(),
         },
     )
     opportunity.lifecycle_state = new_state

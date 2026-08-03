@@ -62,12 +62,15 @@ async def create_inbound_opportunity(
     thesis_version: str | None = None,
 ) -> Opportunity:
     """Create a new inbound opportunity for a person (e.g. after mock reply)."""
+    from app.sla import initialize_sla
+
     opportunity = Opportunity(
         company_name=company_name or person.display_name or person.stable_id,
         source_kind="inbound",
         lifecycle_state="received",
         thesis_version=thesis_version,
     )
+    initialize_sla(opportunity)
     session.add(opportunity)
     await session.flush()
     session.add(OpportunityFounder(opportunity_id=opportunity.id, person_id=person.id))
@@ -107,6 +110,11 @@ async def transition_opportunity(
     if not is_valid_transition(prior_state, new_state):
         msg = f"Invalid lifecycle transition: {prior_state} -> {new_state}"
         raise ValueError(msg)
+
+    if new_state == "received":
+        from app.sla import initialize_sla
+
+        initialize_sla(opportunity)
 
     if prior_state == new_state:
         # Idempotent: no transition needed, but return a no-op event marker

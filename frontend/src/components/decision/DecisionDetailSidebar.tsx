@@ -28,6 +28,13 @@ export function DecisionDetailSidebar({ profile, candidate, meta }: { profile: F
           <SmallMetric label="Coverage" value={`${profile.coverageScore == null ? "Not scored" : `${profile.coverageScore}%`}`} />
         </div>
 
+        <div className={`mt-4 rounded-md p-3 ${meta.slaAlert ? "bg-[#fff1df]" : "bg-surface-2"}`} role="status" aria-label={`Decision SLA status: ${meta.slaStatus}`}>
+          <div className="data-label">Decision clock</div>
+          <div className="mt-2 flex items-center justify-between gap-3 text-xs"><span className="text-muted">Status</span><span className={`font-bold ${meta.slaAlert ? "text-danger" : "text-ink"}`}>{formatSlaStatus(meta.slaStatus)}</span></div>
+          <div className="mt-1.5 flex items-center justify-between gap-3 text-xs"><span className="text-muted">Stage</span><span className="font-bold">{meta.slaStage ?? "Not started"}</span></div>
+          <div className="mt-1.5 flex items-center justify-between gap-3 text-xs"><span className="text-muted">Owner</span><span className="font-bold">{meta.slaOwner}</span></div>
+        </div>
+
         <div className="mt-4 flex flex-wrap gap-1.5">
           {profile.tags.slice(0, 5).map((tag) => <span key={tag} className="rounded bg-surface-2 px-2 py-1 text-[10px] font-semibold text-muted">{tag}</span>)}
         </div>
@@ -58,4 +65,8 @@ function SidebarRow({ icon: Icon, value }: { icon: React.ElementType; value: str
 
 function SmallMetric({ label, value }: { label: string; value: string }) {
   return <div className="rounded-md bg-surface-2 p-3"><div className="numeric text-lg font-bold leading-none">{value}</div><div className="mt-1 text-[10px] text-muted">{label}</div></div>;
+}
+
+function formatSlaStatus(status: DecisionMeta["slaStatus"]): string {
+  return status.replaceAll("_", " ");
 }
