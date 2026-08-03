@@ -49,6 +49,7 @@ from app.domain_status import (
     normalize_lifecycle_stage,
 )
 from app.lifecycle import is_valid_transition
+from app.privacy import external_ai_use_decision, redact_direct_identifiers
 from app.sla import evaluate_sla, finalize_sla
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
@@ -1150,15 +1151,23 @@ async def create_outreach_draft(
         ),
     ]
     settings = get_settings()
+    ai_policy = external_ai_use_decision(person, "outreach")
+    external_api_key = settings.llm_api_key if ai_policy.allowed else ""
     draft = await draft_outreach_email(
         founder_name=person.display_name or "Founder",
         company=company,
         email_type=payload.email_type,
         brief=payload.brief.strip(),
-        evidence_summary="\n".join(item for item in evidence_parts if item),
-        api_key=settings.llm_api_key,
+        evidence_summary=redact_direct_identifiers(
+            "\n".join(item for item in evidence_parts if item)
+        ),
+        api_key=external_api_key,
         model=settings.llm_model,
     )
+    if settings.llm_api_key and not ai_policy.allowed:
+        draft.warning = (
+            "External AI drafting was blocked by privacy policy; a local template was used."
+        )
     return OutreachDraftResponse(
         **draft.model_dump(),
         recipient_email=person.email,

@@ -517,6 +517,14 @@ Connector value is evaluated by information gain, claim verification rate, fresh
 - Audit access, automated outreach drafts, score changes, memo generation, and decisions.
 - Do not infer protected characteristics or use them as founder-merit features.
 
+External AI use is governed by the versioned `privacy-ai-v1` policy. Each
+person records legal basis, notice version, per-purpose grants, provider-policy
+version, retention days, and residency. Pending, unknown, opted-out, or
+suppressed consent states cannot send data to an external AI provider. Before
+an allowed call, direct email and phone identifiers are redacted; when policy
+metadata is incomplete, scoring and research are blocked and memo/outreach
+paths use local fallbacks without transmitting the evidence.
+
 ## Initial Deployment
 
 Keep logical boundaries while minimizing operational complexity:

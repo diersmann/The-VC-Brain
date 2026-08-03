@@ -15,6 +15,7 @@ from app.db.models import (
     Person,
     ScoreSnapshot,
 )
+from app.privacy import external_ai_use_decision
 
 logger = structlog.get_logger(__name__)
 
@@ -51,6 +52,19 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
         if not observations:
             logger.warning("score_candidate_no_observations", person_id=person_id)
             return {"error": "no_observations"}
+
+        ai_policy = external_ai_use_decision(person, "scoring")
+        if settings.llm_api_key and not ai_policy.allowed:
+            logger.warning(
+                "score_candidate_external_ai_blocked",
+                person_id=person_id,
+                reason=ai_policy.reason,
+            )
+            return {
+                "error": "external_ai_blocked",
+                "purpose": ai_policy.purpose,
+                "reason": ai_policy.reason,
+            }
 
         # Build evidence package
         evidence_text, obs_ids = build_evidence_text(observations, person)

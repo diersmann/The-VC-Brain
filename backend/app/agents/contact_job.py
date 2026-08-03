@@ -25,6 +25,7 @@ from app.db.models import (
     SourceSnapshot,
 )
 from app.outreach_delivery import contact_block_reason
+from app.privacy import external_ai_use_decision, redact_direct_identifiers
 from app.storage import put_snapshot
 
 logger = structlog.get_logger(__name__)
@@ -102,13 +103,14 @@ async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str,
 
         # Generate outreach email (uses existing agent with template fallback)
         gh_handle = person.handles.get("github", "N/A") if person.handles else "N/A"
+        ai_policy = external_ai_use_decision(person, "outreach")
         draft = await draft_outreach_email(
             founder_name=person.display_name or person.stable_id,
             company=opportunity.company_name,
             email_type="founder_intro",
             brief="We discovered your work and would love to learn more.",
-            evidence_summary=f"GitHub: {gh_handle}",
-            api_key=settings.llm_api_key,
+            evidence_summary=redact_direct_identifiers(f"Public activity signal: {gh_handle}"),
+            api_key=settings.llm_api_key if ai_policy.allowed else "",
             model=settings.llm_model,
         )
 

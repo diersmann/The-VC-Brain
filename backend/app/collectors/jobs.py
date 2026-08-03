@@ -70,6 +70,7 @@ from app.db.models import (
     SourceSnapshot,
 )
 from app.job_ledger import update_job
+from app.privacy import external_ai_use_decision
 from app.storage import put_snapshot
 
 logger = structlog.get_logger(__name__)
@@ -1066,6 +1067,14 @@ async def research_candidate_job(
         person = await session.get(Person, uuid.UUID(person_id))
         if person is None or not person.canonical:
             return {"error": "person_not_found", "person_id": person_id}
+        ai_policy = external_ai_use_decision(person, "research")
+        if not ai_policy.allowed:
+            return {
+                "error": "external_ai_blocked",
+                "purpose": ai_policy.purpose,
+                "reason": ai_policy.reason,
+                "person_id": person_id,
+            }
 
         try:
             requested_opportunity_id = uuid.UUID(opportunity_id)

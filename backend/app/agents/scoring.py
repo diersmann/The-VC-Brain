@@ -23,6 +23,8 @@ import structlog
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
+from app.privacy import redact_direct_identifiers
+
 logger = structlog.get_logger(__name__)
 
 
@@ -476,19 +478,14 @@ def build_evidence_text(
         obs_ids.append(obs_id)
         by_source.setdefault(source, []).append((obs_id, pred, val))
 
-    lines.append(f"Person: {person.display_name or person.stable_id}")
-    handles = getattr(person, "handles", None) or {}
-    if handles:
-        lines.append(f"Handles: {json.dumps(handles)}")
-    if getattr(person, "email", None):
-        lines.append(f"Email: {person.email}")
+    lines.append(f"Person: {redact_direct_identifiers(person.display_name or person.stable_id)}")
     lines.append("")
 
     for source, items in by_source.items():
         lines.append(f"--- {source} ---")
         for obs_id, pred, val in items:
             # Truncate long values
-            display = val[:500] if len(val) > 500 else val
+            display = redact_direct_identifiers(val[:500] if len(val) > 500 else val)
             lines.append(f"[{obs_id}] {pred}: {display}")
         lines.append("")
 

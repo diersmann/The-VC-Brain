@@ -26,6 +26,7 @@ from app.db.models import (
     ScoreSnapshot,
 )
 from app.decision_proposal import build_decision_proposal
+from app.privacy import external_ai_use_decision, redact_direct_identifiers
 
 logger = structlog.get_logger(__name__)
 
@@ -156,7 +157,7 @@ async def generate_memo_job(
         # Preserve first occurrence while keeping the input deterministic.
         observations = list({observation.id: observation for observation in observations}.values())
         evidence_text, obs_ids = build_evidence_text(observations, person)
-        evidence_text = _claim_context(claims) + "\n\n" + evidence_text
+        evidence_text = redact_direct_identifiers(_claim_context(claims) + "\n\n" + evidence_text)
 
         # Fetch the latest agent scorecard
         score_result = await session.execute(
@@ -265,13 +266,21 @@ async def generate_memo_job(
 
         # Generate memo
         semaphore = asyncio.Semaphore(settings.agent_concurrency)
+        memo_api_key = settings.llm_api_key
+        if memo_api_key and not external_ai_use_decision(person, "memo").allowed:
+            logger.warning(
+                "memo_external_ai_blocked",
+                person_id=person_id,
+                opportunity_id=opportunity_id,
+            )
+            memo_api_key = ""
         try:
             memo = await generate_memo(
                 evidence_text=evidence_text,
                 scorecard_summary=scorecard_summary,
                 thesis_summary=thesis_summary,
                 person_name=person.display_name or person.stable_id,
-                api_key=settings.llm_api_key,
+                api_key=memo_api_key,
                 model=settings.agent_model,
                 semaphore=semaphore,
                 allowed_claim_ids=claim_ids,
