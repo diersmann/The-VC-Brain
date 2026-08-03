@@ -7,6 +7,7 @@ Deep: maker's other posts + comments.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 import structlog
@@ -60,9 +61,12 @@ class ProductHuntConnector(Connector):
             query: Search topic.
             page: Page number (1-indexed, 20 results per page).
         """
+        if page < 1:
+            raise ValueError("page must be at least 1")
+
         graphql_query = """
-        query SearchPosts($query: String!, $first: Int!, $after: String) {
-            posts(order: VOTES, first: $first, after: $after) {
+        query SearchPosts($topic: String!, $first: Int!, $after: String) {
+            posts(topic: $topic, order: VOTES, first: $first, after: $after) {
                 edges {
                     node {
                         id
@@ -77,24 +81,40 @@ class ProductHuntConnector(Connector):
                         }
                     }
                 }
+                pageInfo {
+                    endCursor
+                    hasNextPage
+                }
             }
         }
         """
-        # For MVP, we use page as a simple offset via cursor
-        after = str((page - 1) * _DEFAULT_PER_PAGE) if page > 1 else None
-        payload = {
-            "query": graphql_query,
-            "variables": {"query": query, "first": _DEFAULT_PER_PAGE, "after": after},
-        }
-
+        after: str | None = None
+        data: Any = {}
         async with await self._client() as client:
-            resp = await client.post(_API_BASE, json=payload)
+            for requested_page in range(1, page + 1):
+                payload = {
+                    "query": graphql_query,
+                    "variables": {"topic": query, "first": _DEFAULT_PER_PAGE, "after": after},
+                }
+                resp = await client.post(_API_BASE, json=payload)
+                if resp.status_code != 200:
+                    logger.error("producthunt_search_failed", status=resp.status_code)
+                    return []
+                data = resp.json()
+                if data.get("errors"):
+                    logger.error("producthunt_search_graphql_failed", errors=data["errors"])
+                    return []
+                if requested_page == page:
+                    break
+                page_info = data.get("data", {}).get("posts", {}).get("pageInfo", {})
+                if not page_info.get("hasNextPage") or not page_info.get("endCursor"):
+                    logger.info(
+                        "producthunt_search_page_unavailable",
+                        requested_page=requested_page + 1,
+                    )
+                    return []
+                after = page_info["endCursor"]
 
-        if resp.status_code != 200:
-            logger.error("producthunt_search_failed", status=resp.status_code)
-            return []
-
-        data = resp.json()
         seeds: list[Seed] = []
         posts = data.get("data", {}).get("posts", {}).get("edges", [])
         for edge in posts:

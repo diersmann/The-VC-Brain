@@ -123,7 +123,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [ ] **VCB-046 - Classify entities before founder scoring.** Observed: hackathon projects, YouTube channels, Tavily URLs, and other seeds are all passed through person creation. Done when Person, Organization, Project, Channel, and Event are classified with confidence and only verified people enter founder ranking.
 
-- [ ] **VCB-047 - Fix Product Hunt query and cursor semantics.** Observed: the GraphQL query variable is unused and pagination fabricates an offset instead of provider cursor. Done when thesis/query inputs affect results, pageInfo cursors are used, and multi-page tests show no skip/duplication.
+- [blocked] **VCB-047 - Fix Product Hunt query and cursor semantics.** Observed: the GraphQL query variable is unused and pagination fabricates an offset instead of provider cursor. **Partial completion:** the discovery query now applies the input as the documented Product Hunt topic filter, follows `pageInfo.endCursor`, returns the requested page without fabricated offsets, fails fast for invalid pages, and has mocked multi-page no-skip coverage. **Blocked:** the shared connector/job contract still accepts only a page number, so reusable cursor state and provider-specific continuation metadata require a broader discovery-event contract.
 
 - [blocked] **VCB-048 - Remove citation count as an arXiv eligibility gate.** Observed: arXiv discovery dropped authors below the configured citation minimum. **Partial completion:** all authors in the relevant query results are now discoverable regardless of citation count; counts remain explicit `context_only` seed metadata and downstream collection already persists aggregate citation observations. **Blocked:** cold-start coverage/advancement metrics and a persisted per-discovery citation observation still require the measurement and durable discovery-event model tracked by VCB-051/VCB-059.
 
@@ -312,6 +312,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-03: VCB-062 profile-insights slice rendered the existing score history, evidence timeline, coverage/gaps, affiliations, and relationship semantics with focused component coverage; correction history and richer provenance remain blocked on API/auth contracts.
 - 2026-08-03: VCB-061 memo-provenance slice preserved observation/claim IDs in the candidate API and added accessible memo disclosures for available source coordinates, timestamps, Trust intervals, and explanations; richer evidence graph metadata remains blocked on the expanded contract.
 - 2026-08-03: VCB-067 candidate-list slice fixed latest-opportunity filter semantics, deterministic person tie ordering, canonical stage validation, and shared-session query safety; cursor pagination and the list envelope remain blocked scope.
+- 2026-08-03: VCB-047 Product Hunt slice applied the topic filter, followed GraphQL `pageInfo.endCursor`, and added two-page no-skip/no-duplication tests; reusable cursor state remains blocked on the shared discovery contract.
 
 ## First practical milestone
 
