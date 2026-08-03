@@ -393,6 +393,15 @@ The decision proposal is a separate structured artifact:
 }
 ```
 
+The persisted `DecisionProposal` artifact also stores the proposal status,
+readiness status and blockers, exact assessment foreign keys, memo/model and
+thesis versions, and any human override reason. Check amount, ownership target,
+and conviction remain explicitly nullable until an investor supplies them; the
+system must not infer capital intent from scores. Proposal risks and open
+conditions are copied only from persisted assessment unknowns or missing
+artifact requirements. A proposal is created with the memo run and updated in
+the same transaction as a human decision override.
+
 A human investor must approve, decline, or escalate the proposal. The system records overrides and reasons but does not autonomously deploy capital or contact founders without configured approval.
 
 ## Investor Experience

@@ -61,4 +61,36 @@ describe("createDecisionMeta SLA display", () => {
     expect(meta.slaStatus).toBe("not_started");
     expect(meta.slaAlert).toBe(false);
   });
+
+  it("uses the persisted proposal for recommendation, risks, and conditions", () => {
+    const detail = candidate();
+    detail.decision_proposal = {
+      id: "proposal-1",
+      action: "investigate",
+      status: "draft",
+      check_amount: null,
+      ownership_target: null,
+      conviction: "medium",
+      founder_assessment_id: "assessment-founder",
+      market_assessment_id: "assessment-market",
+      idea_market_assessment_id: "assessment-idea-market",
+      top_evidence: ["claim-1"],
+      top_risks: ["Market size needs primary validation"],
+      open_conditions: ["Resolve: Market size needs primary validation"],
+      readiness_blockers: [],
+      readiness_status: "ready",
+      thesis_version: "thesis-v3",
+      rubric_versions: ["decision-proposal-v1"],
+      memo_model_version: "gpt-test",
+      override_reason: null,
+      created_at: "2026-08-03T10:00:00Z",
+    };
+
+    const meta = createDecisionMeta(buildFounderProfile(detail), detail);
+
+    expect(meta.recommendation).toBe("Investigate");
+    expect(meta.risks).toEqual(["Market size needs primary validation"]);
+    expect(meta.conditions).toEqual(["Resolve: Market size needs primary validation"]);
+    expect(meta.conviction).toBe("medium");
+  });
 });

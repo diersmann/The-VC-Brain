@@ -17,7 +17,8 @@ test("fetches the versioned lifecycle contract used by the workflow diagram", as
       exit_requirements: ["founder score"],
       actors: ["pipeline:auto"],
       transitions: ["screening"],
-      timestamp_source: "DecisionEvent.created_at",
+      timestamp_source:
+        "Opportunity.created_at for initial entry; DecisionEvent.created_at for transitions",
     }],
   };
   const fetchMock = vi.fn().mockResolvedValue(

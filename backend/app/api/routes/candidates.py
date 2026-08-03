@@ -25,6 +25,7 @@ from app.db.models import (
     CandidateFeedback,
     Claim,
     DecisionEvent,
+    DecisionProposal,
     InvestmentMemo,
     Observation,
     Opportunity,
@@ -213,6 +214,32 @@ class CandidateScoreResponse(BaseModel):
     created_at: datetime | None = None
 
 
+class CandidateDecisionProposalResponse(BaseModel):
+    """Structured proposal and readiness snapshot for human review."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    action: Literal["invest", "hold", "investigate", "decline"]
+    status: Literal["draft", "approved", "overridden"]
+    check_amount: float | None = None
+    ownership_target: float | None = None
+    conviction: Literal["low", "medium", "high"] | None = None
+    founder_assessment_id: uuid.UUID | None = None
+    market_assessment_id: uuid.UUID | None = None
+    idea_market_assessment_id: uuid.UUID | None = None
+    top_evidence: list[str] = Field(default_factory=list)
+    top_risks: list[str] = Field(default_factory=list)
+    open_conditions: list[str] = Field(default_factory=list)
+    readiness_blockers: list[str] = Field(default_factory=list)
+    readiness_status: Literal["ready", "blocked"]
+    thesis_version: str | None = None
+    rubric_versions: list[str] = Field(default_factory=list)
+    memo_model_version: str | None = None
+    override_reason: str | None = None
+    created_at: datetime | None = None
+
+
 class CandidateRelationshipResponse(BaseModel):
     relationship_type: str
     person_id: uuid.UUID
@@ -237,6 +264,7 @@ class CandidateOpportunityResponse(BaseModel):
 
 class CandidateDetailResponse(CandidateResponse):
     opportunity: CandidateOpportunityResponse | None = None
+    decision_proposal: CandidateDecisionProposalResponse | None = None
     observations: list[CandidateObservationResponse]
     claims: list[CandidateClaimResponse]
     assessments: list[CandidateAssessmentResponse]
@@ -771,8 +799,18 @@ async def get_candidate(
         .limit(1)
     )
     opportunity = opportunity_result.scalar_one_or_none()
+    decision_proposal: CandidateDecisionProposalResponse | None = None
     if opportunity is not None:
         candidate = candidate.model_copy(update={"sla": _sla_response(opportunity)})
+        proposal_result = await session.execute(
+            select(DecisionProposal)
+            .where(DecisionProposal.opportunity_id == opportunity.id)
+            .order_by(DecisionProposal.created_at.desc())
+            .limit(1)
+        )
+        proposal = proposal_result.scalar_one_or_none()
+        if proposal is not None:
+            decision_proposal = CandidateDecisionProposalResponse.model_validate(proposal)
 
     observation_result = await session.execute(
         select(Observation, SourceSnapshot)
@@ -900,6 +938,7 @@ async def get_candidate(
             if opportunity is not None
             else None
         ),
+        decision_proposal=decision_proposal,
         observations=observations,
         claims=claims,
         assessments=assessments,
@@ -995,6 +1034,14 @@ async def record_candidate_decision(
     if memo is None:
         raise HTTPException(status_code=409, detail="A validated memo is required before deciding")
 
+    proposal_result = await session.execute(
+        select(DecisionProposal)
+        .where(DecisionProposal.opportunity_id == opportunity.id)
+        .order_by(DecisionProposal.created_at.desc())
+        .limit(1)
+    )
+    proposal = proposal_result.scalar_one_or_none()
+
     decision_at = datetime.now(UTC)
     sla = finalize_sla(opportunity, decision_at)
     event = DecisionEvent(
@@ -1014,8 +1061,18 @@ async def record_candidate_decision(
             "sla_attainment": sla["attainment"],
             "sla_status": sla["status"],
             "decision_at": decision_at.isoformat(),
+            "proposal_id": str(proposal.id) if proposal is not None else None,
         },
     )
+    if proposal is not None:
+        proposed_action = {"proceed": "invest", "hold": "hold", "decline": "decline"}[
+            payload.action
+        ]
+        proposal.override_reason = (
+            reason if proposed_action != proposal.action else None
+        )
+        proposal.action = proposed_action
+        proposal.status = "overridden" if proposal.override_reason else "approved"
     opportunity.lifecycle_state = new_state
     session.add(event)
     await session.commit()

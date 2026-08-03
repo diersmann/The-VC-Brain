@@ -1,5 +1,5 @@
 import { formatPredicate } from "./candidateProfile";
-import type { CandidateDetail, CandidateSLA } from "../types/candidate";
+import type { CandidateDetail, CandidateSLA, DecisionProposal } from "../types/candidate";
 import type { FounderProfile } from "../types/profile";
 
 export type DecisionMeta = {
@@ -23,22 +23,31 @@ export type DecisionMeta = {
   strengths: string[];
   risks: string[];
   conditions: string[];
+  conviction: DecisionProposal["conviction"];
+  readinessBlockers: string[];
 };
 
 export function createDecisionMeta(profile: FounderProfile, candidate: CandidateDetail): DecisionMeta {
+  const proposal = candidate.decision_proposal;
   const ratings = profile.assessments.filter((item) => item.rating !== "Pending").map((item) => item.rating);
-  const recommendation: DecisionMeta["recommendation"] = ratings.includes("Bearish")
-    ? "Hold"
-    : ratings.length === 3 && ratings.every((rating) => rating === "Bullish")
-      ? "Proceed"
-      : "Investigate";
+  const recommendation: DecisionMeta["recommendation"] = proposal
+    ? proposalRecommendation(proposal.action)
+    : ratings.includes("Bearish")
+      ? "Hold"
+      : ratings.length === 3 && ratings.every((rating) => rating === "Bullish")
+        ? "Proceed"
+        : "Investigate";
   const sourceCount = new Set(candidate.observations.map((item) => item.source_type)).size;
   const traction = profile.claims.length
     ? profile.claims.slice(0, 5).map((claim) => claim.claim)
     : ["No traction claims have been recorded in the evidence store."];
   const marketEvidence = candidate.observations.filter((item) => /(market|sector|industry|category)/i.test(item.predicate));
   const competitionEvidence = candidate.observations.filter((item) => /(compet|alternative|similar)/i.test(item.predicate));
-  const risks = profile.gaps.length ? profile.gaps.slice(0, 4) : ["No formal risk assessment has been recorded."];
+  const risks = proposal?.top_risks.length
+    ? proposal.top_risks.slice(0, 4)
+    : profile.gaps.length
+      ? profile.gaps.slice(0, 4)
+      : ["No formal risk assessment has been recorded."];
   const sla = candidate.sla;
 
   return {
@@ -67,8 +76,16 @@ export function createDecisionMeta(profile: FounderProfile, candidate: Candidate
       : "No competitive-landscape evidence has been recorded.",
     strengths: profile.tags.length ? profile.tags.slice(0, 4) : ["No verified strengths recorded"],
     risks,
-    conditions: risks.map((gap) => `Resolve: ${gap}`),
+    conditions: proposal?.open_conditions.length ? proposal.open_conditions.slice(0, 4) : risks.map((gap) => `Resolve: ${gap}`),
+    conviction: proposal?.conviction ?? null,
+    readinessBlockers: proposal?.readiness_blockers ?? [],
   };
+}
+
+function proposalRecommendation(action: DecisionProposal["action"]): DecisionMeta["recommendation"] {
+  if (action === "invest") return "Proceed";
+  if (action === "hold" || action === "decline") return "Hold";
+  return "Investigate";
 }
 
 function formatSlaDeadline(sla: CandidateSLA | null | undefined): string {

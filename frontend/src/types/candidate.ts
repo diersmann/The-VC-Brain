@@ -118,6 +118,28 @@ export interface CandidateScoreSnapshot {
   created_at: string | null;
 }
 
+export interface DecisionProposal {
+  id: string;
+  action: "invest" | "hold" | "investigate" | "decline";
+  status: "draft" | "approved" | "overridden";
+  check_amount: number | null;
+  ownership_target: number | null;
+  conviction: "low" | "medium" | "high" | null;
+  founder_assessment_id: string | null;
+  market_assessment_id: string | null;
+  idea_market_assessment_id: string | null;
+  top_evidence: string[];
+  top_risks: string[];
+  open_conditions: string[];
+  readiness_blockers: string[];
+  readiness_status: "ready" | "blocked";
+  thesis_version: string | null;
+  rubric_versions: string[];
+  memo_model_version: string | null;
+  override_reason: string | null;
+  created_at: string | null;
+}
+
 export interface CandidateRelationship {
   relationship_type: string;
   person_id: string;
@@ -137,6 +159,7 @@ export interface CandidateOpportunity {
 
 export interface CandidateDetail extends Candidate {
   opportunity: CandidateOpportunity | null;
+  decision_proposal?: DecisionProposal | null;
   observations: CandidateObservation[];
   claims: CandidateClaim[];
   assessments: CandidateAssessment[];

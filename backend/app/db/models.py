@@ -5,6 +5,7 @@ All core entities, relationships, and audit/log tables.
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 # pgvector for embedding storage
 from pgvector.sqlalchemy import Vector
@@ -16,6 +17,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     LargeBinary,
+    Numeric,
     String,
     Text,
     func,
@@ -597,3 +599,65 @@ class InvestmentMemo(TimestampMixin, Base):
     sections: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Decision proposals and readiness snapshots
+# ---------------------------------------------------------------------------
+
+
+class DecisionProposal(TimestampMixin, Base):
+    """Versioned, evidence-backed proposal prepared for human review."""
+
+    __tablename__ = "decision_proposals"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('invest','hold','investigate','decline')",
+            name="ck_decision_proposals_action",
+        ),
+        CheckConstraint(
+            "status IN ('draft','approved','overridden')",
+            name="ck_decision_proposals_status",
+        ),
+        CheckConstraint(
+            "readiness_status IN ('ready','blocked')",
+            name="ck_decision_proposals_readiness_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("opportunities.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    memo_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("investment_memos.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    action: Mapped[str] = mapped_column(String(24), nullable=False)
+    check_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    ownership_target: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
+    conviction: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    founder_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assessments.id", ondelete="SET NULL"), nullable=True
+    )
+    market_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assessments.id", ondelete="SET NULL"), nullable=True
+    )
+    idea_market_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assessments.id", ondelete="SET NULL"), nullable=True
+    )
+    top_evidence: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    top_risks: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    open_conditions: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    readiness_blockers: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    readiness_status: Mapped[str] = mapped_column(String(16), nullable=False, default="blocked")
+    thesis_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rubric_versions: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    memo_model_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")

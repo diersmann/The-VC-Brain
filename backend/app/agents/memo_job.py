@@ -16,6 +16,7 @@ from app.collectors.jobs import _session_ctx
 from app.db.models import (
     Assessment,
     Claim,
+    DecisionProposal,
     InvestmentMemo,
     InvestmentThesis,
     Observation,
@@ -24,10 +25,17 @@ from app.db.models import (
     Person,
     ScoreSnapshot,
 )
+from app.decision_proposal import build_decision_proposal
 
 logger = structlog.get_logger(__name__)
 
 _ACCEPTED_CLAIM_STATUSES = frozenset({"supported"})
+
+
+def _apply_proposal_values(proposal: DecisionProposal, values: dict[str, Any]) -> None:
+    """Copy the JSON-safe proposal contract onto its durable row."""
+    for key, value in values.items():
+        setattr(proposal, key, value)
 
 
 def _claim_observation_ids(claim: Claim) -> list[uuid.UUID] | None:
@@ -239,6 +247,20 @@ async def generate_memo_job(
             model_version=settings.agent_model,
         )
         session.add(memo_record)
+        await session.flush()
+        proposal = DecisionProposal(
+            opportunity_id=opportunity.id,
+            memo_id=memo_record.id,
+            **build_decision_proposal(
+                assessments=assessments,
+                claim_ids=claim_ids,
+                thesis_version=thesis.version,
+                memo_status="pending",
+                memo_model_version=settings.agent_model,
+                rubric_versions=("founder-agent-v1", "opportunity-axes-v1"),
+            ),
+        )
+        session.add(proposal)
         await session.commit()
 
         # Generate memo
@@ -262,6 +284,17 @@ async def generate_memo_job(
                 "generation_mode": "failed",
                 "error": "memo generation failed",
             }
+            _apply_proposal_values(
+                proposal,
+                build_decision_proposal(
+                    assessments=assessments,
+                    claim_ids=claim_ids,
+                    thesis_version=thesis.version,
+                    memo_status="failed",
+                    memo_model_version=settings.agent_model,
+                    rubric_versions=("founder-agent-v1", "opportunity-axes-v1"),
+                ),
+            )
             await session.commit()
             logger.exception("memo_generation_failed", person_id=person_id, error=str(exc))
             return {"person_id": person_id, "status": "failed"}
@@ -276,6 +309,17 @@ async def generate_memo_job(
         # to the accepted claims. Citation validation is a separate contract.
         memo_record.evidence_ids = obs_ids
         memo_record.model_version = memo.model_version or settings.agent_model
+        _apply_proposal_values(
+            proposal,
+            build_decision_proposal(
+                assessments=assessments,
+                claim_ids=claim_ids,
+                thesis_version=thesis.version,
+                memo_status=memo.status,
+                memo_model_version=memo_record.model_version,
+                rubric_versions=("founder-agent-v1", "opportunity-axes-v1"),
+            ),
+        )
         await session.commit()
 
     logger.info(
