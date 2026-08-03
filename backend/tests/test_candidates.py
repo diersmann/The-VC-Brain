@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.candidates import (
+    CandidateClaimResponse,
+    CandidateObservationResponse,
     CandidateResponse,
     map_person_to_candidate,
 )
@@ -211,6 +213,31 @@ class TestMapPersonToCandidate:
         result = map_person_to_candidate(person)
 
         assert result.display_name is None
+
+
+def test_evidence_dtos_retain_stable_entity_ids() -> None:
+    observation_id = uuid.uuid4()
+    claim_id = uuid.uuid4()
+
+    observation = CandidateObservationResponse(
+        id=observation_id,
+        predicate="bio",
+        object_value="Builder",
+        confidence=0.9,
+        observed_at=NOW,
+        source_type="github",
+        source_uri="https://github.com/example",
+    )
+    claim = CandidateClaimResponse(
+        id=claim_id,
+        predicate="role",
+        object_value="Founder",
+        status="supported",
+        confidence=0.9,
+    )
+
+    assert observation.id == observation_id
+    assert claim.id == claim_id
 
 
 # ---------------------------------------------------------------------------

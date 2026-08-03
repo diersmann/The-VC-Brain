@@ -63,6 +63,7 @@ export interface Candidate {
 }
 
 export interface CandidateObservation {
+  id: string;
   predicate: string;
   object_value: string;
   confidence: number;
@@ -73,6 +74,7 @@ export interface CandidateObservation {
 }
 
 export interface CandidateClaim {
+  id: string;
   predicate: string;
   object_value: string;
   status: ClaimStatus;

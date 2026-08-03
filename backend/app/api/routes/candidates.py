@@ -136,6 +136,7 @@ class CandidateResponse(BaseModel):
 
 
 class CandidateObservationResponse(BaseModel):
+    id: uuid.UUID
     predicate: str
     object_value: str
     confidence: float
@@ -146,6 +147,7 @@ class CandidateObservationResponse(BaseModel):
 
 
 class CandidateClaimResponse(BaseModel):
+    id: uuid.UUID
     predicate: str
     object_value: str
     status: ClaimStatus
@@ -717,6 +719,7 @@ async def get_candidate(
     )
     observations = [
         CandidateObservationResponse(
+            id=observation.id,
             predicate=observation.predicate,
             object_value=observation.object_value,
             confidence=observation.confidence,
@@ -736,6 +739,7 @@ async def get_candidate(
     )
     claims = [
         CandidateClaimResponse(
+            id=claim.id,
             predicate=claim.predicate,
             object_value=claim.object_value,
             status=claim.status,

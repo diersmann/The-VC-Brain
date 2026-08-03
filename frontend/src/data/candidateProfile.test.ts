@@ -51,8 +51,8 @@ describe("buildFounderProfile", () => {
       created_at: null,
       opportunity: null,
       observations: [
-        { predicate: "bio", object_value: "Builder", confidence: 0.9, observed_at: "2026-01-01T00:00:00Z", source_type: "github", source_uri: "https://github.com/grace" },
-        { predicate: "revenue", object_value: "$1m", confidence: 0.3, observed_at: "2026-01-02T00:00:00Z", source_type: "web", source_uri: "https://example.com" },
+        { id: "observation-bio", predicate: "bio", object_value: "Builder", confidence: 0.9, observed_at: "2026-01-01T00:00:00Z", source_type: "github", source_uri: "https://github.com/grace" },
+        { id: "observation-revenue", predicate: "revenue", object_value: "$1m", confidence: 0.3, observed_at: "2026-01-02T00:00:00Z", source_type: "web", source_uri: "https://example.com" },
       ],
       claims: [],
       assessments: [],

@@ -31,6 +31,7 @@ function detail(): CandidateDetail {
     opportunity: null,
     observations: [
       {
+        id: "observation-linkedin",
         predicate: "research_founder_evidence",
         object_value: "Founder profile",
         confidence: 0.9,
@@ -39,6 +40,7 @@ function detail(): CandidateDetail {
         source_uri: "https://www.linkedin.com/in/founder",
       },
       {
+        id: "observation-github",
         predicate: "github_login",
         object_value: "founder",
         confidence: 1,
