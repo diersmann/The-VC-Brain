@@ -23,6 +23,7 @@ from app.collectors.queue import (
     enqueue as queue_enqueue,
 )
 from app.db.models import (
+    Claim,
     DecisionEvent,
     InvestmentMemo,
     Observation,
@@ -99,6 +100,60 @@ async def _has_memo(session: AsyncSession, opportunity_id: Any) -> bool:
         .limit(1)
     )
     return result.scalar_one_or_none() is not None
+
+
+async def _has_founder_score(session: AsyncSession, person_id: Any) -> bool:
+    """Check for a persistent Founder Score for the person."""
+    result = await session.execute(
+        select(ScoreSnapshot.id)
+        .where(
+            ScoreSnapshot.subject_id == person_id,
+            ScoreSnapshot.subject_type == "person",
+            ScoreSnapshot.rubric_version == "founder-agent-v1",
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _has_scoped_claims(
+    session: AsyncSession, person_id: Any, opportunity_id: Any
+) -> bool:
+    """Check for accepted claims tied to this exact inbound opportunity."""
+    result = await session.execute(
+        select(Claim.id)
+        .where(
+            Claim.subject_id == person_id,
+            Claim.opportunity_id == opportunity_id,
+            Claim.status == "supported",
+            Claim.supersession_id.is_(None),
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _queue_investigation_jobs(redis: Any, person_id: Any, opportunity_id: Any) -> None:
+    """Queue prerequisite jobs with opportunity scope where required."""
+    await queue_enqueue(
+        redis,
+        {
+            "job_type": "research_candidate",
+            "person_id": str(person_id),
+            "opportunity_id": str(opportunity_id),
+        },
+        priority=10.0,
+    )
+    await queue_enqueue(
+        redis,
+        {"job_type": "score_candidate", "person_id": str(person_id)},
+        priority=10.0,
+    )
+    await queue_enqueue(
+        redis,
+        {"job_type": "process_candidate", "person_id": str(person_id)},
+        priority=10.0,
+    )
 
 
 async def _has_observations(session: AsyncSession, person_id: Any) -> bool:
@@ -193,26 +248,8 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                     reason="Investigation started — research, scoring, and processing queued",
                 )
                 transitions += 1
-                # Enqueue the three investigation jobs
-                await queue_enqueue(
-                    redis,
-                    {
-                        "job_type": "research_candidate",
-                        "person_id": str(person.id),
-                        "opportunity_id": str(opp.id),
-                    },
-                    priority=10.0,
-                )
-                await queue_enqueue(
-                    redis,
-                    {"job_type": "score_candidate", "person_id": str(person.id)},
-                    priority=10.0,
-                )
-                await queue_enqueue(
-                    redis,
-                    {"job_type": "process_candidate", "person_id": str(person.id)},
-                    priority=10.0,
-                )
+                # Enqueue the three investigation jobs.
+                await _queue_investigation_jobs(redis, person.id, opp.id)
 
             # --- investigating -> outreach draft (if above contact threshold) ---
             elif state == "investigating":
@@ -237,20 +274,7 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                             budget_exhausted += 1
                             continue
                         await decrement_agent_budget(redis, _INVESTIGATION_AGENT_CALLS)
-                        for job_type in (
-                            "research_candidate",
-                            "score_candidate",
-                            "process_candidate",
-                        ):
-                            await queue_enqueue(
-                                redis,
-                                {
-                                    "job_type": job_type,
-                                    "person_id": str(person.id),
-                                    "opportunity_id": str(opp.id),
-                                },
-                                priority=10.0,
-                            )
+                        await _queue_investigation_jobs(redis, person.id, opp.id)
                         session.add(
                             DecisionEvent(
                                 opportunity_id=opp.id,
@@ -323,6 +347,49 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                     )
                     transitions += 1
                 else:
+                    # Inbound submissions arrive at received, but a memo is
+                    # not a triage shortcut. First ensure processing has
+                    # produced scoped claims, Founder Score exists, and all
+                    # three opportunity axes have been persisted.
+                    missing_outputs: list[str] = []
+                    if not await _has_scoped_claims(session, person.id, opp.id):
+                        missing_outputs.append("scoped_claims")
+                    if not await _has_founder_score(session, person.id):
+                        missing_outputs.append("founder_score")
+                    if not await _has_opportunity_axes(session, opp.id):
+                        missing_outputs.append("opportunity_axes")
+
+                    if missing_outputs:
+                        cutoff = datetime.now(UTC) - timedelta(
+                            minutes=settings.pipeline_stuck_after_minutes
+                        )
+                        recently_queued = await _has_recent_pipeline_event(
+                            session, opp.id, "Inbound triage queued", cutoff
+                        )
+                        budget = await get_agent_budget_remaining(redis)
+                        if budget >= _INVESTIGATION_AGENT_CALLS and not recently_queued:
+                            await decrement_agent_budget(redis, _INVESTIGATION_AGENT_CALLS)
+                            await _queue_investigation_jobs(redis, person.id, opp.id)
+                            session.add(
+                                DecisionEvent(
+                                    opportunity_id=opp.id,
+                                    prior_state="received",
+                                    new_state="received",
+                                    actor="pipeline:auto",
+                                    reason="Inbound triage queued",
+                                    sla_metadata={
+                                        "pipeline_stage": "inbound_triage",
+                                        "missing_outputs": missing_outputs,
+                                        "required_outputs": [
+                                            "scoped_claims",
+                                            "founder_score",
+                                            "opportunity_axes",
+                                        ],
+                                    },
+                                )
+                            )
+                        continue
+
                     # Enqueue memo generation if it has not been queued
                     # recently. This avoids one enqueue every cron cycle.
                     budget = await get_agent_budget_remaining(redis)

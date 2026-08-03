@@ -77,7 +77,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [x] **VCB-023 - Make advertised deck formats match actual parser support.** Observed: PitchSubmissionPage.tsx:169-175 accepted PDF/PPT/PPTX while inbound_job.py always used pypdf. Done when the product is PDF-only with server enforcement or safely parses every advertised format with coordinates and format-specific tests. Completed alongside VCB-004: the form advertises PDF only, the server rejects non-PDF filenames/content, and format rejection is tested.
 
-- [ ] **VCB-024 - Orchestrate inbound through triage, Founder Score, three axes, diligence, memo, and decision.** Observed: inbound_job.py:55-101 reconciles/embeds/deduplicates then queues a memo without scoring or opportunity assessment. Done when every stage has a durable run/output and explicit gap/failure state before a validated memo can be ready.
+- [blocked] **VCB-024 - Orchestrate inbound through triage, Founder Score, three axes, diligence, memo, and decision.** Observed: inbound_job.py:55-101 reconciled/embedded/deduplicated then queued a memo without scoring or opportunity assessment. **Partial completion:** inbound processing now stops after the evidence-processing stage; the lifecycle worker records the missing inbound-triage outputs, queues scoped research plus Founder Score plus processing, and only queues memo generation after scoped accepted claims, Founder Score, and all three opportunity axes exist. Focused tests cover both prerequisite and memo queue gates. **Blocked:** full completion still requires a durable per-stage run/output ledger with explicit failure/gap states, authenticated diligence ownership, and the canonical lifecycle/decision contract.
 
 - [ ] **VCB-025 - Implement the real 24-hour SLA clock.** Missing: Opportunity has no received_at, decision_due_at, stage deadlines, owner, or pause reason; DecisionDetail shows Not scheduled. Done when per-stage budgets, countdown/breach states, alerts, owner, p50/p90 metrics, and persisted SLA attainment derive from events rather than UI guesses.
 
@@ -320,6 +320,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-03: VCB-067 candidate-list slice fixed latest-opportunity filter semantics, deterministic person tie ordering, canonical stage validation, and shared-session query safety; cursor pagination and the list envelope remain blocked scope.
 - 2026-08-03: VCB-047 Product Hunt slice applied the topic filter, followed GraphQL `pageInfo.endCursor`, and added two-page no-skip/no-duplication tests; reusable cursor state remains blocked on the shared discovery contract.
 - 2026-08-03: VCB-037 sourcing-ranking slice removed the three-axis average, ranked complete profiles by their weakest independent axis, separated incomplete evidence into a discovery queue, and added ranking-rationale coverage; thesis-specific calibration remains blocked.
+- 2026-08-03: VCB-024 inbound orchestration slice stopped premature memo enqueue, recorded missing triage outputs, and gated memo queueing on scoped claims, Founder Score, and all three opportunity axes; per-stage run/failure ledger and canonical diligence contract remain blocked.
 
 ## First practical milestone
 

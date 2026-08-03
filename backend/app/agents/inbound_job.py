@@ -10,7 +10,6 @@ from typing import Any
 import structlog
 
 from app.collectors.jobs import _session_ctx
-from app.collectors.queue import enqueue as queue_enqueue
 from app.config import get_settings
 from app.db.models import Observation, SourceSnapshot
 from app.processing.pipeline_job import process_candidate_job
@@ -28,8 +27,9 @@ async def process_inbound_pitch_job(
 ) -> dict[str, Any]:
     """Process an uploaded pitch deck.
     
-    Extracts text, creates generic observations, and then enqueues
-    the processing pipeline and memo generation.
+    Extracts text and runs the generic processing pipeline. The lifecycle
+    worker schedules Founder Score, opportunity research, and memo generation
+    only after their required upstream outputs exist.
     """
     logger.info("process_inbound_pitch_started", person_id=person_id, snapshot_id=snapshot_id)
 
@@ -93,20 +93,17 @@ async def process_inbound_pitch_job(
         session.add_all(observations_to_add)
         await session.commit()
         
-    # Now that we have observations, we run the standard candidate processing pipeline
-    # We can just call it directly since we're in a job already
-    await process_candidate_job(ctx, person_id)
-    
-    # Finally, enqueue the memo generation job
-    await queue_enqueue(
-        ctx["redis"],
-        {
-            "job_type": "generate_memo",
-            "person_id": person_id,
-            "opportunity_id": opportunity_id
-        },
-        priority=100
-    )
+    # Run processing before the lifecycle worker evaluates this opportunity.
+    # Memo generation is intentionally not queued here: it must be gated on
+    # the Founder Score, all three opportunity axes, and scoped accepted claims.
+    processing_result = await process_candidate_job(ctx, person_id)
 
     logger.info("process_inbound_pitch_completed", person_id=person_id)
-    return {"status": "success", "person_id": person_id, "snapshot_id": snapshot_id}
+    return {
+        "status": "success",
+        "person_id": person_id,
+        "snapshot_id": snapshot_id,
+        "opportunity_id": opportunity_id,
+        "processing": processing_result,
+        "next_stage": "inbound_triage",
+    }
