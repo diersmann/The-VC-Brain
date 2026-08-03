@@ -1,33 +1,21 @@
 import { useState } from "react";
 import { Mail, SearchCheck, ShieldCheck, Target } from "lucide-react";
 import { useNavigate } from "react-router";
-import { contactCandidate, useCandidates } from "../api/candidates";
+import { useCandidates } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
+import { OutreachComposer } from "../components/sourcing/OutreachComposer";
 import { candidateEvidencePercent, candidateThesisPercent, displayScore, isEvidenceReady, isThesisAligned, ratioPercent } from "../data/portfolioMetrics";
 import { DECISION_RUBRIC } from "../data/rubric";
+import type { Candidate } from "../types/candidate";
 
 export function InvestigatedPage() {
   const navigate = useNavigate();
   const investigatedQuery = useCandidates("investigating");
   const { data = [], isLoading, error, refetch } = investigatedQuery;
   const dataAvailable = investigatedQuery.data !== undefined;
-  const [contacting, setContacting] = useState<string | null>(null);
-  const [contactError, setContactError] = useState<string | null>(null);
-
-  const contact = async (candidateId: string) => {
-    setContacting(candidateId);
-    setContactError(null);
-    try {
-      await contactCandidate(candidateId);
-      window.setTimeout(() => void refetch(), 5_000);
-    } catch {
-      setContactError(candidateId);
-    } finally {
-      setContacting(null);
-    }
-  };
+  const [outreachCandidate, setOutreachCandidate] = useState<Candidate | null>(null);
 
   const strongThesis = data.filter(isThesisAligned).length;
   const evidenceReady = data.filter(isEvidenceReady).length;
@@ -61,14 +49,14 @@ export function InvestigatedPage() {
                   <p className="mt-1 text-[11px] text-muted">Founder {displayScore(candidate.scores?.founder)} · Thesis {displayScore(candidateThesisPercent(candidate), true)} · Evidence {displayScore(candidateEvidencePercent(candidate), true)}</p>
                 </div>
               </button>
-              <button onClick={() => void contact(candidate.id)} disabled={contacting === candidate.id} aria-busy={contacting === candidate.id} className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60">
-                <Mail className="h-3.5 w-3.5" />{contacting === candidate.id ? "Queuing…" : "Contact"}
+              <button type="button" onClick={() => setOutreachCandidate(candidate)} className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-xs font-bold text-white">
+                <Mail className="h-3.5 w-3.5" />Review contact
               </button>
             </div>
-            {contactError === candidate.id && <p role="alert" className="mt-3 rounded-md bg-[#fbe8e9] px-3 py-2 text-xs font-semibold text-danger">Unable to queue contact. Check the API service and retry.</p>}
           </article>
         ))}
       </div>
+      {outreachCandidate && <OutreachComposer key={outreachCandidate.id} candidate={outreachCandidate} onClose={() => setOutreachCandidate(null)} />}
     </div>
   );
 }

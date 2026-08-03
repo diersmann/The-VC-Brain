@@ -25,16 +25,18 @@ const candidate = {
 };
 
 describe("InvestigatedPage mutation states", () => {
-  test("surfaces contact queue failures and leaves the action retryable", async () => {
+  test("opens reviewed outreach instead of queuing contact directly", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify([candidate]), { status: 200 }))
-      .mockRejectedValueOnce(new Error("API unavailable"));
+      .mockResolvedValueOnce(new Response(JSON.stringify([candidate]), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<TestQueryProvider><MemoryRouter><InvestigatedPage /></MemoryRouter></TestQueryProvider>);
-    fireEvent.click(await screen.findByRole("button", { name: "Contact" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Review contact" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Unable to queue contact");
-    expect(screen.getByRole("button", { name: "Contact" })).not.toBeDisabled();
+    expect(await screen.findByRole("dialog", { name: "Draft outreach to Test Founder" })).toBeInTheDocument();
+    expect(screen.getByText(/Provenance:/)).toBeInTheDocument();
+    expect(screen.getByText("granted")).toBeInTheDocument();
+    expect(screen.getByText(/Provider state:/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });

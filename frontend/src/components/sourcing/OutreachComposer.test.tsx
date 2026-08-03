@@ -73,5 +73,9 @@ describe("OutreachComposer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Draft with email agent" }));
     expect(await screen.findByDisplayValue("Hello")).toBeInTheDocument();
+    const handoff = screen.getByRole("link", { name: /Approve to hand off/ });
+    expect(handoff).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(screen.getByRole("checkbox", { name: /I approve this edited draft/ }));
+    expect(screen.getByRole("link", { name: /Open in email/ })).toHaveAttribute("href", expect.stringContaining("mailto:"));
   });
 });

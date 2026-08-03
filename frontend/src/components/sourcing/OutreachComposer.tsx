@@ -22,6 +22,7 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [status, setStatus] = useState<"idle" | "drafting" | "error" | "copied">("idle");
+  const [approved, setApproved] = useState(false);
 
   useEffect(() => {
     restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -78,6 +79,11 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
   const mailto = candidate.email
     ? `mailto:${candidate.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
     : null;
+  const suppressionReason = candidate.email
+    ? ["opted_out", "suppressed", "do_not_contact"].includes(candidate.consent_state)
+      ? `Suppressed by consent state: ${candidate.consent_state}`
+      : null
+    : "No verified recipient email";
 
   return (
     <div className="fixed inset-0 z-[70] flex justify-end bg-[#172235]/25 p-3 backdrop-blur-sm sm:p-5" role="presentation" onMouseDown={onClose}>
@@ -141,6 +147,16 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
           </button>
           {status === "error" && <div className="mt-3 rounded-md bg-[#fbe8e9] px-3 py-2 text-xs font-semibold text-danger">Unable to create the draft. Check the API service and retry.</div>}
 
+          <div className="mt-5 rounded-lg bg-[#eef3f8] p-4 text-xs text-ink-2">
+            <div className="data-label mb-2">Contact safeguards</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div><span className="font-bold">Provenance:</span> {candidate.origin ?? "Unclassified"}{candidate.profile?.source_types.length ? ` · ${candidate.profile.source_types.join(", ")}` : " · No source type recorded"}</div>
+              <div><span className="font-bold">Consent:</span> {candidate.consent_state}</div>
+            </div>
+            <div className="mt-2"><span className="font-bold">Provider state:</span> Draft only · not sent; delivery and replies are not connected.</div>
+            {suppressionReason && <div className="mt-3 rounded-md bg-[#fff1df] px-3 py-2 font-semibold text-[#946225]">{suppressionReason}. Manual email handoff is disabled.</div>}
+          </div>
+
           {draft && (
             <div className="mt-5 space-y-4 rounded-lg bg-white/70 p-4 shadow-[0_12px_30px_rgba(70,91,120,.08)]">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -152,6 +168,10 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
               {draft.warning && <div className="rounded-md bg-[#fff1df] px-3 py-2 text-[11px] leading-5 text-[#946225]">{draft.warning}</div>}
               <label className="block"><span className="data-label mb-1.5 block">Subject</span><input value={subject} onChange={(event) => setSubject(event.target.value)} className="w-full rounded-md bg-surface-2 px-3 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-accent/20" /></label>
               <label className="block"><span className="data-label mb-1.5 block">Body</span><textarea value={body} onChange={(event) => setBody(event.target.value)} rows={10} className="w-full resize-y rounded-md bg-surface-2 px-3 py-3 text-sm leading-6 outline-none focus:ring-2 focus:ring-accent/20" /></label>
+              <label className={`flex items-start gap-2 rounded-md p-3 ${suppressionReason ? "bg-[#fff1df]" : "bg-[#e4f2ed]"}`}>
+                <input type="checkbox" checked={approved} onChange={(event) => setApproved(event.target.checked)} disabled={Boolean(suppressionReason)} className="mt-0.5 h-4 w-4 accent-accent" />
+                <span className="text-[11px] leading-5"><span className="font-bold">I approve this edited draft for manual handoff.</span><br />This does not claim provider delivery or a reply.</span>
+              </label>
             </div>
           )}
         </div>
@@ -159,7 +179,7 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
         {draft && (
           <footer className="flex flex-wrap items-center gap-2 bg-white/75 px-5 py-4 shadow-[0_-8px_24px_rgba(70,91,120,.06)]">
             <button type="button" onClick={() => void copyDraft()} className="inline-flex items-center gap-2 rounded-md bg-surface-2 px-4 py-2.5 text-xs font-bold text-ink-2"><Copy className="h-3.5 w-3.5" />{status === "copied" ? "Copied" : "Copy draft"}</button>
-            {mailto ? <a href={mailto} className="ml-auto inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-xs font-bold text-white"><Send className="h-3.5 w-3.5" />Open in email<ExternalLink className="h-3 w-3" /></a> : <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted"><FileQuestion className="h-3.5 w-3.5" />No verified email; copy the draft manually.</span>}
+            {mailto && !suppressionReason ? <a href={mailto} aria-disabled={!approved} onClick={(event) => { if (!approved) event.preventDefault(); }} className={`ml-auto inline-flex items-center gap-2 rounded-md px-4 py-2.5 text-xs font-bold text-white ${approved ? "bg-accent" : "cursor-not-allowed bg-accent/40"}`}><Send className="h-3.5 w-3.5" />{approved ? "Open in email" : "Approve to hand off"}<ExternalLink className="h-3 w-3" /></a> : <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted"><FileQuestion className="h-3.5 w-3.5" />No verified email; copy the draft manually.</span>}
           </footer>
         )}
       </section>
