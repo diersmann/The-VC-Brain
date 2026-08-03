@@ -23,7 +23,8 @@ async def process_inbound_pitch_job(
     person_id: str,
     snapshot_id: str,
     opportunity_id: str,
-    company_name: str
+    company_name: str,
+    founder_evidence: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Process an uploaded pitch deck.
     
@@ -89,6 +90,31 @@ async def process_inbound_pitch_job(
                 confidence=1.0
             )
         )
+
+        evidence_predicates = {
+            "work_sample_url": "founder_work_sample_url",
+            "work_sample_description": "founder_work_sample_description",
+            "learning_velocity": "founder_learning_velocity",
+            "reference_context": "founder_reference_context",
+            "interview_context": "founder_interview_context",
+        }
+        for field, value in (founder_evidence or {}).items():
+            predicate = evidence_predicates.get(field)
+            if predicate is None or not value.strip():
+                continue
+            observations_to_add.append(
+                Observation(
+                    snapshot_id=snapshot.id,
+                    subject_id=uuid.UUID(person_id),
+                    opportunity_id=uuid.UUID(opportunity_id),
+                    predicate=predicate,
+                    object_value=value.strip(),
+                    source_locator={"kind": "submission_field", "field": field},
+                    observed_at=now,
+                    extractor_version="inbound-evidence-v1",
+                    confidence=1.0,
+                )
+            )
 
         session.add_all(observations_to_add)
         await session.commit()

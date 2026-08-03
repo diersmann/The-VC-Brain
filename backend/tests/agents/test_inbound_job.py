@@ -44,9 +44,14 @@ async def test_inbound_processing_does_not_bypass_triage_with_memo() -> None:
             str(snapshot_id),
             str(opportunity_id),
             "Example AI",
+            {"work_sample_description": "A prototype with a working checkout flow."},
         )
 
     process.assert_awaited_once()
     assert result["next_stage"] == "inbound_triage"
     assert result["opportunity_id"] == str(opportunity_id)
     assert result["processing"] == processing
+    observations = session.add_all.call_args.args[0]
+    assert any(
+        item.predicate == "founder_work_sample_description" for item in observations
+    )

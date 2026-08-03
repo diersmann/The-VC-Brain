@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 
 import pypdf
 import pytest
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
 from starlette.datastructures import Headers
 
@@ -20,6 +20,11 @@ from app.db.models import InboundSubmission, Opportunity, OutboxEvent, Person, S
 from app.db.session import get_session
 from app.main import app
 from app.uploads import UploadRejected, extract_pdf_pages, quarantine_pitch_upload
+
+
+def test_founder_evidence_rejects_non_http_work_sample_urls() -> None:
+    with pytest.raises(HTTPException, match=r"HTTP\(S\)"):
+        inbound._founder_evidence({"work_sample_url": "javascript:alert(1)"})
 
 
 class _FakeSession:
@@ -202,6 +207,8 @@ def test_submission_persists_uploaded_deck_and_returns_opportunity_id(monkeypatc
                 "founder_name": "Alice Example",
                 "founder_email": "alice@example.com",
                 "company_name": "Example AI",
+                "work_sample_url": "https://example.com/demo",
+                "work_sample_description": "A prototype demonstrating the core workflow.",
             },
             files={"file": ("pitch.pdf", _pdf_bytes(), "application/pdf")},
             headers={"Idempotency-Key": "submission-1"},
@@ -212,6 +219,8 @@ def test_submission_persists_uploaded_deck_and_returns_opportunity_id(monkeypatc
                 "founder_name": "Alice Example",
                 "founder_email": "alice@example.com",
                 "company_name": "Example AI",
+                "work_sample_url": "https://example.com/demo",
+                "work_sample_description": "A prototype demonstrating the core workflow.",
             },
             files={"file": ("pitch.pdf", _pdf_bytes(), "application/pdf")},
             headers={"Idempotency-Key": "submission-1"},
@@ -229,6 +238,12 @@ def test_submission_persists_uploaded_deck_and_returns_opportunity_id(monkeypatc
     put_snapshot.assert_awaited_once()
     assert put_snapshot.await_args.kwargs["content"].startswith(b"%PDF-")
     assert len([item for item in session.added if isinstance(item, InboundSubmission)]) == 1
+    submission = next(item for item in session.added if isinstance(item, InboundSubmission))
+    assert submission.founder_evidence == {
+        "work_sample_url": "https://example.com/demo",
+        "work_sample_description": "A prototype demonstrating the core workflow.",
+    }
     outbox = next(item for item in session.added if isinstance(item, OutboxEvent))
     assert outbox.dedupe_key == "inbound-submission:submission-1"
     assert outbox.payload["job_name"] == "process_inbound_pitch_job"
+    assert outbox.payload["kwargs"]["founder_evidence"] == submission.founder_evidence

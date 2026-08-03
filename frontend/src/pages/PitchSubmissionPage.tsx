@@ -199,6 +199,33 @@ export function PitchSubmissionPage() {
               </label>
             </div>
 
+            <fieldset className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <legend className="px-1 text-sm font-semibold text-white">Direct work evidence <span className="text-xs font-normal text-neutral-500">(optional)</span></legend>
+              <p className="text-xs leading-5 text-neutral-500">Public history is not required. Share a prototype, work sample, learning milestone, interview context, or reference context if it helps us assess demonstrated work. Missing fields do not lower founder quality.</p>
+              <label htmlFor="work-sample-url" className="block">
+                <span className="mb-2 block text-xs font-medium text-neutral-300">Prototype or work-sample link</span>
+                <input id="work-sample-url" type="url" name="work_sample_url" maxLength={2048} placeholder="https://…" className="w-full rounded-xl border border-white/10 bg-neutral-950/50 px-3 py-3 text-sm text-white placeholder:text-neutral-600 focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+              </label>
+              <label htmlFor="work-sample-description" className="block">
+                <span className="mb-2 block text-xs font-medium text-neutral-300">What did you build or demonstrate?</span>
+                <textarea id="work-sample-description" name="work_sample_description" maxLength={4000} rows={3} placeholder="Describe the artifact, your role, and what it shows." className="w-full rounded-xl border border-white/10 bg-neutral-950/50 px-3 py-3 text-sm text-white placeholder:text-neutral-600 focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+              </label>
+              <label htmlFor="learning-velocity" className="block">
+                <span className="mb-2 block text-xs font-medium text-neutral-300">Learning or iteration milestone</span>
+                <textarea id="learning-velocity" name="learning_velocity" maxLength={4000} rows={2} placeholder="What changed between milestones, and what did you learn?" className="w-full rounded-xl border border-white/10 bg-neutral-950/50 px-3 py-3 text-sm text-white placeholder:text-neutral-600 focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label htmlFor="reference-context" className="block">
+                  <span className="mb-2 block text-xs font-medium text-neutral-300">Reference context</span>
+                  <textarea id="reference-context" name="reference_context" maxLength={4000} rows={3} placeholder="What concrete behavior could a reference verify?" className="w-full rounded-xl border border-white/10 bg-neutral-950/50 px-3 py-3 text-sm text-white placeholder:text-neutral-600 focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+                </label>
+                <label htmlFor="interview-context" className="block">
+                  <span className="mb-2 block text-xs font-medium text-neutral-300">Interview or work-sample context</span>
+                  <textarea id="interview-context" name="interview_context" maxLength={4000} rows={3} placeholder="Share a scenario, customer conversation, or task outcome." className="w-full rounded-xl border border-white/10 bg-neutral-950/50 px-3 py-3 text-sm text-white placeholder:text-neutral-600 focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+                </label>
+              </div>
+            </fieldset>
+
             {/* File Upload */}
             <div 
               onDragOver={handleDragOver}

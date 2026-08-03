@@ -24,6 +24,7 @@ def inbound_outbox_event(submission: InboundSubmission, company_name: str) -> Ou
                 "snapshot_id": str(submission.snapshot_id),
                 "opportunity_id": str(submission.opportunity_id),
                 "company_name": company_name,
+                "founder_evidence": submission.founder_evidence,
             },
         },
     )

@@ -270,6 +270,7 @@ class InboundSubmission(TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("source_snapshots.id", ondelete="RESTRICT"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="accepted")
+    founder_evidence: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False, default=dict)
 
 
 class OutboxEvent(TimestampMixin, Base):
