@@ -9,12 +9,14 @@ retained as a confidence and momentum signal, not an eligibility gate.
 
 from __future__ import annotations
 
+import io
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 import structlog
+from pypdf import PdfReader
 
 from app.collectors.base import (
     Collected,
@@ -30,6 +32,8 @@ logger = structlog.get_logger(__name__)
 _ARXIV_API = "https://export.arxiv.org/api/query"
 _SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1"
 _DEFAULT_MAX_RESULTS = 50
+_MAX_EVIDENCE_PAGES = 20
+_MAX_PAGE_CHARS = 2000
 
 # arXiv categories relevant to typical VC theses (configurable).
 _DEFAULT_CATEGORIES = [
@@ -137,6 +141,52 @@ class ArxivConnector(Connector):
                 logger.warning("semantic_scholar_failed", arxiv_id=arxiv_id)
         return 0
 
+    @staticmethod
+    def _extract_pdf_page_observations(
+        pdf_bytes: bytes,
+        *,
+        pdf_url: str,
+        author_name: str,
+        observed_at: datetime,
+    ) -> list[dict[str, object]]:
+        """Extract bounded, page-addressable evidence from a deep PDF."""
+        try:
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+        except Exception as exc:
+            logger.warning("arxiv_pdf_parse_failed", error=str(exc))
+            return []
+
+        observations: list[dict[str, object]] = []
+        for page_number, page in enumerate(reader.pages, start=1):
+            if page_number > _MAX_EVIDENCE_PAGES:
+                break
+            try:
+                text = (page.extract_text() or "").strip()
+            except Exception as exc:
+                logger.warning("arxiv_pdf_page_extract_failed", page=page_number, error=str(exc))
+                continue
+            if not text:
+                continue
+            bounded_text = text[:_MAX_PAGE_CHARS]
+            observations.append(
+                {
+                    "predicate": "arxiv_pdf_page_text",
+                    "object_value": bounded_text,
+                    "observed_at": observed_at.isoformat(),
+                    "confidence": 0.9,
+                    "source_locator": {
+                        "kind": "pdf_page",
+                        "source_uri": pdf_url,
+                        "page": page_number,
+                        "char_start": 0,
+                        "char_end": len(bounded_text),
+                        "author": author_name,
+                        "author_identity_confidence": 0.8,
+                    },
+                }
+            )
+        return observations
+
     # ------------------------------------------------------------------
     # Collect
     # ------------------------------------------------------------------
@@ -243,7 +293,28 @@ class ArxivConnector(Connector):
                 async with await self._client() as pdf_client:
                     pdf_resp = await pdf_client.get(pdf_url, timeout=60.0)
                 if pdf_resp.status_code == 200:
-                    pass  # PDF downloaded; processing is Phase 2
+                    pdf_bytes = pdf_resp.content
+                    observations.extend(
+                        self._extract_pdf_page_observations(
+                            pdf_bytes,
+                            pdf_url=pdf_url,
+                            author_name=author_name,
+                            observed_at=now,
+                        )
+                    )
+                    if pdf_bytes:
+                        return Collected(
+                            content=pdf_bytes,
+                            content_type="application/pdf",
+                            observations=observations,
+                            source_type="arxiv",
+                            uri=pdf_url,
+                            license_hint={
+                                "source": "arXiv PDF",
+                                "terms": "https://info.arxiv.org/help/api/tou.html",
+                                "evidence_depth": "page_coordinates",
+                            },
+                        )
             except Exception:
                 logger.warning("arxiv_pdf_download_failed", arxiv_id=top_paper["arxiv_id"])
 

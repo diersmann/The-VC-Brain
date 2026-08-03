@@ -506,6 +506,8 @@ The current persistence slice stores append-only opportunity channel touches wit
 
 Funded and declined outcomes update channel estimates without becoming direct founder-merit features. A Bayesian exploration policy can suggest underexplored channels with promising quality signals while reserving capacity for discovery outside historically successful networks. Reports show quality and uncertainty, not only lead volume.
 
+Evidence-aware source depth is connector-specific. Deep arXiv collection retains a primary PDF and emits bounded page-coordinate observations with author-identity confidence. Podcast and YouTube transcript/timestamp extraction, source-owner licensing, and durable provider cursor contracts are prerequisites before those sources can contribute equivalent evidence depth.
+
 ### Outcome Feedback
 
 The system records investor decisions, overrides, founder corrections, application conversion, and later observable milestones. Labels remain outcome-specific, such as `shipped_product_within_6_months`, rather than collapsing into "successful founder." Historical decisions are not treated as ground truth; they are analyzed for selection bias and missing counterfactuals.
