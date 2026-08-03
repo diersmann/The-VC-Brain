@@ -208,6 +208,8 @@ The Intelligence system continuously evaluates new observations against the acti
 
 The decision clock starts when a valid inbound application is received or an activated founder submits the minimum application. Outbound discovery-to-contact time is measured separately and does not silently consume the applicant's decision window.
 
+Pipeline workers select non-terminal opportunities by earliest persisted decision deadline with deterministic creation/ID tie-breaks and `SKIP LOCKED` concurrency. Budget-blocked work is surfaced as needs-attention telemetry; stage-specific queues and durable operator ownership remain a follow-up to the job ledger contract.
+
 Target stage budgets are:
 
 | Stage | Target elapsed time | Output |

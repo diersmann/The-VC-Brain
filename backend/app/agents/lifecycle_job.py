@@ -183,15 +183,22 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
     transitions = 0
     stuck_closed = 0
     budget_exhausted = 0
+    needs_attention = 0
 
     async with _session_ctx(ctx) as session:
-        # Fetch all non-terminal opportunities
+        # Fetch urgent work first and let concurrent workers skip locked rows.
+        # The ID tie-breaker keeps equal-deadline pagination deterministic.
         result = await session.execute(
             select(Opportunity)
             .where(
                 Opportunity.lifecycle_state.notin_(["approved", "closed"]),
             )
-            .order_by(Opportunity.created_at.asc())
+            .order_by(
+                Opportunity.decision_due_at.asc().nulls_last(),
+                Opportunity.created_at.asc(),
+                Opportunity.id.asc(),
+            )
+            .with_for_update(skip_locked=True)
             .limit(settings.pipeline_batch_size)
         )
         opportunities: list[Opportunity] = list(result.scalars().all())
@@ -243,6 +250,7 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                 budget = await get_agent_budget_remaining(redis)
                 if budget < _INVESTIGATION_AGENT_CALLS:
                     budget_exhausted += 1
+                    needs_attention += 1
                     continue
                 await decrement_agent_budget(redis, _INVESTIGATION_AGENT_CALLS)
                 await transition_opportunity(
@@ -274,6 +282,7 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                         budget = await get_agent_budget_remaining(redis)
                         if budget < _INVESTIGATION_AGENT_CALLS:
                             budget_exhausted += 1
+                            needs_attention += 1
                             continue
                         await decrement_agent_budget(redis, _INVESTIGATION_AGENT_CALLS)
                         await _queue_investigation_jobs(redis, person.id, opp.id)
@@ -309,6 +318,7 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                     budget = await get_agent_budget_remaining(redis)
                     if budget <= 0:
                         budget_exhausted += 1
+                        needs_attention += 1
                         continue
                     await decrement_agent_budget(redis, 1)
                     reason = (
@@ -370,6 +380,8 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                                 },
                             )
                         )
+                    elif budget <= 0:
+                        needs_attention += 1
                     continue
 
                 await transition_opportunity(
@@ -407,6 +419,8 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                                 },
                             )
                         )
+                    elif budget < _FOUNDER_SCORE_AGENT_CALLS:
+                        needs_attention += 1
                     continue
 
                 await transition_opportunity(
@@ -448,6 +462,8 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                                 },
                             )
                         )
+                    elif budget < _RESEARCH_AGENT_CALLS:
+                        needs_attention += 1
                     continue
 
                 await transition_opportunity(
@@ -489,6 +505,8 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                                 },
                             )
                         )
+                    elif budget <= 0:
+                        needs_attention += 1
                     continue
 
                 await transition_opportunity(
@@ -507,10 +525,12 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
         transitions=transitions,
         stuck_closed=stuck_closed,
         budget_exhausted=budget_exhausted,
+        needs_attention=needs_attention,
     )
     return {
         "opportunities": len(opportunities),
         "transitions": transitions,
         "stuck_closed": stuck_closed,
         "budget_exhausted": budget_exhausted,
+        "needs_attention": needs_attention,
     }
