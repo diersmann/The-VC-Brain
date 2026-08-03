@@ -251,6 +251,7 @@ class CandidateRelationshipResponse(BaseModel):
 
 class CandidateOpportunityResponse(BaseModel):
     id: uuid.UUID
+    organization_id: uuid.UUID | None = None
     company_name: str
     source_kind: str
     lifecycle_state: LifecycleStage
@@ -930,6 +931,7 @@ async def get_candidate(
         opportunity=(
             CandidateOpportunityResponse(
                 id=opportunity.id,
+                organization_id=opportunity.organization_id,
                 company_name=opportunity.company_name,
                 source_kind=opportunity.source_kind,
                 lifecycle_state=opportunity.lifecycle_state,

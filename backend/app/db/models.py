@@ -147,6 +147,12 @@ class Opportunity(TimestampMixin, Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     company_name: Mapped[str] = mapped_column(String(512), nullable=False)
     source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="inbound")
     lifecycle_state: Mapped[str] = mapped_column(String(32), nullable=False, default="received")
@@ -163,6 +169,7 @@ class Opportunity(TimestampMixin, Base):
     founders: Mapped[list["Person"]] = relationship(
         secondary="opportunity_founders", back_populates="opportunities"
     )
+    organization: Mapped["Organization | None"] = relationship()
     assessments: Mapped[list["Assessment"]] = relationship(back_populates="opportunity")
     decision_events: Mapped[list["DecisionEvent"]] = relationship(back_populates="opportunity")
 
@@ -181,6 +188,11 @@ class OpportunityFounder(Base):
         ForeignKey("persons.id", ondelete="CASCADE"),
         primary_key=True,
     )
+    role: Mapped[str] = mapped_column(String(64), nullable=False, default="founder")
+    valid_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # ---------------------------------------------------------------------------

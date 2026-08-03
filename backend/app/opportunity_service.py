@@ -7,15 +7,37 @@ lifecycle transitions with auditable DecisionEvents.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DecisionEvent, Opportunity, OpportunityFounder, Person
+from app.db.models import DecisionEvent, Opportunity, OpportunityFounder, Organization, Person
 
 logger = structlog.get_logger(__name__)
+
+
+def organization_stable_id(name: str) -> str:
+    """Return a deterministic, non-PII organization key for a company name."""
+    normalized = " ".join(name.casefold().split())
+    return f"company:{hashlib.md5(normalized.encode(), usedforsecurity=False).hexdigest()}"
+
+
+async def get_or_create_organization(session: AsyncSession, name: str) -> Organization:
+    """Resolve a company name to a first-class organization row."""
+    stable_id = organization_stable_id(name)
+    result = await session.execute(
+        select(Organization).where(Organization.stable_id == stable_id).limit(1)
+    )
+    organization = result.scalar_one_or_none()
+    if organization is not None:
+        return organization
+    organization = Organization(stable_id=stable_id, name=name.strip(), org_type="company")
+    session.add(organization)
+    await session.flush()
+    return organization
 
 
 async def get_or_create_opportunity(
@@ -42,14 +64,19 @@ async def get_or_create_opportunity(
     if opportunity is not None:
         return opportunity
 
+    resolved_company_name = company_name or person.display_name or person.stable_id
+    organization = await get_or_create_organization(session, resolved_company_name)
     opportunity = Opportunity(
-        company_name=company_name or person.display_name or person.stable_id,
+        organization_id=organization.id,
+        company_name=resolved_company_name,
         source_kind=source_kind,
         lifecycle_state=lifecycle_state,
     )
     session.add(opportunity)
     await session.flush()
-    session.add(OpportunityFounder(opportunity_id=opportunity.id, person_id=person.id))
+    session.add(
+        OpportunityFounder(opportunity_id=opportunity.id, person_id=person.id, role="founder")
+    )
     await session.flush()
     return opportunity
 
@@ -64,8 +91,11 @@ async def create_inbound_opportunity(
     """Create a new inbound opportunity for a person (e.g. after mock reply)."""
     from app.sla import initialize_sla
 
+    resolved_company_name = company_name or person.display_name or person.stable_id
+    organization = await get_or_create_organization(session, resolved_company_name)
     opportunity = Opportunity(
-        company_name=company_name or person.display_name or person.stable_id,
+        organization_id=organization.id,
+        company_name=resolved_company_name,
         source_kind="inbound",
         lifecycle_state="received",
         thesis_version=thesis_version,
@@ -73,7 +103,9 @@ async def create_inbound_opportunity(
     initialize_sla(opportunity)
     session.add(opportunity)
     await session.flush()
-    session.add(OpportunityFounder(opportunity_id=opportunity.id, person_id=person.id))
+    session.add(
+        OpportunityFounder(opportunity_id=opportunity.id, person_id=person.id, role="founder")
+    )
     await session.flush()
     return opportunity
 

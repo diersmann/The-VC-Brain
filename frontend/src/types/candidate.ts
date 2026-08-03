@@ -150,6 +150,7 @@ export interface CandidateRelationship {
 
 export interface CandidateOpportunity {
   id: string;
+  organization_id?: string | null;
   company_name: string;
   source_kind: string;
   lifecycle_state: LifecycleStage;

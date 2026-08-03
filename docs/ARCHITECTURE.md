@@ -147,6 +147,12 @@ This is the data correlation layer. It:
 
 The graph must distinguish confirmed collaboration from weak signals such as attending the same institution. Relationship types include `founded_with`, `worked_with`, `coauthored_with`, `participated_in`, `invested_in`, and `possibly_knows`; only the first five may become confirmed, and all require evidence. Network prestige supports sourcing, team analysis, and outreach, but never directly inflates founder merit.
 
+Organizations are first-class company identities. Opportunities link to an
+Organization, while `opportunity_founders` records founder roles with valid
+time intervals so teams and role changes remain explicit. The legacy company
+name is retained as a display fallback during migration, not as the durable
+identity key.
+
 ## Unified Deal Lifecycle
 
 Inbound applications and outbound discoveries converge into one opportunity pipeline:
