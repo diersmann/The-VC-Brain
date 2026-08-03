@@ -14,10 +14,56 @@ collection priority.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, runtime_checkable
 
 Depth = Literal["light", "deep"]
+ConnectorMaturity = Literal["experimental", "beta", "production"]
+
+
+@dataclass(frozen=True)
+class ConnectorReadiness:
+    """Operator-facing maturity metadata for a registered connector."""
+
+    maturity: ConnectorMaturity
+    contract_version: str = "connector-contract-v1"
+    last_success_at: str | None = None
+    limitations: tuple[str, ...] = ()
+
+
+CONNECTOR_READINESS: dict[str, ConnectorReadiness] = {
+    "github": ConnectorReadiness("beta", limitations=("API credentials and rate limits apply",)),
+    "producthunt": ConnectorReadiness("experimental", limitations=("API credentials required",)),
+    "arxiv": ConnectorReadiness("beta", limitations=("PDF extraction depth varies by document",)),
+    "web": ConnectorReadiness("beta", limitations=("Robots, licensing, and page structure vary",)),
+    "tavily_search": ConnectorReadiness(
+        "experimental", limitations=("Search provider and budget dependent",)
+    ),
+    "hackernews": ConnectorReadiness("beta", limitations=("Algolia result freshness varies",)),
+    "youtube": ConnectorReadiness(
+        "experimental", limitations=("API credentials and transcript availability apply",)
+    ),
+    "podcasts": ConnectorReadiness(
+        "experimental", limitations=("Transcript and primary-page coverage varies",)
+    ),
+    "hackathons": ConnectorReadiness(
+        "experimental", limitations=("Discovery delegates to provider search",)
+    ),
+    "linkedin": ConnectorReadiness(
+        "experimental", limitations=("Discovery delegates to provider search",)
+    ),
+}
+
+
+def canonical_json_bytes(value: object) -> bytes:
+    """Serialize JSON snapshots deterministically and without Python repr syntax."""
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
 
 
 @dataclass(frozen=True)
@@ -91,3 +137,48 @@ class Connector(Protocol):
 
 class ConnectorError(Exception):
     """Base exception for connector failures."""
+
+
+def validate_collected(collected: Collected) -> None:
+    """Validate the shared output contract before persistence or scoring."""
+    if not collected.content:
+        raise ConnectorError("connector returned empty content")
+    if not collected.content_type.strip():
+        raise ConnectorError("connector returned an empty content type")
+    if not collected.source_type.strip():
+        raise ConnectorError("connector returned an empty source type")
+    if not collected.uri.strip():
+        raise ConnectorError("connector returned an empty source URI")
+    if not isinstance(collected.observations, list):
+        raise ConnectorError("connector observations must be a list")
+    for observation in collected.observations:
+        if not isinstance(observation, dict):
+            raise ConnectorError("connector observations must be objects")
+        if not str(observation.get("predicate", "")).strip():
+            raise ConnectorError("connector observation is missing predicate")
+        if "object_value" not in observation:
+            raise ConnectorError("connector observation is missing object_value")
+
+
+FailureKind = Literal["transient", "rate_limited", "permanent"]
+
+
+def classify_connector_failure(exc: BaseException) -> tuple[FailureKind, bool]:
+    """Classify an upstream failure for retry and operator-facing state."""
+    message = str(exc).lower()
+    if any(token in message for token in ("429", "rate limit", "rate_limited", "throttl")):
+        return "rate_limited", True
+    if any(
+        token in message
+        for token in (
+            "timeout",
+            "timed out",
+            "connection reset",
+            "temporarily unavailable",
+            "502",
+            "503",
+            "504",
+        )
+    ):
+        return "transient", True
+    return "permanent", False

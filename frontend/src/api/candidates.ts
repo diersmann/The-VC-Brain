@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { ApiError } from "./errors";
 import type { Candidate, CandidateDetail } from "../types/candidate";
 
 export type OutreachEmailType = "founder_intro" | "request_deck" | "diligence" | "follow_up";
@@ -28,7 +29,7 @@ export async function fetchCandidates(signal?: AbortSignal, stage?: string): Pro
   const response = await fetch(`/api/v1/candidates?${params.toString()}`, { signal });
 
   if (!response.ok) {
-    throw new Error(`Candidates request failed with status ${response.status}`);
+    throw new ApiError(`Candidates request failed with status ${response.status}`, response.status);
   }
 
   return (await response.json()) as Candidate[];
@@ -44,14 +45,29 @@ export function useCandidates(stage?: string) {
 
 export async function contactCandidate(candidateId: string): Promise<void> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/contact`, { method: "POST" });
-  if (!response.ok) throw new Error(`Contact request failed with status ${response.status}`);
+  if (!response.ok) throw new ApiError(`Contact request failed with status ${response.status}`, response.status);
+}
+
+export type CandidateFeedbackAction = "dismiss" | "save" | "defer" | "assign";
+
+export async function recordCandidateFeedback(
+  candidateId: string,
+  action: CandidateFeedbackAction,
+  reason: string,
+): Promise<void> {
+  const response = await fetch(`/api/v1/candidates/${candidateId}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, reason }),
+  });
+  if (!response.ok) throw new Error(`Feedback request failed with status ${response.status}`);
 }
 
 export async function fetchCandidate(candidateId: string, signal?: AbortSignal): Promise<CandidateDetail> {
   const response = await fetch(`/api/v1/candidates/${candidateId}`, { signal });
 
   if (!response.ok) {
-    throw new Error(`Candidate request failed with status ${response.status}`);
+    throw new ApiError(`Candidate request failed with status ${response.status}`, response.status);
   }
 
   return (await response.json()) as CandidateDetail;
@@ -84,6 +100,23 @@ export async function researchCandidate(candidateId: string): Promise<void> {
   }
 }
 
+export type ResearchStatus = {
+  candidate_id: string;
+  status: "not_started" | "pending" | "completed";
+  research_observations: number;
+  latest_scores: Record<string, unknown> | null;
+  scored_at: string | null;
+};
+
+export async function fetchResearchStatus(
+  candidateId: string,
+  signal?: AbortSignal,
+): Promise<ResearchStatus> {
+  const response = await fetch(`/api/v1/collection/research/${candidateId}/status`, { signal });
+  if (!response.ok) throw new Error(`Research status failed with status ${response.status}`);
+  return (await response.json()) as ResearchStatus;
+}
+
 export async function draftCandidateOutreach(
   candidateId: string,
   emailType: OutreachEmailType,
@@ -102,13 +135,17 @@ export async function draftCandidateOutreach(
 
 export async function recordCandidateDecision(
   candidateId: string,
+  opportunityId: string,
   action: DecisionAction,
   reason: string,
 ): Promise<DecisionResult> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/decision`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, reason }),
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": crypto.randomUUID(),
+    },
+    body: JSON.stringify({ opportunity_id: opportunityId, action, reason }),
   });
   if (!response.ok) {
     throw new Error(`Decision request failed with status ${response.status}`);
@@ -119,24 +156,30 @@ export async function recordCandidateDecision(
 export type MemoSection = {
   title: string;
   text: string;
+  claim_ids: string[];
   evidence_ids: string[];
 };
 
 export type CandidateMemo = {
   sections: MemoSection[];
+  status: "pending" | "failed" | "degraded" | "succeeded" | "missing";
   generation_mode: string | null;
   model_version: string | null;
   created_at: string | null;
 };
 
-export async function fetchCandidateMemo(candidateId: string, signal?: AbortSignal): Promise<CandidateMemo> {
-  const response = await fetch(`/api/v1/candidates/${candidateId}/memo`, { signal });
-  if (response.status === 404) return { sections: [], generation_mode: null, model_version: null, created_at: null };
-  if (!response.ok) throw new Error(`Memo request failed with status ${response.status}`);
+export async function fetchCandidateMemo(candidateId: string, opportunityId: string, signal?: AbortSignal): Promise<CandidateMemo> {
+  const response = await fetch(`/api/v1/candidates/${candidateId}/memo?opportunity_id=${encodeURIComponent(opportunityId)}`, { signal });
+  if (response.status === 404) return { sections: [], status: "missing", generation_mode: null, model_version: null, created_at: null };
+  if (!response.ok) throw new ApiError(`Memo request failed with status ${response.status}`, response.status);
   return (await response.json()) as CandidateMemo;
 }
 
-export async function generateCandidateMemo(candidateId: string): Promise<void> {
-  const response = await fetch(`/api/v1/candidates/${candidateId}/memo/generate`, { method: "POST" });
+export async function generateCandidateMemo(candidateId: string, opportunityId: string): Promise<void> {
+  const response = await fetch(`/api/v1/candidates/${candidateId}/memo/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ opportunity_id: opportunityId }),
+  });
   if (!response.ok) throw new Error(`Memo generation failed with status ${response.status}`);
 }

@@ -10,7 +10,7 @@ export interface FounderClaim {
   claim: string;
   source: string;
   trust: number;
-  status: string;
+  status: "Supported" | "Contradicted" | "Unverified" | "Synthesized" | "Observed";
 }
 
 export interface FounderAssessment {
@@ -18,7 +18,7 @@ export interface FounderAssessment {
   rating: "Bullish" | "Neutral" | "Bearish" | "Pending";
   trend: "Improving" | "Stable" | "Declining";
   confidence: number;
-  score: number;
+  score: number | null;
   body: string;
 }
 
@@ -37,6 +37,8 @@ export interface FounderProfile {
   momentum: number;
   thesisFit: number;
   evidence: number;
+  sourceConfidence: number | null;
+  coverageScore: number | null;
   scoreHint: string;
   assessments: FounderAssessment[];
   events: FounderEvent[];

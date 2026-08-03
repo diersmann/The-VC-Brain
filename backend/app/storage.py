@@ -130,3 +130,11 @@ async def get_snapshot(storage_path: str) -> bytes:
     )
     body: bytes = await response["Body"].read()
     return body
+
+
+async def check_health() -> None:
+    """Verify that the configured object-storage bucket is reachable."""
+    from app.config import get_settings
+
+    client = await _get_client()
+    await client.head_bucket(Bucket=get_settings().minio_bucket)

@@ -38,6 +38,28 @@ export interface CandidateThesisMatch {
   criteria: Record<string, Record<string, unknown>>;
 }
 
+export type ClaimStatus = "supported" | "contradicted" | "unverified" | "tavily_synthesized";
+export type AssessmentAxis = "Founder" | "Market" | "Idea-Market" | "execution" | "technical" | "commercial";
+export type AssessmentRating = "Bullish" | "Neutral" | "Bearish";
+export type AssessmentTrend = "Improving" | "Stable" | "Declining";
+export type LifecycleStage = "discovered" | "interesting" | "investigating" | "contacted" | "received" | "memo_ready" | "hold" | "approved" | "closed" | "screening" | "triage" | "diligence";
+
+export type CandidateSLA = {
+  received_at: string | null;
+  decision_due_at: string | null;
+  stage_deadlines: Record<string, string>;
+  owner: string | null;
+  pause_reason: string | null;
+  stage: string | null;
+  status: "not_started" | "on_track" | "at_risk" | "breached" | "paused" | "met";
+  attainment: "pending" | "met" | "breached";
+  remaining_seconds: number | null;
+  stage_remaining_seconds: number | null;
+  elapsed_seconds: number | null;
+  alert: boolean;
+  alert_level: "none" | "warning" | "breach" | "paused";
+};
+
 export interface Candidate {
   id: string;
   stable_id: string;
@@ -54,29 +76,37 @@ export interface Candidate {
   latest_score_at: string | null;
   created_at: string | null;
   lifecycle_stage?: string | null;
+  sla?: CandidateSLA | null;
 }
 
 export interface CandidateObservation {
+  id: string;
   predicate: string;
   object_value: string;
   confidence: number;
+  source_locator?: Record<string, unknown> | null;
   observed_at: string;
   source_type: string;
   source_uri: string;
 }
 
 export interface CandidateClaim {
+  id: string;
   predicate: string;
   object_value: string;
-  status: string;
+  status: ClaimStatus;
   confidence: number;
+  trust_score?: number | null;
+  trust_interval?: { low: number; high: number } | null;
+  trust_components?: Record<string, unknown> | null;
+  trust_explanation?: string | null;
   created_at: string | null;
 }
 
 export interface CandidateAssessment {
-  axis: string;
-  rating: string;
-  trend: string;
+  axis: AssessmentAxis;
+  rating: AssessmentRating;
+  trend: AssessmentTrend;
   confidence: number;
   unknowns: string[];
   created_at: string | null;
@@ -85,6 +115,28 @@ export interface CandidateAssessment {
 export interface CandidateScoreSnapshot {
   rubric_version: string;
   components: Record<string, unknown>;
+  created_at: string | null;
+}
+
+export interface DecisionProposal {
+  id: string;
+  action: "invest" | "hold" | "investigate" | "decline";
+  status: "draft" | "approved" | "overridden";
+  check_amount: number | null;
+  ownership_target: number | null;
+  conviction: "low" | "medium" | "high" | null;
+  founder_assessment_id: string | null;
+  market_assessment_id: string | null;
+  idea_market_assessment_id: string | null;
+  top_evidence: string[];
+  top_risks: string[];
+  open_conditions: string[];
+  readiness_blockers: string[];
+  readiness_status: "ready" | "blocked";
+  thesis_version: string | null;
+  rubric_versions: string[];
+  memo_model_version: string | null;
+  override_reason: string | null;
   created_at: string | null;
 }
 
@@ -98,15 +150,17 @@ export interface CandidateRelationship {
 
 export interface CandidateOpportunity {
   id: string;
+  organization_id?: string | null;
   company_name: string;
   source_kind: string;
-  lifecycle_state: string;
+  lifecycle_state: LifecycleStage;
   thesis_version: string | null;
   created_at: string | null;
 }
 
 export interface CandidateDetail extends Candidate {
   opportunity: CandidateOpportunity | null;
+  decision_proposal?: DecisionProposal | null;
   observations: CandidateObservation[];
   claims: CandidateClaim[];
   assessments: CandidateAssessment[];

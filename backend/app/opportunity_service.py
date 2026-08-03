@@ -7,15 +7,115 @@ lifecycle transitions with auditable DecisionEvents.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
+from datetime import UTC, datetime
 
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DecisionEvent, Opportunity, OpportunityFounder, Person
+from app.db.models import (
+    DecisionEvent,
+    Opportunity,
+    OpportunityChannelTouch,
+    OpportunityFounder,
+    OpportunityOutcome,
+    Organization,
+    Person,
+)
 
 logger = structlog.get_logger(__name__)
+
+OUTCOME_DOMAINS = frozenset({"sourcing", "process", "decision", "longitudinal"})
+
+
+def organization_stable_id(name: str) -> str:
+    """Return a deterministic, non-PII organization key for a company name."""
+    normalized = " ".join(name.casefold().split())
+    return f"company:{hashlib.md5(normalized.encode(), usedforsecurity=False).hexdigest()}"
+
+
+async def get_or_create_organization(session: AsyncSession, name: str) -> Organization:
+    """Resolve a company name to a first-class organization row."""
+    stable_id = organization_stable_id(name)
+    result = await session.execute(
+        select(Organization).where(Organization.stable_id == stable_id).limit(1)
+    )
+    organization = result.scalar_one_or_none()
+    if organization is not None:
+        return organization
+    organization = Organization(stable_id=stable_id, name=name.strip(), org_type="company")
+    session.add(organization)
+    await session.flush()
+    return organization
+
+
+def record_channel_touch(
+    session: AsyncSession,
+    opportunity_id: uuid.UUID,
+    channel: str,
+    touch_type: str,
+    *,
+    source_query: str | None = None,
+    source_ref: str | None = None,
+    metadata: dict[str, object] | None = None,
+) -> OpportunityChannelTouch:
+    """Record append-only sourcing/process attribution for an opportunity.
+
+    Channel touches are operational telemetry only. They must not be used as
+    a founder-quality signal or merged into score inputs.
+    """
+    touch = OpportunityChannelTouch(
+        opportunity_id=opportunity_id,
+        channel=channel,
+        touch_type=touch_type,
+        source_query=source_query,
+        source_ref=source_ref,
+        occurred_at=datetime.now(UTC),
+        touch_metadata=metadata or {},
+    )
+    session.add(touch)
+    return touch
+
+
+def record_opportunity_outcome(
+    session: AsyncSession,
+    opportunity_id: uuid.UUID,
+    *,
+    outcome_domain: str,
+    outcome_type: str,
+    source_type: str,
+    observed_at: datetime,
+    outcome_value: dict[str, object] | None = None,
+    source_ref: str | None = None,
+    horizon_days: int | None = None,
+    censoring: str = "observed",
+    confidence: float = 1.0,
+    provenance: dict[str, object] | None = None,
+) -> OpportunityOutcome:
+    """Append an outcome observation without treating decisions as merit truth."""
+    if outcome_domain not in OUTCOME_DOMAINS:
+        raise ValueError(f"unsupported outcome domain: {outcome_domain}")
+    if horizon_days is not None and horizon_days < 0:
+        raise ValueError("horizon_days must be non-negative")
+    if not 0.0 <= confidence <= 1.0:
+        raise ValueError("confidence must be between 0 and 1")
+    outcome = OpportunityOutcome(
+        opportunity_id=opportunity_id,
+        outcome_domain=outcome_domain,
+        outcome_type=outcome_type,
+        source_type=source_type,
+        source_ref=source_ref,
+        observed_at=observed_at,
+        horizon_days=horizon_days,
+        censoring=censoring,
+        confidence=confidence,
+        outcome_value=outcome_value or {},
+        provenance=provenance or {},
+    )
+    session.add(outcome)
+    return outcome
 
 
 async def get_or_create_opportunity(
@@ -25,6 +125,10 @@ async def get_or_create_opportunity(
     source_kind: str = "outbound",
     lifecycle_state: str = "discovered",
     company_name: str | None = None,
+    channel: str | None = None,
+    touch_type: str = "discovery",
+    source_query: str | None = None,
+    source_ref: str | None = None,
 ) -> Opportunity:
     """Find the latest opportunity for *person*, or create one.
 
@@ -40,17 +144,40 @@ async def get_or_create_opportunity(
     )
     opportunity = result.scalar_one_or_none()
     if opportunity is not None:
+        if channel is not None:
+            record_channel_touch(
+                session,
+                opportunity.id,
+                channel,
+                touch_type,
+                source_query=source_query,
+                source_ref=source_ref,
+            )
         return opportunity
 
+    resolved_company_name = company_name or person.display_name or person.stable_id
+    organization = await get_or_create_organization(session, resolved_company_name)
     opportunity = Opportunity(
-        company_name=company_name or person.display_name or person.stable_id,
+        organization_id=organization.id,
+        company_name=resolved_company_name,
         source_kind=source_kind,
         lifecycle_state=lifecycle_state,
     )
     session.add(opportunity)
     await session.flush()
-    session.add(OpportunityFounder(opportunity_id=opportunity.id, person_id=person.id))
+    session.add(
+        OpportunityFounder(opportunity_id=opportunity.id, person_id=person.id, role="founder")
+    )
     await session.flush()
+    if channel is not None:
+        record_channel_touch(
+            session,
+            opportunity.id,
+            channel,
+            touch_type,
+            source_query=source_query,
+            source_ref=source_ref,
+        )
     return opportunity
 
 
@@ -62,15 +189,23 @@ async def create_inbound_opportunity(
     thesis_version: str | None = None,
 ) -> Opportunity:
     """Create a new inbound opportunity for a person (e.g. after mock reply)."""
+    from app.sla import initialize_sla
+
+    resolved_company_name = company_name or person.display_name or person.stable_id
+    organization = await get_or_create_organization(session, resolved_company_name)
     opportunity = Opportunity(
-        company_name=company_name or person.display_name or person.stable_id,
+        organization_id=organization.id,
+        company_name=resolved_company_name,
         source_kind="inbound",
         lifecycle_state="received",
         thesis_version=thesis_version,
     )
+    initialize_sla(opportunity)
     session.add(opportunity)
     await session.flush()
-    session.add(OpportunityFounder(opportunity_id=opportunity.id, person_id=person.id))
+    session.add(
+        OpportunityFounder(opportunity_id=opportunity.id, person_id=person.id, role="founder")
+    )
     await session.flush()
     return opportunity
 
@@ -107,6 +242,11 @@ async def transition_opportunity(
     if not is_valid_transition(prior_state, new_state):
         msg = f"Invalid lifecycle transition: {prior_state} -> {new_state}"
         raise ValueError(msg)
+
+    if new_state == "received":
+        from app.sla import initialize_sla
+
+        initialize_sla(opportunity)
 
     if prior_state == new_state:
         # Idempotent: no transition needed, but return a no-op event marker

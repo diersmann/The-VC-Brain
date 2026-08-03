@@ -3,26 +3,37 @@
 Lightweight: paper metadata + abstract.
 Deep: full PDF download + coauthor expansion (capped).
 
-Threshold baked into discover: only authors in thesis-relevant categories
-whose papers have >= arxiv_min_citations (via Semantic Scholar API) become seeds.
+Discovery includes relevant authors regardless of citation count. Citations are
+retained as a confidence and momentum signal, not an eligibility gate.
 """
 
 from __future__ import annotations
 
+import io
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 import structlog
+from pypdf import PdfReader
 
-from app.collectors.base import Collected, Connector, ConnectorError, Depth, Seed
+from app.collectors.base import (
+    Collected,
+    Connector,
+    ConnectorError,
+    Depth,
+    Seed,
+    canonical_json_bytes,
+)
 
 logger = structlog.get_logger(__name__)
 
 _ARXIV_API = "https://export.arxiv.org/api/query"
 _SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1"
 _DEFAULT_MAX_RESULTS = 50
+_MAX_EVIDENCE_PAGES = 20
+_MAX_PAGE_CHARS = 2000
 
 # arXiv categories relevant to typical VC theses (configurable).
 _DEFAULT_CATEGORIES = [
@@ -53,21 +64,15 @@ class ArxivConnector(Connector):
     # ------------------------------------------------------------------
 
     async def discover(self, query: str, page: int = 1) -> list[Seed]:
-        """Search arXiv by topic, return author seeds (threshold-gated).
+        """Search arXiv by topic and return author seeds.
 
-        Only returns authors whose papers:
-        - Are in thesis-relevant categories, AND
-        - Have >= arxiv_min_citations (via Semantic Scholar).
+        Returns authors from relevant categories regardless of citation count.
+        Citation counts remain metadata and are collected as a downstream signal.
 
         Args:
             query: Search topic.
             page: Page number (1-indexed, 50 results per page).
         """
-        from app.config import get_settings
-
-        settings = get_settings()
-        min_citations = settings.arxiv_min_citations
-
         # Build arXiv search query
         cat_filter = " OR ".join(f"cat:{c}" for c in _DEFAULT_CATEGORIES)
         search_query = f"({query}) AND ({cat_filter})"
@@ -98,9 +103,6 @@ class ArxivConnector(Connector):
 
             # Get citation count from Semantic Scholar
             citations = await self._fetch_citations(arxiv_id)
-            if citations < min_citations:
-                continue
-
             authors = entry.findall("atom:author", ns)
             for author in authors:
                 name = author.findtext("atom:name", "", ns)
@@ -111,7 +113,12 @@ class ArxivConnector(Connector):
                             source_type="arxiv",
                             handle=name,
                             display_hint=name,
-                            metadata={"arxiv_id": arxiv_id, "citations": citations, "query": query},
+                            metadata={
+                                "arxiv_id": arxiv_id,
+                                "citations": citations,
+                                "citation_signal": "context_only",
+                                "query": query,
+                            },
                         )
                     )
 
@@ -133,6 +140,52 @@ class ArxivConnector(Connector):
             except Exception:
                 logger.warning("semantic_scholar_failed", arxiv_id=arxiv_id)
         return 0
+
+    @staticmethod
+    def _extract_pdf_page_observations(
+        pdf_bytes: bytes,
+        *,
+        pdf_url: str,
+        author_name: str,
+        observed_at: datetime,
+    ) -> list[dict[str, object]]:
+        """Extract bounded, page-addressable evidence from a deep PDF."""
+        try:
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+        except Exception as exc:
+            logger.warning("arxiv_pdf_parse_failed", error=str(exc))
+            return []
+
+        observations: list[dict[str, object]] = []
+        for page_number, page in enumerate(reader.pages, start=1):
+            if page_number > _MAX_EVIDENCE_PAGES:
+                break
+            try:
+                text = (page.extract_text() or "").strip()
+            except Exception as exc:
+                logger.warning("arxiv_pdf_page_extract_failed", page=page_number, error=str(exc))
+                continue
+            if not text:
+                continue
+            bounded_text = text[:_MAX_PAGE_CHARS]
+            observations.append(
+                {
+                    "predicate": "arxiv_pdf_page_text",
+                    "object_value": bounded_text,
+                    "observed_at": observed_at.isoformat(),
+                    "confidence": 0.9,
+                    "source_locator": {
+                        "kind": "pdf_page",
+                        "source_uri": pdf_url,
+                        "page": page_number,
+                        "char_start": 0,
+                        "char_end": len(bounded_text),
+                        "author": author_name,
+                        "author_identity_confidence": 0.8,
+                    },
+                }
+            )
+        return observations
 
     # ------------------------------------------------------------------
     # Collect
@@ -240,11 +293,32 @@ class ArxivConnector(Connector):
                 async with await self._client() as pdf_client:
                     pdf_resp = await pdf_client.get(pdf_url, timeout=60.0)
                 if pdf_resp.status_code == 200:
-                    pass  # PDF downloaded; processing is Phase 2
+                    pdf_bytes = pdf_resp.content
+                    observations.extend(
+                        self._extract_pdf_page_observations(
+                            pdf_bytes,
+                            pdf_url=pdf_url,
+                            author_name=author_name,
+                            observed_at=now,
+                        )
+                    )
+                    if pdf_bytes:
+                        return Collected(
+                            content=pdf_bytes,
+                            content_type="application/pdf",
+                            observations=observations,
+                            source_type="arxiv",
+                            uri=pdf_url,
+                            license_hint={
+                                "source": "arXiv PDF",
+                                "terms": "https://info.arxiv.org/help/api/tou.html",
+                                "evidence_depth": "page_coordinates",
+                            },
+                        )
             except Exception:
                 logger.warning("arxiv_pdf_download_failed", arxiv_id=top_paper["arxiv_id"])
 
-        raw_bytes = str(papers).encode("utf-8")
+        raw_bytes = canonical_json_bytes(papers)
         return Collected(
             content=raw_bytes,
             content_type="application/json",

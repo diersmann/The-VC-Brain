@@ -15,26 +15,36 @@ Jobs:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import math
 import re
+import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
 
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.artifact_provenance import build_artifact_metadata, fingerprint_payload
 from app.collectors.avatars import fetch_and_store_avatar
-from app.collectors.base import Collected, Seed
+from app.collectors.base import (
+    Collected,
+    Seed,
+    canonical_json_bytes,
+    classify_connector_failure,
+    validate_collected,
+)
 from app.collectors.priority import info_gain
 from app.collectors.priority import priority as compute_priority
 from app.collectors.queue import (
     decrement_tavily_budget,
     get_tavily_budget_remaining,
-    pop_top,
+    pop_top_with_priority,
     queue_depth,
 )
 from app.collectors.queue import (
@@ -54,7 +64,6 @@ from app.collectors.signals import (
 from app.collectors.signals import web_signal as compute_web_signal
 from app.db.models import (
     Assessment,
-    Claim,
     Observation,
     Opportunity,
     OpportunityFounder,
@@ -62,9 +71,37 @@ from app.db.models import (
     ScoreSnapshot,
     SourceSnapshot,
 )
+from app.job_ledger import update_job
+from app.privacy import external_ai_use_decision
+from app.source_policy import build_source_use_policy, source_allows_model_use
 from app.storage import put_snapshot
 
 logger = structlog.get_logger(__name__)
+
+_SIGNAL_PREDICATES = {
+    "github_login",
+    "github_languages",
+    "github_public_repos",
+    "github_total_stars",
+    "github_top_repo_readme",
+    "producthunt_username",
+    "producthunt_total_upvotes",
+    "producthunt_posts",
+    "arxiv_paper_count",
+    "arxiv_total_citations",
+    "page_content",
+    "blog_url",
+    "podcast_url",
+    "youtube_recent_videos",
+}
+_SIGNAL_NUMERIC_PREDICATES = {
+    "github_public_repos",
+    "github_total_stars",
+    "producthunt_total_upvotes",
+    "producthunt_posts",
+    "arxiv_paper_count",
+    "arxiv_total_citations",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -140,12 +177,29 @@ async def _write_snapshot(
         source_type=collected.source_type,
     )
 
+    existing_result = await session.execute(
+        select(SourceSnapshot)
+        .where(
+            SourceSnapshot.uri == collected.uri,
+            SourceSnapshot.source_type == collected.source_type,
+            SourceSnapshot.content_hash == content_hash,
+        )
+        .order_by(SourceSnapshot.collected_at.desc())
+        .limit(1)
+    )
+    existing = existing_result.scalar_one_or_none()
+    if existing is not None:
+        return existing
+
     snapshot = SourceSnapshot(
         uri=collected.uri,
         source_type=collected.source_type,
         content_hash=content_hash,
         storage_path=storage_path,
         license_metadata=collected.license_hint,
+        source_use_policy=build_source_use_policy(
+            collected.source_type, collected.license_hint
+        ),
         collected_at=datetime.now(UTC),
     )
     session.add(snapshot)
@@ -158,33 +212,209 @@ async def _write_observations(
     snapshot: SourceSnapshot,
     observations: list[dict[str, object]],
     subject_id: uuid.UUID | None,
+    opportunity_id: uuid.UUID | None = None,
 ) -> list[uuid.UUID]:
     """Write Observation rows linked to a SourceSnapshot."""
+    policy = getattr(snapshot, "source_use_policy", None)
+    if isinstance(policy, dict) and not source_allows_model_use(snapshot):
+        logger.warning(
+            "source_observations_quarantined",
+            snapshot_id=str(snapshot.id),
+            source_type=snapshot.source_type,
+        )
+        return []
     now = datetime.now(UTC)
     observation_ids: list[uuid.UUID] = []
     for obs in observations:
         # Parse observed_at: connectors may pass an ISO string or a datetime
         raw_observed_at = obs.get("observed_at", now)
-        if isinstance(raw_observed_at, str):
-            observed_at = datetime.fromisoformat(raw_observed_at)
-        elif isinstance(raw_observed_at, datetime):
-            observed_at = raw_observed_at
+        try:
+            if isinstance(raw_observed_at, str):
+                observed_at = datetime.fromisoformat(raw_observed_at)
+            elif isinstance(raw_observed_at, datetime):
+                observed_at = raw_observed_at
+            else:
+                observed_at = now
+        except (TypeError, ValueError):
+            logger.warning("observation_rejected", reason="invalid_observed_at")
+            continue
+        if observed_at.tzinfo is None:
+            observed_at = observed_at.replace(tzinfo=UTC)
         else:
-            observed_at = now
+            observed_at = observed_at.astimezone(UTC)
+        if observed_at > now + timedelta(minutes=5):
+            logger.warning("observation_rejected", reason="future_observed_at")
+            continue
+
+        predicate = str(obs.get("predicate", ""))
+        object_value = str(obs.get("object_value", ""))
+        if not predicate.strip() or not object_value.strip():
+            logger.warning("observation_rejected", reason="empty_predicate_or_value")
+            continue
+        try:
+            confidence = float(str(obs.get("confidence", 1.0)))
+        except (TypeError, ValueError):
+            logger.warning("observation_rejected", reason="invalid_confidence")
+            continue
+        if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+            logger.warning("observation_rejected", reason="confidence_out_of_range")
+            continue
+        source_locator = obs.get("source_locator")
+        if not isinstance(source_locator, dict):
+            source_locator = {
+                "kind": "source_snapshot",
+                "source_uri": snapshot.uri,
+                "reason": "coordinate unavailable from connector",
+            }
+        extractor_version = f"{snapshot.source_type}-v1"
+        existing_result = await session.execute(
+            select(Observation)
+            .where(
+                Observation.snapshot_id == snapshot.id,
+                Observation.subject_id == subject_id,
+                Observation.opportunity_id == opportunity_id,
+                Observation.predicate == predicate,
+                Observation.object_value == object_value,
+                Observation.extractor_version == extractor_version,
+            )
+            .limit(1)
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            observation_ids.append(existing.id)
+            continue
 
         observation = Observation(
             snapshot_id=snapshot.id,
             subject_id=subject_id,
-            predicate=str(obs.get("predicate", "")),
-            object_value=str(obs.get("object_value", "")),
+            opportunity_id=opportunity_id,
+            predicate=predicate,
+            object_value=object_value,
             observed_at=observed_at,
-            extractor_version=f"{snapshot.source_type}-v1",
-            confidence=float(str(obs.get("confidence", 1.0))),
+            extractor_version=extractor_version,
+            confidence=confidence,
+            source_locator=source_locator,
         )
         session.add(observation)
         await session.flush()
         observation_ids.append(observation.id)
     return observation_ids
+
+
+def _parse_signal_count(predicate: str, value: str) -> int | None:
+    """Parse a non-negative integer signal input without allowing coercion surprises."""
+    if predicate not in _SIGNAL_NUMERIC_PREDICATES:
+        return None
+    stripped = value.strip()
+    if not stripped or not stripped.isdecimal():
+        return None
+    return int(stripped)
+
+
+def _select_latest_signal_observations(
+    observations: Sequence[Observation],
+) -> tuple[dict[str, Observation], list[str]]:
+    """Select deterministic, latest valid inputs for the signal score."""
+    selected: dict[str, Observation] = {}
+    rejected_numeric: list[str] = []
+    ordered = sorted(
+        observations,
+        key=lambda item: (
+            item.observed_at,
+            item.created_at or datetime.min.replace(tzinfo=UTC),
+            str(item.id),
+        ),
+        reverse=True,
+    )
+    for observation in ordered:
+        predicate = observation.predicate
+        if predicate not in _SIGNAL_PREDICATES or predicate in selected:
+            continue
+        if not observation.object_value.strip():
+            continue
+        if predicate in _SIGNAL_NUMERIC_PREDICATES and _parse_signal_count(
+            predicate, observation.object_value
+        ) is None:
+            rejected_numeric.append(str(observation.id))
+            logger.warning(
+                "signal_input_rejected",
+                predicate=predicate,
+                observation_id=str(observation.id),
+                reason="invalid_nonnegative_integer",
+            )
+            continue
+        selected[predicate] = observation
+    return selected, rejected_numeric
+
+
+def _signal_input_fingerprint(
+    selected: dict[str, Observation],
+    components: dict[str, float],
+) -> str:
+    """Hash the exact observations and output components used by a signal snapshot."""
+    payload = {
+        "rubric_version": "signal-v1",
+        "provenance_version": "signal-v2",
+        "components": components,
+        "observations": [
+            {
+                "id": str(observation.id),
+                "predicate": predicate,
+                "object_value": observation.object_value,
+                "observed_at": observation.observed_at.isoformat(),
+                "confidence": observation.confidence,
+            }
+            for predicate, observation in sorted(selected.items())
+        ],
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _collection_source_for_seed(requested_source: str, seed: Seed) -> str | None:
+    """Resolve a discovery seed to a real collector, or keep it as a lead."""
+    if requested_source != "tavily_search":
+        return seed.source_type or requested_source
+    if seed.source_type == "web" and seed.handle.startswith(("http://", "https://")):
+        return "web"
+    return None
+
+
+EntityKind = Literal["person", "organization", "project", "channel", "event", "unknown"]
+
+_SEED_ENTITY_CLASSIFICATIONS: dict[str, tuple[EntityKind, float]] = {
+    "arxiv": ("person", 0.92),
+    "github": ("person", 0.95),
+    "hackernews": ("person", 0.9),
+    "linkedin": ("person", 0.9),
+    "producthunt": ("person", 0.88),
+    "hackathons": ("project", 0.98),
+    "podcasts": ("event", 0.9),
+    "youtube": ("channel", 0.98),
+    "tavily_entity": ("unknown", 0.35),
+    "web": ("unknown", 0.35),
+}
+
+
+def classify_seed_entity(requested_source: str, seed: Seed) -> tuple[EntityKind, float]:
+    """Classify a discovery seed before it can create a founder Person row.
+
+    Connector semantics are a conservative prior, not proof of identity. A
+    future entity-resolution stage can replace this with evidence-backed
+    classification; for now, only high-confidence person sources enter the
+    founder scoring path.
+    """
+    metadata_type = seed.metadata.get("entity_type")
+    valid_types: set[str] = {"person", "organization", "project", "channel", "event"}
+    if isinstance(metadata_type, str) and metadata_type in valid_types:
+        raw_confidence = seed.metadata.get("entity_confidence", 0.75)
+        confidence = float(raw_confidence) if isinstance(raw_confidence, (int, float)) else 0.75
+        return metadata_type, max(0.0, min(1.0, confidence))  # type: ignore[return-value]
+    return _SEED_ENTITY_CLASSIFICATIONS.get(
+        seed.source_type or requested_source,
+        ("unknown", 0.0),
+    )
 
 
 async def _compute_and_store_signal(
@@ -193,15 +423,15 @@ async def _compute_and_store_signal(
     source_type: str,
 ) -> dict[str, float]:
     """Compute a signal score from existing observations and store as ScoreSnapshot."""
+    signal_started = time.perf_counter()
+    run_id = uuid.uuid4()
     # Fetch all observations for this person
     result = await session.execute(select(Observation).where(Observation.subject_id == person.id))
     observations = result.scalars().all()
 
-    # Aggregate all relevant observations before computing each source score.
-    values: dict[str, str] = {}
-    predicates = {obs.predicate for obs in observations}
-    for obs in observations:
-        values.setdefault(obs.predicate, obs.object_value)
+    selected, rejected_numeric = _select_latest_signal_observations(observations)
+    values = {predicate: observation.object_value for predicate, observation in selected.items()}
+    predicates = set(selected)
 
     github_score = 0.0
     if "github_login" in predicates:
@@ -211,8 +441,14 @@ async def _compute_and_store_signal(
             if item.strip()
         ]
         github_score = compute_github_signal(
-            public_repos=int(values.get("github_public_repos", "0") or 0),
-            total_stars=int(values.get("github_total_stars", "0") or 0),
+            public_repos=_parse_signal_count(
+                "github_public_repos", values.get("github_public_repos", "0")
+            )
+            or 0,
+            total_stars=_parse_signal_count(
+                "github_total_stars", values.get("github_total_stars", "0")
+            )
+            or 0,
             top_language_count=len(languages),
             has_readme="github_top_repo_readme" in predicates,
         )
@@ -220,16 +456,28 @@ async def _compute_and_store_signal(
     producthunt_score = 0.0
     if "producthunt_username" in predicates:
         producthunt_score = compute_producthunt_signal(
-            total_upvotes=int(values.get("producthunt_total_upvotes", "0") or 0),
-            launch_count=int(values.get("producthunt_posts", "0") or 0),
+            total_upvotes=_parse_signal_count(
+                "producthunt_total_upvotes", values.get("producthunt_total_upvotes", "0")
+            )
+            or 0,
+            launch_count=_parse_signal_count(
+                "producthunt_posts", values.get("producthunt_posts", "0")
+            )
+            or 0,
             has_maker_profile=True,
         )
 
     arxiv_score = 0.0
     if "arxiv_paper_count" in predicates:
         arxiv_score = compute_arxiv_signal(
-            paper_count=int(values.get("arxiv_paper_count", "0") or 0),
-            total_citations=int(values.get("arxiv_total_citations", "0") or 0),
+            paper_count=_parse_signal_count(
+                "arxiv_paper_count", values.get("arxiv_paper_count", "0")
+            )
+            or 0,
+            total_citations=_parse_signal_count(
+                "arxiv_total_citations", values.get("arxiv_total_citations", "0")
+            )
+            or 0,
             in_relevant_categories=True,
         )
 
@@ -247,11 +495,40 @@ async def _compute_and_store_signal(
         web=web_score,
     )
 
+    evidence_ids = sorted(str(observation.id) for observation in selected.values())
+    source_confidence = round(
+        sum(observation.confidence for observation in selected.values()) / len(selected), 4
+    ) if selected else 0.0
+    fingerprint = _signal_input_fingerprint(selected, components)
+    provenance = {
+        "kind": "signal_snapshot",
+        "version": "signal-v2",
+        "input_fingerprint": fingerprint,
+        "observation_ids": evidence_ids,
+        "selected_predicates": sorted(selected),
+        "signal_coverage": components["signal_coverage"],
+        "source_confidence": source_confidence,
+        "rejected_numeric_observation_ids": sorted(rejected_numeric),
+    }
+
     score_snapshot = ScoreSnapshot(
         subject_id=person.id,
+        subject_type="person",
         rubric_version="signal-v1",
         components=components,
-        evidence_ids=[],
+        evidence_ids=evidence_ids,
+        input_fingerprint=fingerprint,
+        provenance=provenance,
+        artifact_metadata=build_artifact_metadata(
+            run_id=run_id,
+            artifact_type="score_snapshot",
+            code_version="signal-scoring-v2",
+            input_fingerprint=fingerprint,
+            rubric_versions=("signal-v1",),
+            parameters={"source_type": source_type},
+            latency_ms=round((time.perf_counter() - signal_started) * 1000),
+            validator_status="not_applicable",
+        ),
     )
     session.add(score_snapshot)
     await session.flush()
@@ -269,7 +546,9 @@ async def _compute_and_store_signal(
 # ---------------------------------------------------------------------------
 
 
-async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str, Any]:
+async def discover_job(
+    ctx: dict[str, Any], query: str, source: str, job_id: str | None = None
+) -> dict[str, Any]:
     """Run a connector's discover phase.
 
     Args:
@@ -289,20 +568,59 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
     page = await get_discovery_page(ctx["redis"], source, query)
     logger.info("discover_job_page", source=source, query=query, page=page)
 
-    seeds = await connector.discover(query, page=page)
+    try:
+        seeds = await connector.discover(query, page=page)
+    except Exception as exc:
+        if job_id:
+            async with _session_ctx(ctx) as status_session:
+                await update_job(
+                    status_session,
+                    job_id,
+                    status="failed",
+                    phase="discover",
+                    attempt=1,
+                    last_error=str(exc),
+                )
+                await status_session.commit()
+        raise
     logger.info("discover_job_seeds", source=source, seed_count=len(seeds))
 
     above_count = 0
+    entity_counts: dict[str, int] = {}
     from app.config import get_settings as _get_settings
 
     settings = ctx.get("settings") or _get_settings()
     threshold = settings.signal_threshold
 
     async with _session_ctx(ctx) as session:
+        if job_id:
+            await update_job(session, job_id, status="running", phase="collect", attempt=1)
         for seed in seeds:
+            entity_type, entity_confidence = classify_seed_entity(source, seed)
+            entity_counts[entity_type] = entity_counts.get(entity_type, 0) + 1
+            if entity_type != "person" or entity_confidence < 0.8:
+                logger.info(
+                    "discovery_seed_excluded_from_founder_scoring",
+                    source=source,
+                    seed_type=seed.source_type,
+                    entity_type=entity_type,
+                    entity_confidence=entity_confidence,
+                    handle=seed.handle,
+                )
+                continue
+            collection_source = _collection_source_for_seed(source, seed)
+            if collection_source is None:
+                logger.info(
+                    "discovery_seed_retained_as_lead",
+                    source=source,
+                    seed_type=seed.source_type,
+                    handle=seed.handle,
+                )
+                continue
+            seed_connector = get_connector(collection_source)
             person = await _get_or_create_person(
                 session,
-                source_type=source,
+                source_type=collection_source,
                 handle=seed.handle,
                 display_hint=seed.display_hint,
             )
@@ -322,11 +640,11 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
             active_thesis = active_thesis_result.scalar_one_or_none()
             
             if active_thesis:
-                freshness_days = active_thesis.source_freshness_days.get(source, 7)
+                freshness_days = active_thesis.source_freshness_days.get(collection_source, 7)
             else:
                 from app.collectors.thesis_config import get_thesis_config
                 thesis = get_thesis_config()
-                freshness_days = thesis.get("source_freshness_days", {}).get(source, 7)
+                freshness_days = thesis.get("source_freshness_days", {}).get(collection_source, 7)
             from datetime import UTC, datetime, timedelta
 
             cutoff = datetime.now(UTC) - timedelta(days=freshness_days)
@@ -336,7 +654,7 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                 .join(Observation, Observation.snapshot_id == SourceSnapshot.id)
                 .where(
                     Observation.subject_id == person.id,
-                    SourceSnapshot.source_type == source,
+                    SourceSnapshot.source_type == collection_source,
                     SourceSnapshot.collected_at >= cutoff,
                 )
                 .limit(1)
@@ -345,10 +663,12 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                 logger.debug(
                     "discover_skip_fresh",
                     person_id=str(person.id),
-                    source=source,
+                    source=collection_source,
                 )
                 # Still recompute signal score with existing observations
-                components = await _compute_and_store_signal(session, person, source)
+                components = await _compute_and_store_signal(
+                    session, person, collection_source
+                )
 
                 from app.opportunity_service import (
                     get_or_create_opportunity,
@@ -356,7 +676,14 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                 )
 
                 opportunity = await get_or_create_opportunity(
-                    session, person, source_kind="outbound", lifecycle_state="discovered"
+                    session,
+                    person,
+                    source_kind="outbound",
+                    lifecycle_state="discovered",
+                    channel=collection_source,
+                    touch_type="discovery",
+                    source_query=query,
+                    source_ref=seed.handle,
                 )
                 composite = float(components.get("composite", 0.0))
                 if composite >= threshold and opportunity.lifecycle_state == "discovered":
@@ -369,26 +696,31 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                     above_count += 1
                     task = {
                         "person_id": str(person.id),
-                        "source": source,
+                        "source": collection_source,
                         "depth": "deep",
                         "handle": seed.handle,
                     }
                     p = compute_priority(
                         info_gain=info_gain(components.get("composite", 0.0), staleness_days=0.0),
-                        cost=connector.cost,
-                        authority=connector.authority,
+                        cost=seed_connector.cost,
+                        authority=seed_connector.authority,
+                        evidence_confidence=components.get("signal_coverage"),
                     )
                     await queue_enqueue(ctx["redis"], task, p)
                 continue
 
             # Light collect: get metadata
             try:
-                collected = await connector.collect(seed, depth="light")
+                collected = await seed_connector.collect(seed, depth="light")
+                validate_collected(collected)
             except Exception as exc:
+                failure_kind, retryable = classify_connector_failure(exc)
                 logger.error(
                     "collect_light_failed",
-                    source=source,
+                    source=collection_source,
                     handle=seed.handle,
+                    failure_kind=failure_kind,
+                    retryable=retryable,
                     error=str(exc),
                 )
                 continue
@@ -405,13 +737,20 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                     break
 
             # Compute signal score
-            components = await _compute_and_store_signal(session, person, source)
+            components = await _compute_and_store_signal(session, person, collection_source)
 
             # Create/update outbound opportunity at the right lifecycle stage
             from app.opportunity_service import get_or_create_opportunity, transition_opportunity
 
             opportunity = await get_or_create_opportunity(
-                session, person, source_kind="outbound", lifecycle_state="discovered"
+                session,
+                person,
+                source_kind="outbound",
+                lifecycle_state="discovered",
+                channel=collection_source,
+                touch_type="discovery",
+                source_query=query,
+                source_ref=seed.handle,
             )
             composite = float(components.get("composite", 0.0))
             if composite >= threshold and opportunity.lifecycle_state == "discovered":
@@ -425,21 +764,37 @@ async def discover_job(ctx: dict[str, Any], query: str, source: str) -> dict[str
                 above_count += 1
                 task = {
                     "person_id": str(person.id),
-                    "source": source,
+                    "source": collection_source,
                     "depth": "deep",
                     "handle": seed.handle,
                 }
                 p = compute_priority(
                     info_gain=info_gain(composite, staleness_days=0.0),
-                    cost=connector.cost,
-                    authority=connector.authority,
+                    cost=seed_connector.cost,
+                    authority=seed_connector.authority,
+                    evidence_confidence=components.get("signal_coverage"),
                 )
                 await queue_enqueue(ctx["redis"], task, p)
 
+        result = {
+            "query": query,
+            "source": source,
+            "seeds": len(seeds),
+            "entity_counts": entity_counts,
+            "above_threshold": above_count,
+        }
+        if job_id:
+            await update_job(
+                session,
+                job_id,
+                status="succeeded",
+                phase="complete",
+                result=result,
+            )
         await session.commit()
 
     logger.info("discover_job_completed", query=query, source=source, above=above_count)
-    return {"query": query, "source": source, "seeds": len(seeds), "above_threshold": above_count}
+    return result
 
 
 async def collect_job(
@@ -484,14 +839,23 @@ async def collect_job(
 
         try:
             collected = await connector.collect(seed, depth=depth)  # type: ignore[arg-type]
+            validate_collected(collected)
         except Exception as exc:
+            failure_kind, retryable = classify_connector_failure(exc)
             logger.error(
                 "collect_deep_failed",
                 person_id=person_id,
                 source=source,
+                failure_kind=failure_kind,
+                retryable=retryable,
                 error=str(exc),
             )
-            return {"error": str(exc)}
+            return {
+                "status": "failed",
+                "error": str(exc),
+                "failure_kind": failure_kind,
+                "retryable": retryable,
+            }
 
         snapshot = await _write_snapshot(session, collected)
         await _write_observations(session, snapshot, collected.observations, person.id)
@@ -673,7 +1037,9 @@ def score_research_axis(
     negative_signal = min(1.0, negative_hits / 3.0)
 
     if not results:
-        score = 0.30
+        # No public result is an evidence gap, not negative evidence. Keep
+        # the axis neutral and make its low confidence drive diligence.
+        score = 0.50
         confidence = 0.0
     else:
         score = (
@@ -729,18 +1095,47 @@ def _axis_unknowns(axis: str, result_count: int, confidence: float) -> list[str]
     return unknowns
 
 
-async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, Any]:
+async def research_candidate_job(
+    ctx: dict[str, Any], person_id: str, opportunity_id: str
+) -> dict[str, Any]:
     """Research one candidate with three Tavily searches and persist scored evidence."""
     from tavily import TavilyClient  # type: ignore[import-untyped]
 
     settings = ctx["settings"]
     if not settings.tavily_api_key:
         raise RuntimeError("TAVILY_API_KEY is not configured")
+    run_id = uuid.uuid4()
+    research_started = time.perf_counter()
 
     async with _session_ctx(ctx) as session:
         person = await session.get(Person, uuid.UUID(person_id))
         if person is None or not person.canonical:
             return {"error": "person_not_found", "person_id": person_id}
+        ai_policy = external_ai_use_decision(person, "research")
+        if not ai_policy.allowed:
+            return {
+                "error": "external_ai_blocked",
+                "purpose": ai_policy.purpose,
+                "reason": ai_policy.reason,
+                "person_id": person_id,
+            }
+
+        try:
+            requested_opportunity_id = uuid.UUID(opportunity_id)
+        except ValueError:
+            return {"error": "opportunity_id_required", "person_id": person_id}
+
+        opportunity_result = await session.execute(
+            select(Opportunity)
+            .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
+            .where(
+                Opportunity.id == requested_opportunity_id,
+                OpportunityFounder.person_id == person.id,
+            )
+        )
+        opportunity = opportunity_result.scalar_one_or_none()
+        if opportunity is None:
+            return {"error": "opportunity_not_found", "person_id": person_id}
 
         existing_observations_result = await session.execute(
             select(Observation).where(Observation.subject_id == person.id)
@@ -752,8 +1147,9 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
         previous_result = await session.execute(
             select(ScoreSnapshot)
             .where(
-                ScoreSnapshot.subject_id == person.id,
-                ScoreSnapshot.rubric_version == "founder-tavily-v1",
+                ScoreSnapshot.subject_id == opportunity.id,
+                ScoreSnapshot.subject_type == "opportunity",
+                ScoreSnapshot.rubric_version == "opportunity-axes-v1",
             )
             .order_by(ScoreSnapshot.created_at.desc())
             .limit(1)
@@ -791,7 +1187,7 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
                 url = str(result.get("url", ""))
                 if not url:
                     continue
-                content = json.dumps(result, ensure_ascii=False).encode("utf-8")
+                content = canonical_json_bytes(result)
                 relevance = result.get("score", 0.5)
                 confidence = float(relevance) if isinstance(relevance, (int, float)) else 0.5
                 collected = Collected(
@@ -813,14 +1209,16 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
                 )
                 snapshot = await _write_snapshot(session, collected)
                 ids = await _write_observations(
-                    session, snapshot, collected.observations, person.id
+                    session,
+                    snapshot,
+                    collected.observations,
+                    person.id,
+                    opportunity.id,
                 )
                 evidence_ids.extend(str(item) for item in ids)
 
             if answer:
-                summary_content = json.dumps(
-                    {"query": query, "answer": answer}, ensure_ascii=False
-                ).encode("utf-8")
+                summary_content = canonical_json_bytes({"query": query, "answer": answer})
                 summary_collected = Collected(
                     content=summary_content,
                     content_type="application/json",
@@ -838,38 +1236,15 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
                 )
                 summary_snapshot = await _write_snapshot(session, summary_collected)
                 summary_ids = await _write_observations(
-                    session, summary_snapshot, summary_collected.observations, person.id
+                    session,
+                    summary_snapshot,
+                    summary_collected.observations,
+                    person.id,
+                    opportunity.id,
                 )
                 evidence_ids.extend(str(item) for item in summary_ids)
-                session.add(
-                    Claim(
-                        observation_ids=evidence_ids,
-                        subject_id=person.id,
-                        predicate=f"research_{axis}_summary",
-                        object_value=answer,
-                        status="tavily_synthesized",
-                        confidence=scored["confidence"],
-                        valid_time_start=datetime.now(UTC),
-                    )
-                )
 
             axis_evidence[axis] = evidence_ids
-
-        opportunity_result = await session.execute(
-            select(Opportunity)
-            .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
-            .where(OpportunityFounder.person_id == person.id)
-            .order_by(Opportunity.created_at.desc())
-            .limit(1)
-        )
-        opportunity = opportunity_result.scalar_one_or_none()
-        if opportunity is None:
-            from app.opportunity_service import get_or_create_opportunity
-
-            opportunity = await get_or_create_opportunity(
-                session, person, source_kind="outbound", lifecycle_state="investigating",
-                company_name=company,
-            )
 
         for axis, scored in axis_scores.items():
             previous_value = previous_components.get(axis)
@@ -886,6 +1261,26 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
                     unknowns=_axis_unknowns(
                         axis, int(scored["result_count"]), scored["confidence"]
                     ),
+                    artifact_metadata=build_artifact_metadata(
+                        run_id=run_id,
+                        artifact_type="assessment",
+                        code_version="research-job-v2",
+                        input_fingerprint=fingerprint_payload(
+                            {
+                                "person_id": person.id,
+                                "opportunity_id": opportunity.id,
+                                "axis": axis,
+                                "evidence_ids": axis_evidence[axis],
+                            }
+                        ),
+                        rubric_versions=("opportunity-axes-v1",),
+                        parameters={
+                            "axis": axis,
+                            "query_fingerprint": fingerprint_payload(queries[axis]),
+                        },
+                        latency_ms=round((time.perf_counter() - research_started) * 1000),
+                        validator_status="not_applicable",
+                    ),
                 )
             )
 
@@ -901,8 +1296,9 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
         }
         session.add(
             ScoreSnapshot(
-                subject_id=person.id,
-                rubric_version="founder-tavily-v1",
+                subject_id=opportunity.id,
+                subject_type="opportunity",
+                rubric_version="opportunity-axes-v1",
                 components=score_components,
                 confidence_interval={
                     axis: {
@@ -916,6 +1312,22 @@ async def research_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[st
                     for axis, scored in axis_scores.items()
                 },
                 evidence_ids=[item for ids in axis_evidence.values() for item in ids],
+                artifact_metadata=build_artifact_metadata(
+                    run_id=run_id,
+                    artifact_type="score_snapshot",
+                    code_version="research-job-v2",
+                    input_fingerprint=fingerprint_payload(
+                        {
+                            "person_id": person.id,
+                            "opportunity_id": opportunity.id,
+                            "evidence_ids": axis_evidence,
+                        }
+                    ),
+                    rubric_versions=("opportunity-axes-v1",),
+                    parameters={"axes": list(queries)},
+                    latency_ms=round((time.perf_counter() - research_started) * 1000),
+                    validator_status="not_applicable",
+                ),
             )
         )
         await session.commit()
@@ -941,9 +1353,10 @@ async def dispatcher_job(ctx: dict[str, Any]) -> dict[str, Any]:
         logger.warning("tavily_budget_exhausted")
         # Still process non-Tavily tasks
 
-    tasks = await pop_top(redis, concurrency)
+    tasks = await pop_top_with_priority(redis, concurrency)
     enqueued = 0
-    for task in tasks:
+    failed = 0
+    for task, task_priority in tasks:
         source = task.get("source", "")
         if source == "tavily_search" and tavily_remaining <= 0:
             # Re-enqueue with lower priority for later
@@ -954,13 +1367,27 @@ async def dispatcher_job(ctx: dict[str, Any]) -> dict[str, Any]:
             await decrement_tavily_budget(redis)
             tavily_remaining -= 1
 
-        # Enqueue as Arq job
-        await enqueue_arq_job(ctx, task)
+        try:
+            # Enqueue as Arq job.
+            await enqueue_arq_job(ctx, task)
+        except Exception as exc:
+            failed += 1
+            await queue_enqueue(redis, task, priority=task_priority)
+            if source == "tavily_search":
+                await decrement_tavily_budget(redis, amount=-1)
+                tavily_remaining += 1
+            logger.error(
+                "dispatcher_enqueue_failed",
+                source=source,
+                failure=str(exc),
+                requeued=True,
+            )
+            continue
         enqueued += 1
 
     depths = await queue_depth(redis)
-    logger.info("dispatcher_job_completed", enqueued=enqueued, queue_depths=depths)
-    return {"enqueued": enqueued, "queue_depths": depths}
+    logger.info("dispatcher_job_completed", enqueued=enqueued, failed=failed, queue_depths=depths)
+    return {"enqueued": enqueued, "failed": failed, "queue_depths": depths}
 
 
 async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
@@ -975,6 +1402,7 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
             "discover_job",
             task.get("query", ""),
             task.get("source", ""),
+            task.get("job_id"),
         )
     elif job_type == "resolve_identities":
         await pool.enqueue_job("resolve_identities_job")
@@ -982,6 +1410,7 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
         await pool.enqueue_job(
             "research_candidate_job",
             task.get("person_id", ""),
+            task.get("opportunity_id", ""),
         )
     elif job_type == "fetch_candidate_avatar":
         await pool.enqueue_job(
@@ -997,6 +1426,7 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
         await pool.enqueue_job(
             "generate_memo_job",
             task.get("person_id", ""),
+            task.get("opportunity_id", ""),
         )
     elif job_type == "process_candidate":
         await pool.enqueue_job(
@@ -1006,11 +1436,6 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
     elif job_type == "contact_outbound":
         await pool.enqueue_job(
             "contact_outbound_job",
-            task.get("person_id", ""),
-        )
-    elif job_type == "mock_inbound_reply":
-        await pool.enqueue_job(
-            "mock_inbound_reply_job",
             task.get("person_id", ""),
         )
     else:

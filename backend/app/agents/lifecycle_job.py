@@ -23,6 +23,7 @@ from app.collectors.queue import (
     enqueue as queue_enqueue,
 )
 from app.db.models import (
+    Claim,
     DecisionEvent,
     InvestmentMemo,
     Observation,
@@ -38,6 +39,8 @@ logger = structlog.get_logger(__name__)
 # Maximum retries before closing a stuck opportunity
 _MAX_RETRIES = 3
 _INVESTIGATION_AGENT_CALLS = 5  # 3 specialists + critic + batched embeddings
+_FOUNDER_SCORE_AGENT_CALLS = 5
+_RESEARCH_AGENT_CALLS = 3
 
 
 async def _count_retries(session: AsyncSession, opportunity_id: Any) -> int:
@@ -74,13 +77,14 @@ async def _has_recent_pipeline_event(
     return result.scalar_one_or_none() is not None
 
 
-async def _has_score(session: AsyncSession, person_id: Any) -> bool:
-    """Check if a person has a founder-agent-v1 score."""
+async def _has_opportunity_axes(session: AsyncSession, opportunity_id: Any) -> bool:
+    """Check for current opportunity-scoped axes, not a historical person score."""
     result = await session.execute(
         select(ScoreSnapshot.id)
         .where(
-            ScoreSnapshot.subject_id == person_id,
-            ScoreSnapshot.rubric_version == "founder-agent-v1",
+            ScoreSnapshot.subject_id == opportunity_id,
+            ScoreSnapshot.subject_type == "opportunity",
+            ScoreSnapshot.rubric_version == "opportunity-axes-v1",
         )
         .limit(1)
     )
@@ -91,10 +95,67 @@ async def _has_memo(session: AsyncSession, opportunity_id: Any) -> bool:
     """Check if an opportunity has an investment memo."""
     result = await session.execute(
         select(InvestmentMemo.id)
-        .where(InvestmentMemo.opportunity_id == opportunity_id)
+        .where(
+            InvestmentMemo.opportunity_id == opportunity_id,
+            InvestmentMemo.status == "succeeded",
+        )
         .limit(1)
     )
     return result.scalar_one_or_none() is not None
+
+
+async def _has_founder_score(session: AsyncSession, person_id: Any) -> bool:
+    """Check for a persistent Founder Score for the person."""
+    result = await session.execute(
+        select(ScoreSnapshot.id)
+        .where(
+            ScoreSnapshot.subject_id == person_id,
+            ScoreSnapshot.subject_type == "person",
+            ScoreSnapshot.rubric_version == "founder-agent-v1",
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _has_scoped_claims(
+    session: AsyncSession, person_id: Any, opportunity_id: Any
+) -> bool:
+    """Check for accepted claims tied to this exact inbound opportunity."""
+    result = await session.execute(
+        select(Claim.id)
+        .where(
+            Claim.subject_id == person_id,
+            Claim.opportunity_id == opportunity_id,
+            Claim.status == "supported",
+            Claim.supersession_id.is_(None),
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _queue_investigation_jobs(redis: Any, person_id: Any, opportunity_id: Any) -> None:
+    """Queue prerequisite jobs with opportunity scope where required."""
+    await queue_enqueue(
+        redis,
+        {
+            "job_type": "research_candidate",
+            "person_id": str(person_id),
+            "opportunity_id": str(opportunity_id),
+        },
+        priority=10.0,
+    )
+    await queue_enqueue(
+        redis,
+        {"job_type": "score_candidate", "person_id": str(person_id)},
+        priority=10.0,
+    )
+    await queue_enqueue(
+        redis,
+        {"job_type": "process_candidate", "person_id": str(person_id)},
+        priority=10.0,
+    )
 
 
 async def _has_observations(session: AsyncSession, person_id: Any) -> bool:
@@ -122,15 +183,22 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
     transitions = 0
     stuck_closed = 0
     budget_exhausted = 0
+    needs_attention = 0
 
     async with _session_ctx(ctx) as session:
-        # Fetch all non-terminal opportunities
+        # Fetch urgent work first and let concurrent workers skip locked rows.
+        # The ID tie-breaker keeps equal-deadline pagination deterministic.
         result = await session.execute(
             select(Opportunity)
             .where(
                 Opportunity.lifecycle_state.notin_(["approved", "closed"]),
             )
-            .order_by(Opportunity.created_at.asc())
+            .order_by(
+                Opportunity.decision_due_at.asc().nulls_last(),
+                Opportunity.created_at.asc(),
+                Opportunity.id.asc(),
+            )
+            .with_for_update(skip_locked=True)
             .limit(settings.pipeline_batch_size)
         )
         opportunities: list[Opportunity] = list(result.scalars().all())
@@ -176,12 +244,13 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
 
             # --- interesting -> investigating ---
             elif state == "interesting":
-                if await _has_score(session, person.id):
-                    # Already scored — skip
+                if await _has_opportunity_axes(session, opp.id):
+                    # Current opportunity research already exists — skip.
                     continue
                 budget = await get_agent_budget_remaining(redis)
                 if budget < _INVESTIGATION_AGENT_CALLS:
                     budget_exhausted += 1
+                    needs_attention += 1
                     continue
                 await decrement_agent_budget(redis, _INVESTIGATION_AGENT_CALLS)
                 await transition_opportunity(
@@ -189,26 +258,12 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                     reason="Investigation started — research, scoring, and processing queued",
                 )
                 transitions += 1
-                # Enqueue the three investigation jobs
-                await queue_enqueue(
-                    redis,
-                    {"job_type": "research_candidate", "person_id": str(person.id)},
-                    priority=10.0,
-                )
-                await queue_enqueue(
-                    redis,
-                    {"job_type": "score_candidate", "person_id": str(person.id)},
-                    priority=10.0,
-                )
-                await queue_enqueue(
-                    redis,
-                    {"job_type": "process_candidate", "person_id": str(person.id)},
-                    priority=10.0,
-                )
+                # Enqueue the three investigation jobs.
+                await _queue_investigation_jobs(redis, person.id, opp.id)
 
-            # --- investigating -> contacted (if above contact threshold) ---
+            # --- investigating -> outreach draft (if above contact threshold) ---
             elif state == "investigating":
-                if not await _has_score(session, person.id):
+                if not await _has_opportunity_axes(session, opp.id):
                     # Still being scored — retry only after the configured
                     # stuck interval, preventing duplicate in-flight jobs.
                     cutoff = datetime.now(UTC) - timedelta(
@@ -227,18 +282,10 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                         budget = await get_agent_budget_remaining(redis)
                         if budget < _INVESTIGATION_AGENT_CALLS:
                             budget_exhausted += 1
+                            needs_attention += 1
                             continue
                         await decrement_agent_budget(redis, _INVESTIGATION_AGENT_CALLS)
-                        for job_type in (
-                            "research_candidate",
-                            "score_candidate",
-                            "process_candidate",
-                        ):
-                            await queue_enqueue(
-                                redis,
-                                {"job_type": job_type, "person_id": str(person.id)},
-                                priority=10.0,
-                            )
+                        await _queue_investigation_jobs(redis, person.id, opp.id)
                         session.add(
                             DecisionEvent(
                                 opportunity_id=opp.id,
@@ -252,7 +299,8 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                         opp.updated_at = datetime.now(UTC)
                     continue
 
-                # Check the agent score composite
+                # Founder Score is a historical person-scoped input here; the
+                # investigation gate above remains opportunity-scoped.
                 score_result = await session.execute(
                     select(ScoreSnapshot)
                     .where(
@@ -270,52 +318,53 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                     budget = await get_agent_budget_remaining(redis)
                     if budget <= 0:
                         budget_exhausted += 1
+                        needs_attention += 1
                         continue
                     await decrement_agent_budget(redis, 1)
                     reason = (
                         f"Agent composite {composite:.1f} >= "
                         f"contact threshold {settings.contact_threshold * 100:.0f}"
                     )
-                    await transition_opportunity(
-                        session, opp, "contacted", reason=reason,
+                    session.add(
+                        DecisionEvent(
+                            opportunity_id=opp.id,
+                            prior_state="investigating",
+                            new_state="investigating",
+                            actor="pipeline:auto",
+                            reason=f"Outreach draft requested — {reason}",
+                            sla_metadata={"outreach_status": "drafted"},
+                        )
                     )
-                    transitions += 1
+                    opp.updated_at = datetime.now(UTC)
                     await queue_enqueue(
                         redis,
                         {"job_type": "contact_outbound", "person_id": str(person.id)},
                         priority=10.0,
                     )
 
-            # --- contacted: waits for the separate inbound opportunity ---
+            # --- contacted: waits for the founder to submit via /submit ---
             elif state == "contacted":
-                # The mock reply creates a new inbound opportunity at
-                # "received". Keep this outbound opportunity at "contacted"
-                # for conversion tracking and audit history.
+                # The founder's actual submission via /submit creates a new
+                # inbound opportunity at "received". Keep this outbound
+                # opportunity at "contacted" for conversion tracking and
+                # audit history.
                 continue
 
-            # --- received -> memo_ready ---
+            # --- received -> triage ---
             elif state == "received":
-                if await _has_memo(session, opp.id):
-                    await transition_opportunity(
-                        session, opp, "memo_ready",
-                        reason="Investment memo generated",
-                    )
-                    transitions += 1
-                else:
-                    # Enqueue memo generation if it has not been queued
-                    # recently. This avoids one enqueue every cron cycle.
-                    budget = await get_agent_budget_remaining(redis)
+                if not await _has_scoped_claims(session, person.id, opp.id):
                     cutoff = datetime.now(UTC) - timedelta(
                         minutes=settings.pipeline_stuck_after_minutes
                     )
                     recently_queued = await _has_recent_pipeline_event(
-                        session, opp.id, "Memo generation queued", cutoff
+                        session, opp.id, "Inbound processing queued", cutoff
                     )
+                    budget = await get_agent_budget_remaining(redis)
                     if budget > 0 and not recently_queued:
                         await decrement_agent_budget(redis, 1)
                         await queue_enqueue(
                             redis,
-                            {"job_type": "generate_memo", "person_id": str(person.id)},
+                            {"job_type": "process_candidate", "person_id": str(person.id)},
                             priority=10.0,
                         )
                         session.add(
@@ -324,10 +373,146 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                                 prior_state="received",
                                 new_state="received",
                                 actor="pipeline:auto",
-                                reason="Memo generation queued",
-                                sla_metadata={},
+                                reason="Inbound processing queued",
+                                sla_metadata={
+                                    "pipeline_stage": "received",
+                                    "missing_outputs": ["scoped_claims"],
+                                },
                             )
                         )
+                    elif budget <= 0:
+                        needs_attention += 1
+                    continue
+
+                await transition_opportunity(
+                    session, opp, "triage", reason="Scoped inbound processing completed"
+                )
+                transitions += 1
+
+            # --- triage -> screening ---
+            elif state == "triage":
+                if not await _has_founder_score(session, person.id):
+                    cutoff = datetime.now(UTC) - timedelta(
+                        minutes=settings.pipeline_stuck_after_minutes
+                    )
+                    recently_queued = await _has_recent_pipeline_event(
+                        session, opp.id, "Founder Score queued", cutoff
+                    )
+                    budget = await get_agent_budget_remaining(redis)
+                    if budget >= _FOUNDER_SCORE_AGENT_CALLS and not recently_queued:
+                        await decrement_agent_budget(redis, _FOUNDER_SCORE_AGENT_CALLS)
+                        await queue_enqueue(
+                            redis,
+                            {"job_type": "score_candidate", "person_id": str(person.id)},
+                            priority=10.0,
+                        )
+                        session.add(
+                            DecisionEvent(
+                                opportunity_id=opp.id,
+                                prior_state="triage",
+                                new_state="triage",
+                                actor="pipeline:auto",
+                                reason="Founder Score queued",
+                                sla_metadata={
+                                    "pipeline_stage": "triage",
+                                    "missing_outputs": ["founder_score"],
+                                },
+                            )
+                        )
+                    elif budget < _FOUNDER_SCORE_AGENT_CALLS:
+                        needs_attention += 1
+                    continue
+
+                await transition_opportunity(
+                    session, opp, "screening", reason="Triage output and Founder Score completed"
+                )
+                transitions += 1
+
+            # --- screening -> diligence ---
+            elif state == "screening":
+                if not await _has_opportunity_axes(session, opp.id):
+                    cutoff = datetime.now(UTC) - timedelta(
+                        minutes=settings.pipeline_stuck_after_minutes
+                    )
+                    recently_queued = await _has_recent_pipeline_event(
+                        session, opp.id, "Opportunity research queued", cutoff
+                    )
+                    budget = await get_agent_budget_remaining(redis)
+                    if budget >= _RESEARCH_AGENT_CALLS and not recently_queued:
+                        await decrement_agent_budget(redis, _RESEARCH_AGENT_CALLS)
+                        await queue_enqueue(
+                            redis,
+                            {
+                                "job_type": "research_candidate",
+                                "person_id": str(person.id),
+                                "opportunity_id": str(opp.id),
+                            },
+                            priority=10.0,
+                        )
+                        session.add(
+                            DecisionEvent(
+                                opportunity_id=opp.id,
+                                prior_state="screening",
+                                new_state="screening",
+                                actor="pipeline:auto",
+                                reason="Opportunity research queued",
+                                sla_metadata={
+                                    "pipeline_stage": "screening",
+                                    "missing_outputs": ["opportunity_axes"],
+                                },
+                            )
+                        )
+                    elif budget < _RESEARCH_AGENT_CALLS:
+                        needs_attention += 1
+                    continue
+
+                await transition_opportunity(
+                    session, opp, "diligence", reason="Three opportunity axes completed"
+                )
+                transitions += 1
+
+            # --- diligence -> memo_ready ---
+            elif state == "diligence":
+                if not await _has_memo(session, opp.id):
+                    cutoff = datetime.now(UTC) - timedelta(
+                        minutes=settings.pipeline_stuck_after_minutes
+                    )
+                    recently_queued = await _has_recent_pipeline_event(
+                        session, opp.id, "Memo generation queued", cutoff
+                    )
+                    budget = await get_agent_budget_remaining(redis)
+                    if budget > 0 and not recently_queued:
+                        await decrement_agent_budget(redis, 1)
+                        await queue_enqueue(
+                            redis,
+                            {
+                                "job_type": "generate_memo",
+                                "person_id": str(person.id),
+                                "opportunity_id": str(opp.id),
+                            },
+                            priority=10.0,
+                        )
+                        session.add(
+                            DecisionEvent(
+                                opportunity_id=opp.id,
+                                prior_state="diligence",
+                                new_state="diligence",
+                                actor="pipeline:auto",
+                                reason="Memo generation queued",
+                                sla_metadata={
+                                    "pipeline_stage": "diligence",
+                                    "missing_outputs": ["succeeded_memo"],
+                                },
+                            )
+                        )
+                    elif budget <= 0:
+                        needs_attention += 1
+                    continue
+
+                await transition_opportunity(
+                    session, opp, "memo_ready", reason="Validated investment memo generated"
+                )
+                transitions += 1
 
             # --- memo_ready -> (human decision via existing endpoint) ---
             # No auto-transition — human decides via POST /{id}/decision
@@ -340,10 +525,12 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
         transitions=transitions,
         stuck_closed=stuck_closed,
         budget_exhausted=budget_exhausted,
+        needs_attention=needs_attention,
     )
     return {
         "opportunities": len(opportunities),
         "transitions": transitions,
         "stuck_closed": stuck_closed,
         "budget_exhausted": budget_exhausted,
+        "needs_attention": needs_attention,
     }

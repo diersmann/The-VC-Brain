@@ -30,8 +30,8 @@ export function candidateExternalLinks(candidate: CandidateDetail): CandidateExt
     sourceUrl(candidate, (url) => url.hostname === "github.com" && url.pathname.split("/").filter(Boolean).length === 1),
   );
 
-  addLink(links, "website", "Website", safeUrl(candidate.profile?.website));
-  addLink(links, "deck", "Pitch deck", safeUrl(candidate.profile?.deck_url));
+  addLink(links, "website", "Website", safeExternalUrl(candidate.profile?.website));
+  addLink(links, "deck", "Pitch deck", safeExternalUrl(candidate.profile?.deck_url));
   addLink(links, "x", "X / Twitter", handleUrl(handles.twitter ?? handles.x, "x"));
 
   return links;
@@ -50,9 +50,9 @@ function addLink(
 function handleUrl(value: string | undefined, platform: "linkedin" | "github" | "x"): string | null {
   if (!value?.trim()) return null;
   const handle = value.trim().replace(/^@/, "");
-  if (/^https?:\/\//i.test(handle)) return safeUrl(handle);
-  if (handle.includes("linkedin.com/in/")) return safeUrl(`https://${handle}`);
-  if (handle.includes("github.com/")) return safeUrl(`https://${handle}`);
+  if (/^https?:\/\//i.test(handle)) return safeExternalUrl(handle);
+  if (handle.includes("linkedin.com/in/")) return safeExternalUrl(`https://${handle}`);
+  if (handle.includes("github.com/")) return safeExternalUrl(`https://${handle}`);
   if (platform === "linkedin") return `https://www.linkedin.com/in/${encodeURIComponent(handle)}`;
   if (platform === "github") return `https://github.com/${encodeURIComponent(handle)}`;
   return `https://x.com/${encodeURIComponent(handle)}`;
@@ -61,7 +61,7 @@ function handleUrl(value: string | undefined, platform: "linkedin" | "github" | 
 function sourceUrl(candidate: CandidateDetail, matches: (url: URL) => boolean): string | null {
   for (const observation of candidate.observations) {
     const url = parsedUrl(observation.source_uri);
-    if (url && matches(url)) return url.toString();
+    if (url && matches(url)) return safeHttpUrl(url.toString());
   }
   return null;
 }
@@ -70,10 +70,17 @@ function observationValue(candidate: CandidateDetail, predicate: string): string
   return candidate.observations.find((item) => item.predicate === predicate)?.object_value ?? null;
 }
 
-function safeUrl(value: string | null | undefined): string | null {
+export function safeExternalUrl(value: string | null | undefined): string | null {
   if (!value) return null;
-  const normalized = /^https?:\/\//i.test(value) ? value : `https://${value}`;
-  const parsed = parsedUrl(normalized);
+  const trimmed = value.trim();
+  if (!trimmed || /^[a-z][a-z\d+.-]*:/i.test(trimmed) && !/^https?:\/\//i.test(trimmed)) return null;
+  const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return safeHttpUrl(normalized);
+}
+
+export function safeHttpUrl(value: string | null | undefined): string | null {
+  if (!value || !/^https?:\/\//i.test(value.trim())) return null;
+  const parsed = parsedUrl(value.trim());
   return parsed?.toString() ?? null;
 }
 

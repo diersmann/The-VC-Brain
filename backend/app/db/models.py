@@ -5,16 +5,19 @@ All core entities, relationships, and audit/log tables.
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 # pgvector for embedding storage
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
     Index,
     LargeBinary,
+    Numeric,
     String,
     Text,
     func,
@@ -62,6 +65,12 @@ class Person(TimestampMixin, Base):
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     handles: Mapped[dict[str, str] | None] = mapped_column(JSONB, nullable=True)
     consent_state: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    privacy_legal_basis: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    privacy_notice_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    privacy_purposes: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False, default=dict)
+    privacy_provider_policy_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    privacy_retention_days: Mapped[int | None] = mapped_column(nullable=True)
+    privacy_residency: Mapped[str | None] = mapped_column(String(64), nullable=True)
     avatar_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     avatar_mime_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     avatar_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -124,17 +133,43 @@ class Organization(TimestampMixin, Base):
 
 class Opportunity(TimestampMixin, Base):
     __tablename__ = "opportunities"
+    __table_args__ = (
+        CheckConstraint(
+            "lifecycle_state IN ("
+            "'discovered','interesting','investigating','contacted','received',"
+            "'memo_ready','hold','approved','closed','screening','triage','diligence')",
+            name="ck_opportunities_lifecycle_state",
+        ),
+        CheckConstraint(
+            "sla_attainment IN ('pending','met','breached')",
+            name="ck_opportunities_sla_attainment",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     company_name: Mapped[str] = mapped_column(String(512), nullable=False)
     source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="inbound")
     lifecycle_state: Mapped[str] = mapped_column(String(32), nullable=False, default="received")
     thesis_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stage_deadlines: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    sla_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    sla_pause_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sla_attainment: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    sla_decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # relationships
     founders: Mapped[list["Person"]] = relationship(
         secondary="opportunity_founders", back_populates="opportunities"
     )
+    organization: Mapped["Organization | None"] = relationship()
     assessments: Mapped[list["Assessment"]] = relationship(back_populates="opportunity")
     decision_events: Mapped[list["DecisionEvent"]] = relationship(back_populates="opportunity")
 
@@ -153,6 +188,51 @@ class OpportunityFounder(Base):
         ForeignKey("persons.id", ondelete="CASCADE"),
         primary_key=True,
     )
+    role: Mapped[str] = mapped_column(String(64), nullable=False, default="founder")
+    valid_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OpportunityChannelTouch(Base):
+    """Append-only source/channel touch retained for opportunity attribution."""
+
+    __tablename__ = "opportunity_channel_touches"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    touch_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    touch_metadata: Mapped[dict[str, object]] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
+
+
+class OpportunityOutcome(Base):
+    """Append-only, outcome-specific observation for an opportunity."""
+
+    __tablename__ = "opportunity_outcomes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("opportunities.id", ondelete="RESTRICT"), nullable=False
+    )
+    outcome_domain: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    outcome_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    outcome_value: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    horizon_days: Mapped[int | None] = mapped_column(nullable=True)
+    censoring: Mapped[str] = mapped_column(String(32), nullable=False, default="observed")
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    provenance: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -198,9 +278,127 @@ class SourceSnapshot(TimestampMixin, Base):
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     license_metadata: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    source_use_policy: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     observations: Mapped[list["Observation"]] = relationship(back_populates="snapshot")
+
+
+# ---------------------------------------------------------------------------
+# Inbound submissions and durable outbox
+# ---------------------------------------------------------------------------
+
+
+class InboundSubmission(TimestampMixin, Base):
+    """Idempotent application envelope linking a deck to its opportunity."""
+
+    __tablename__ = "inbound_submissions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    idempotency_key: Mapped[str] = mapped_column(
+        String(128), unique=True, nullable=False, index=True
+    )
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("persons.id", ondelete="RESTRICT"), nullable=False
+    )
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("opportunities.id", ondelete="RESTRICT"), nullable=False
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("source_snapshots.id", ondelete="RESTRICT"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="accepted")
+    founder_evidence: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False, default=dict)
+
+
+class OutboxEvent(TimestampMixin, Base):
+    """Durable event dispatched to Redis after its database transaction commits."""
+
+    __tablename__ = "outbox_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    dedupe_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    aggregate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(nullable=False, default=0)
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Durable job ledger
+# ---------------------------------------------------------------------------
+
+
+class JobRun(TimestampMixin, Base):
+    """Durable lifecycle record for an asynchronous worker job."""
+
+    __tablename__ = "job_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    job_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued", index=True)
+    phase: Mapped[str] = mapped_column(String(64), nullable=False, default="queued")
+    attempt: Mapped[int] = mapped_column(nullable=False, default=0)
+    progress: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(nullable=False, default=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CandidateFeedback(TimestampMixin, Base):
+    """Append-only analyst feedback kept separate from investment outcomes."""
+
+    __tablename__ = "candidate_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("persons.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    action: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    feedback_metadata: Mapped[dict[str, object] | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OutreachMessage(TimestampMixin, Base):
+    """Human-reviewed outreach message and provider delivery state."""
+
+    __tablename__ = "outreach_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("opportunities.id", ondelete="RESTRICT"), nullable=False
+    )
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("persons.id", ondelete="RESTRICT"), nullable=False
+    )
+    recipient_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    subject: Mapped[str] = mapped_column(String(240), nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    generation_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="template")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="drafted", index=True)
+    approved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 # ---------------------------------------------------------------------------
@@ -220,8 +418,15 @@ class Observation(TimestampMixin, Base):
     subject_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
+    opportunity_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("opportunities.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     predicate: Mapped[str] = mapped_column(String(128), nullable=False)
     object_value: Mapped[str] = mapped_column(Text, nullable=False)
+    source_locator: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     extractor_version: Mapped[str] = mapped_column(String(64), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
@@ -237,22 +442,59 @@ class Observation(TimestampMixin, Base):
 
 class Claim(TimestampMixin, Base):
     __tablename__ = "claims"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('supported','contradicted','unverified','tavily_synthesized')",
+            name="ck_claims_status",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     observation_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    artifact_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
     subject_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
+    )
+    opportunity_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("opportunities.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
     )
     predicate: Mapped[str] = mapped_column(String(128), nullable=False)
     object_value: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="unverified")
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    trust_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    trust_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trust_interval: Mapped[dict[str, float] | None] = mapped_column(JSONB, nullable=True)
+    trust_components: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    trust_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     valid_time_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     valid_time_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     supersession_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("claims.id", ondelete="SET NULL"),
         nullable=True,
+    )
+
+
+class ClaimObservationLink(Base):
+    """Typed evidence link retained alongside legacy Claim.observation_ids."""
+
+    __tablename__ = "claim_observations"
+
+    claim_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("claims.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    observation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("observations.id", ondelete="RESTRICT"),
+        primary_key=True,
     )
 
 
@@ -279,6 +521,9 @@ class Relationship(TimestampMixin, Base):
     )
     relationship_type: Mapped[str] = mapped_column(String(32), nullable=False)
     evidence: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    artifact_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -302,10 +547,18 @@ class ScoreSnapshot(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    subject_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="person", index=True
+    )
     rubric_version: Mapped[str] = mapped_column(String(64), nullable=False)
     components: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     confidence_interval: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    input_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    provenance: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    artifact_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +568,20 @@ class ScoreSnapshot(TimestampMixin, Base):
 
 class Assessment(TimestampMixin, Base):
     __tablename__ = "assessments"
+    __table_args__ = (
+        CheckConstraint(
+            "axis IN ('Founder','Market','Idea-Market','execution','technical','commercial')",
+            name="ck_assessments_axis",
+        ),
+        CheckConstraint(
+            "rating IN ('Bullish','Neutral','Bearish','bullish','neutral','bearish')",
+            name="ck_assessments_rating",
+        ),
+        CheckConstraint(
+            "trend IN ('Improving','Stable','Declining','improving','stable','declining')",
+            name="ck_assessments_trend",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     opportunity_id: Mapped[uuid.UUID] = mapped_column(
@@ -330,6 +597,9 @@ class Assessment(TimestampMixin, Base):
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     counter_evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     unknowns: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    artifact_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
 
     opportunity: Mapped["Opportunity"] = relationship(back_populates="assessments")
 
@@ -352,6 +622,9 @@ class DecisionEvent(TimestampMixin, Base):
     prior_state: Mapped[str] = mapped_column(String(32), nullable=False)
     new_state: Mapped[str] = mapped_column(String(32), nullable=False)
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, unique=True, index=True
+    )
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     sla_metadata: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
@@ -411,6 +684,77 @@ class InvestmentMemo(TimestampMixin, Base):
         index=True,
     )
     thesis_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    claim_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    assessment_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     sections: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+
+
+# ---------------------------------------------------------------------------
+# Decision proposals and readiness snapshots
+# ---------------------------------------------------------------------------
+
+
+class DecisionProposal(TimestampMixin, Base):
+    """Versioned, evidence-backed proposal prepared for human review."""
+
+    __tablename__ = "decision_proposals"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('invest','hold','investigate','decline')",
+            name="ck_decision_proposals_action",
+        ),
+        CheckConstraint(
+            "status IN ('draft','approved','overridden')",
+            name="ck_decision_proposals_status",
+        ),
+        CheckConstraint(
+            "readiness_status IN ('ready','blocked')",
+            name="ck_decision_proposals_readiness_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("opportunities.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    memo_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("investment_memos.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    action: Mapped[str] = mapped_column(String(24), nullable=False)
+    check_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    ownership_target: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
+    conviction: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    founder_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assessments.id", ondelete="SET NULL"), nullable=True
+    )
+    market_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assessments.id", ondelete="SET NULL"), nullable=True
+    )
+    idea_market_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assessments.id", ondelete="SET NULL"), nullable=True
+    )
+    top_evidence: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    top_risks: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    open_conditions: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    readiness_blockers: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    readiness_status: Mapped[str] = mapped_column(String(16), nullable=False, default="blocked")
+    thesis_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rubric_versions: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    memo_model_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    artifact_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")

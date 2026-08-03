@@ -102,6 +102,8 @@ def test_fallback_when_no_api_key() -> None:
     assert scorecard.confidence == 0.15
     assert all(a.score == 50.0 for a in scorecard.agents.values())
     assert metadata["model"] == "gpt-4o"
+    assert metadata["validator_status"] == "unavailable"
+    assert scorecard.hard_eligible is False
 
 
 def test_build_evidence_text_groups_by_source() -> None:
@@ -196,6 +198,7 @@ async def test_agent_handles_api_error() -> None:
     assert assessment.dimension == "commercial"
     assert assessment.score == 50.0
     assert assessment.confidence == 0.15
+    assert assessment.validation_status == "unavailable"
 
 
 @pytest.mark.asyncio
@@ -236,3 +239,5 @@ async def test_score_candidate_runs_all_agents() -> None:
     assert "technical" in scorecard.agents
     assert "commercial" in scorecard.agents
     assert 0 <= scorecard.composite <= 100
+    assert scorecard.validator_status == "passed"
+    assert scorecard.hard_eligible is True

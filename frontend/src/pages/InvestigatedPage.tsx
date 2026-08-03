@@ -1,28 +1,24 @@
 import { useState } from "react";
 import { Mail, SearchCheck, ShieldCheck, Target } from "lucide-react";
 import { useNavigate } from "react-router";
-import { contactCandidate, useCandidates } from "../api/candidates";
+import { useCandidates } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
+import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
-import { candidateEvidencePercent, candidateThesisPercent, ratioPercent } from "../data/portfolioMetrics";
+import { OutreachComposer } from "../components/sourcing/OutreachComposer";
+import { candidateEvidencePercent, candidateThesisPercent, displayScore, isEvidenceReady, isThesisAligned, ratioPercent } from "../data/portfolioMetrics";
+import { DECISION_RUBRIC } from "../data/rubric";
+import type { Candidate } from "../types/candidate";
 
 export function InvestigatedPage() {
   const navigate = useNavigate();
-  const { data = [], isLoading, error, refetch } = useCandidates("investigating");
-  const [contacting, setContacting] = useState<string | null>(null);
+  const investigatedQuery = useCandidates("investigating");
+  const { data = [], isLoading, error, refetch } = investigatedQuery;
+  const dataAvailable = investigatedQuery.data !== undefined;
+  const [outreachCandidate, setOutreachCandidate] = useState<Candidate | null>(null);
 
-  const contact = async (candidateId: string) => {
-    setContacting(candidateId);
-    try {
-      await contactCandidate(candidateId);
-      window.setTimeout(() => void refetch(), 5_000);
-    } finally {
-      setContacting(null);
-    }
-  };
-
-  const strongThesis = data.filter((item) => (candidateThesisPercent(item) ?? -1) >= 70).length;
-  const evidenceReady = data.filter((item) => (candidateEvidencePercent(item) ?? -1) >= 60).length;
+  const strongThesis = data.filter(isThesisAligned).length;
+  const evidenceReady = data.filter(isEvidenceReady).length;
 
   return (
     <div className="mx-auto max-w-[1100px] pb-10">
@@ -32,15 +28,15 @@ export function InvestigatedPage() {
         <p className="page-description">Candidates researched and scored, but not automatically contacted. Contact any candidate manually.</p>
       </div>
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-3">
+      {dataAvailable && !isLoading && <div className="mb-5 grid gap-3 sm:grid-cols-3">
         <KeyMetricCard icon={SearchCheck} label="Investigated" value={data.length} detail="Completed research and scoring" progress={100} progressLabel={`${data.length} profiles`} tone="blue" />
-        <KeyMetricCard icon={Target} label="Strong thesis fit" value={strongThesis} detail="At least 70% thesis alignment" progress={ratioPercent(strongThesis, data.length)} progressLabel={`${strongThesis} of ${data.length}`} tone="purple" />
-        <KeyMetricCard icon={ShieldCheck} label="Evidence ready" value={evidenceReady} detail="At least 60% evidence confidence" progress={ratioPercent(evidenceReady, data.length)} progressLabel={`${evidenceReady} of ${data.length}`} tone="green" />
-      </div>
+        <KeyMetricCard icon={Target} label="Thesis aligned" value={strongThesis} detail={`At least ${DECISION_RUBRIC.thesisAlignment}% thesis alignment`} progress={ratioPercent(strongThesis, data.length)} progressLabel={`${strongThesis} of ${data.length}`} tone="purple" />
+        <KeyMetricCard icon={ShieldCheck} label="Evidence ready" value={evidenceReady} detail={`At least ${DECISION_RUBRIC.evidenceConfidence}% evidence confidence`} progress={ratioPercent(evidenceReady, data.length)} progressLabel={`${evidenceReady} of ${data.length}`} tone="green" />
+      </div>}
 
-      {isLoading && <div className="py-16 text-center text-sm text-muted">Loading investigated people…</div>}
-      {error && <div className="rounded-md bg-[#fff1df] p-4 text-xs text-[#a96e2d]">Unable to load investigated candidates.</div>}
-      {!isLoading && !error && data.length === 0 && <div className="panel rounded-lg py-16 text-center"><div className="text-sm font-bold">No investigated candidates waiting</div><p className="mt-2 text-xs text-muted">High-scoring candidates are contacted automatically; lower-scoring investigated profiles appear here.</p></div>}
+      {isLoading && !dataAvailable && <ApiStateNotice loading label="investigated candidates" />}
+      {error && <ApiStateNotice error={error} onRetry={() => void refetch()} label="investigated candidates" />}
+      {dataAvailable && !isLoading && !error && data.length === 0 && <div className="panel rounded-lg py-16 text-center"><div className="text-sm font-bold">No investigated candidates waiting</div><p className="mt-2 text-xs text-muted">High-scoring candidates are contacted automatically; lower-scoring investigated profiles appear here.</p></div>}
 
       <div className="space-y-3">
         {data.map((candidate) => (
@@ -50,16 +46,17 @@ export function InvestigatedPage() {
                 <CandidateAvatar name={candidate.display_name} avatarUrl={candidate.avatar_url} className="h-11 w-11 rounded-lg bg-accent-soft font-bold text-accent" />
                 <div>
                   <h2 className="text-[15px] font-bold">{candidate.display_name ?? candidate.stable_id}</h2>
-                  <p className="mt-1 text-[11px] text-muted">Founder {Math.round((candidate.scores?.founder ?? 0) * 100)}% · Thesis {candidateThesisPercent(candidate)}% · Evidence {candidateEvidencePercent(candidate)}%</p>
+                  <p className="mt-1 text-[11px] text-muted">Founder {displayScore(candidate.scores?.founder)} · Thesis {displayScore(candidateThesisPercent(candidate), true)} · Evidence {displayScore(candidateEvidencePercent(candidate), true)}</p>
                 </div>
               </button>
-              <button onClick={() => void contact(candidate.id)} disabled={contacting === candidate.id} className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60">
-                <Mail className="h-3.5 w-3.5" />{contacting === candidate.id ? "Queuing…" : "Contact"}
+              <button type="button" onClick={() => setOutreachCandidate(candidate)} className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-xs font-bold text-white">
+                <Mail className="h-3.5 w-3.5" />Review contact
               </button>
             </div>
           </article>
         ))}
       </div>
+      {outreachCandidate && <OutreachComposer key={outreachCandidate.id} candidate={outreachCandidate} onClose={() => setOutreachCandidate(null)} />}
     </div>
   );
 }

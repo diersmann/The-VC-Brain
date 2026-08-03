@@ -1,12 +1,8 @@
-"""Mock cold outreach and inbound reply jobs.
+"""Cold outreach job.
 
-``contact_outbound_job`` generates an outreach email (via the existing
-agent) and transitions the opportunity to "contacted".  It then schedules
-a ``mock_inbound_reply_job`` after a configurable delay.
-
-``mock_inbound_reply_job`` creates a new inbound opportunity with mock
-deck observations, simulating a founder reply.  It is idempotent — if
-an inbound opportunity already exists for this person, it skips.
+``contact_outbound_job`` generates a human-reviewable outreach draft. It
+never claims that a provider sent the email; approval and delivery are
+separate lifecycle actions.
 """
 
 from __future__ import annotations
@@ -20,21 +16,28 @@ from sqlalchemy import select
 
 from app.agents.outreach import draft_outreach_email
 from app.collectors.jobs import _session_ctx
-from app.db.models import Observation, Opportunity, OpportunityFounder, Person, SourceSnapshot
-from app.opportunity_service import (
-    create_inbound_opportunity,
-    has_inbound_opportunity,
-    transition_opportunity,
+from app.db.models import (
+    Observation,
+    Opportunity,
+    OpportunityFounder,
+    OutreachMessage,
+    Person,
+    SourceSnapshot,
 )
+from app.outreach_delivery import contact_block_reason
+from app.privacy import external_ai_use_decision, redact_direct_identifiers
+from app.source_policy import build_source_use_policy
 from app.storage import put_snapshot
 
 logger = structlog.get_logger(__name__)
 
 
 async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str, Any]:
-    """Generate a mock outreach email and transition to 'contacted'.
+    """Generate a persisted outreach draft without claiming provider delivery.
 
-    Schedules a mock_inbound_reply_job after mock_reply_delay_seconds.
+    The email invites the founder to submit their pitch deck at the
+    /submit endpoint.  No mock reply is scheduled — the founder's
+    actual submission via /submit creates the inbound opportunity.
     """
     from app.config import get_settings
 
@@ -63,15 +66,52 @@ async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str,
             logger.error("contact_no_opportunity", person_id=person_id)
             return {"error": "no_opportunity"}
 
+        existing_result = await session.execute(
+            select(OutreachMessage)
+            .where(
+                OutreachMessage.person_id == person.id,
+                OutreachMessage.opportunity_id == opportunity.id,
+                OutreachMessage.status != "failed",
+            )
+            .order_by(OutreachMessage.created_at.desc())
+            .limit(1)
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            return {
+                "person_id": person_id,
+                "status": existing.status,
+                "outreach_id": str(existing.id),
+            }
+
+        block_reason = contact_block_reason(person)
+        if block_reason:
+            blocked_status = "opted_out" if block_reason.startswith("suppressed_") else "failed"
+            message = OutreachMessage(
+                opportunity_id=opportunity.id,
+                person_id=person.id,
+                recipient_email=person.email,
+                status=blocked_status,
+                failure_reason=block_reason,
+            )
+            session.add(message)
+            await session.commit()
+            return {
+                "person_id": person_id,
+                "status": blocked_status,
+                "error": block_reason,
+            }
+
         # Generate outreach email (uses existing agent with template fallback)
         gh_handle = person.handles.get("github", "N/A") if person.handles else "N/A"
+        ai_policy = external_ai_use_decision(person, "outreach")
         draft = await draft_outreach_email(
             founder_name=person.display_name or person.stable_id,
             company=opportunity.company_name,
             email_type="founder_intro",
             brief="We discovered your work and would love to learn more.",
-            evidence_summary=f"GitHub: {gh_handle}",
-            api_key=settings.llm_api_key,
+            evidence_summary=redact_direct_identifiers(f"Public activity signal: {gh_handle}"),
+            api_key=settings.llm_api_key if ai_policy.allowed else "",
             model=settings.llm_model,
         )
 
@@ -86,6 +126,7 @@ async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str,
             source_type="outreach",
             content_hash=content_hash,
             storage_path=storage_path,
+            source_use_policy=build_source_use_policy("outreach", {"model_use": "allowed"}),
             collected_at=now,
         )
         session.add(snapshot)
@@ -95,6 +136,7 @@ async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str,
             Observation(
                 snapshot_id=snapshot.id,
                 subject_id=person.id,
+                opportunity_id=opportunity.id,
                 predicate="outreach_email_draft",
                 object_value=f"Subject: {draft.subject}\n\n{draft.body}",
                 observed_at=now,
@@ -103,19 +145,16 @@ async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str,
             )
         )
 
-        # Transition to contacted
-        await transition_opportunity(
-            session, opportunity, "contacted",
-            reason=f"Cold outreach sent (mock) — mode={draft.generation_mode}",
+        message = OutreachMessage(
+            opportunity_id=opportunity.id,
+            person_id=person.id,
+            recipient_email=person.email,
+            subject=draft.subject,
+            body=draft.body,
+            generation_mode=draft.generation_mode,
+            status="drafted",
         )
-
-        # Schedule mock reply
-        delay = settings.mock_reply_delay_seconds
-        await ctx["redis"].enqueue_job(
-            "mock_inbound_reply_job",
-            person_id,
-            _defer_by=delay,
-        )
+        session.add(message)
 
         await session.commit()
 
@@ -123,81 +162,10 @@ async def contact_outbound_job(ctx: dict[str, Any], person_id: str) -> dict[str,
         "contact_outbound_job_completed",
         person_id=person_id,
         mode=draft.generation_mode,
-        reply_delay=delay,
     )
     return {
         "person_id": person_id,
         "mode": draft.generation_mode,
-        "reply_delay": delay,
-    }
-
-
-async def mock_inbound_reply_job(ctx: dict[str, Any], person_id: str) -> dict[str, Any]:
-    """Simulate a founder reply to the outreach.
-
-    Creates a new inbound opportunity with mock deck observations.
-    Idempotent — skips if an inbound opportunity already exists.
-    """
-    logger.info("mock_inbound_reply_job_started", person_id=person_id)
-
-    async with _session_ctx(ctx) as session:
-        person = await session.get(Person, uuid.UUID(person_id))
-        if person is None:
-            logger.error("mock_reply_person_not_found", person_id=person_id)
-            return {"error": "person_not_found"}
-
-        # Idempotency check: skip if inbound already exists
-        if await has_inbound_opportunity(session, person.id):
-            logger.info("mock_reply_skipped_inbound_exists", person_id=person_id)
-            return {"skipped": "inbound_opportunity_already_exists"}
-
-        # Create inbound opportunity
-        company = person.display_name or person.stable_id
-        opportunity = await create_inbound_opportunity(
-            session, person, company_name=company, thesis_version="mock-v1",
-        )
-
-        # Write mock deck observations
-        now = datetime.now(UTC)
-        mock_content = f"Mock deck for {company}".encode()
-        content_hash, storage_path = await put_snapshot(
-            mock_content, "text/plain", "mock_inbound"
-        )
-        snapshot = SourceSnapshot(
-            uri=f"mock://{person.stable_id}/deck",
-            source_type="mock_inbound",
-            content_hash=content_hash,
-            storage_path=storage_path,
-            collected_at=now,
-        )
-        session.add(snapshot)
-        await session.flush()
-
-        mock_observations = [
-            ("inbound_summary", "Interested in discussing our company — here is our deck."),
-            ("pitch_deck_url", f"https://example.com/decks/{person.stable_id}.pdf"),
-            ("pitch_deck_stage", "Seed"),
-            ("pitch_deck_title", f"{company} — Company Overview"),
-            ("company", company),
-        ]
-        for predicate, value in mock_observations:
-            session.add(
-                Observation(
-                    snapshot_id=snapshot.id,
-                    subject_id=person.id,
-                    predicate=predicate,
-                    object_value=value,
-                    observed_at=now,
-                    extractor_version="mock-v1",
-                    confidence=0.5,
-                )
-            )
-
-        await session.commit()
-
-    logger.info("mock_inbound_reply_job_completed", person_id=person_id, company=company)
-    return {
-        "person_id": person_id,
-        "company": company,
-        "inbound_opportunity_id": str(opportunity.id),
+        "status": "drafted",
+        "outreach_id": str(message.id),
     }

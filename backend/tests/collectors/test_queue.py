@@ -13,8 +13,11 @@ from fakeredis import FakeAsyncRedis
 from app.collectors.queue import (
     clear_all,
     enqueue,
+    get_tavily_budget_remaining,
+    initialize_tavily_budget,
     peek,
     pop_top,
+    pop_top_with_priority,
     queue_depth,
 )
 
@@ -58,6 +61,16 @@ async def test_pop_top_empty_queue(redis: Any) -> None:
 
 
 @pytest.mark.asyncio
+async def test_pop_top_with_priority_preserves_requeue_priority(redis: Any) -> None:
+    task = {"id": "priority"}
+    await enqueue(redis, task, priority=10.0)
+
+    popped = await pop_top_with_priority(redis, n=1)
+
+    assert popped == [(task, 10.0)]
+
+
+@pytest.mark.asyncio
 async def test_peek_does_not_remove(redis: Any) -> None:
     """Peek should return tasks without removing them."""
     await enqueue(redis, {"id": "task1"}, priority=5.0)
@@ -89,6 +102,16 @@ async def test_clear_all(redis: Any) -> None:
     await clear_all(redis)
     depths = await queue_depth(redis)
     assert sum(depths.values()) == 0
+
+
+@pytest.mark.asyncio
+async def test_tavily_budget_initialization_does_not_replenish_spend(redis: Any) -> None:
+    await initialize_tavily_budget(redis, 10)
+    await redis.decrby("vcbrain:budget:tavily", 3)
+
+    await initialize_tavily_budget(redis, 10)
+
+    assert await get_tavily_budget_remaining(redis) == 7
 
 
 @pytest.mark.asyncio

@@ -15,7 +15,14 @@ from typing import Any
 import httpx
 import structlog
 
-from app.collectors.base import Collected, Connector, ConnectorError, Depth, Seed
+from app.collectors.base import (
+    Collected,
+    Connector,
+    ConnectorError,
+    Depth,
+    Seed,
+    canonical_json_bytes,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -231,7 +238,7 @@ class YouTubeConnector(Connector):
                     }
                 )
 
-        raw_bytes = str({"channel": channel_info, "videos": videos}).encode("utf-8")
+        raw_bytes = canonical_json_bytes({"channel": channel_info, "videos": videos})
         return Collected(
             content=raw_bytes,
             content_type="application/json",

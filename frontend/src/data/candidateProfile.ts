@@ -1,5 +1,6 @@
 import type { CandidateDetail, CandidateObservation } from "../types/candidate";
-import type { FounderAssessment, FounderProfile } from "../types/profile";
+import type { FounderAssessment, FounderClaim, FounderProfile } from "../types/profile";
+import { scorePercent } from "./displayMetrics";
 
 const axisNames: FounderAssessment["title"][] = ["Founder", "Market", "Idea × Market"];
 
@@ -15,9 +16,13 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
   const founderScore = percentage(scoreValue(candidate, "founder") ?? composite);
   const momentum = percentage(scoreValue(candidate, "momentum") ?? composite);
   const thesisFit = percentage(scoreValue(candidate, "thesis_fit"));
-  const evidence = observations.length
+  const sourceConfidence = observations.length
     ? Math.round(observations.reduce((sum, item) => sum + item.confidence, 0) / observations.length * 100)
-    : 0;
+    : null;
+  const coverage = buildCoverage(observations);
+  const coverageScore = observations.length
+    ? Math.round(coverage.reduce((sum, item) => sum + item.value, 0) / coverage.length)
+    : null;
   const trendHistory = candidate.score_history
     .map((snapshot) => numeric(snapshot.components.composite ?? snapshot.components.founder ?? snapshot.components.thesis_fit))
     .filter((value): value is number => value !== null)
@@ -29,6 +34,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
   };
 
   const assessments = axisNames.map((title) => {
+    const axisKey = title === "Founder" ? "founder" : title === "Market" ? "market" : "idea_market";
     const actual = candidate.assessments.find((item) => normalizeAxis(item.axis) === title);
     if (!actual) {
       return {
@@ -36,7 +42,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
         rating: "Pending" as const,
         trend: "Stable" as const,
         confidence: 0,
-        score: 0,
+        score: null,
         body: `No recorded ${title} assessment yet. Review the collected evidence before assigning a rating.`,
       };
     }
@@ -45,7 +51,9 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
       rating: normalizeRating(actual.rating),
       trend: normalizeTrend(actual.trend),
       confidence: percentage(actual.confidence),
-      score: percentage(scoreValue(candidate, title === "Founder" ? "founder" : title === "Market" ? "market" : "idea_market")),
+      score: scoreValue(candidate, axisKey) == null
+        ? null
+        : percentage(scoreValue(candidate, axisKey)),
       body: actual.unknowns.length ? `Open questions: ${actual.unknowns.join("; ")}` : "Assessment recorded from the investment workflow.",
     };
   });
@@ -53,8 +61,8 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
   const reconciledClaims = candidate.claims.map((claim) => ({
         claim: `${formatPredicate(claim.predicate)}: ${claim.object_value}`,
         source: "Reconciled claim",
-        trust: percentage(claim.confidence),
-        status: claim.status,
+        trust: percentage(claim.trust_score ?? claim.confidence),
+        status: formatClaimStatus(claim.status),
       }));
   const sourceEvidence = observations
     .filter((item) => /^research_.*_evidence$/.test(item.predicate))
@@ -62,7 +70,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
         claim: `${formatPredicate(item.predicate)}: ${truncate(item.object_value, 150)}`,
         source: item.source_uri,
         trust: percentage(item.confidence),
-        status: "Observed",
+        status: "Observed" as const,
       }));
   const evidenceClaims = [...reconciledClaims, ...sourceEvidence].length
     ? [...reconciledClaims, ...sourceEvidence].slice(0, 12)
@@ -70,7 +78,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
         claim: `${formatPredicate(item.predicate)}: ${truncate(item.object_value, 150)}`,
         source: item.source_uri,
         trust: percentage(item.confidence),
-        status: "Observed",
+        status: "Observed" as const,
       }));
 
   const gaps = unique([
@@ -94,7 +102,9 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
     founderScore,
     momentum,
     thesisFit,
-    evidence,
+    evidence: sourceConfidence ?? 0,
+    sourceConfidence,
+    coverageScore,
     scoreHint: `${observations.length} observations across ${sources.length} source${sources.length === 1 ? "" : "s"}`,
     assessments,
     events: observations.slice(0, 8).map((item) => ({
@@ -105,7 +115,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
       trust: percentage(item.confidence),
     })),
     claims: evidenceClaims,
-    coverage: buildCoverage(observations),
+    coverage,
     gaps,
     relations: candidate.relationships.map((item) => ({
       label: item.display_name ?? item.person_id,
@@ -124,13 +134,8 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
   };
 }
 
-export function candidateSignal(candidate: CandidateDetail | { scores: CandidateDetail["scores"] }): number | null {
-  return scoreValue(candidate, "composite");
-}
-
 export function percentage(value: number | null | undefined): number {
-  if (value == null || Number.isNaN(value)) return 0;
-  return Math.round(value <= 1 ? value * 100 : value);
+  return scorePercent(value) ?? 0;
 }
 
 export function initials(name: string | null): string {
@@ -143,7 +148,9 @@ export function formatPredicate(value: string): string {
 
 export function formatDate(value: string | null): string {
   if (!value) return "Unknown date";
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return "Unknown date";
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(timestamp));
 }
 
 function observationValue(observations: CandidateObservation[], predicates: string[]): string | null {
@@ -189,6 +196,13 @@ function normalizeTrend(trend: string): FounderAssessment["trend"] {
   if (value === "improving") return "Improving";
   if (value === "declining") return "Declining";
   return "Stable";
+}
+
+function formatClaimStatus(status: CandidateDetail["claims"][number]["status"]): FounderClaim["status"] {
+  if (status === "supported") return "Supported";
+  if (status === "contradicted") return "Contradicted";
+  if (status === "tavily_synthesized") return "Synthesized";
+  return "Unverified";
 }
 
 function signalText(observations: CandidateObservation[], composite: number | null, sourceLabel: string): string {

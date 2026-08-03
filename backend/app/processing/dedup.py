@@ -76,6 +76,8 @@ async def deduplicate_claims(
                 continue
             if claim_b.predicate != claim_a.predicate:
                 continue
+            if claim_b.opportunity_id != claim_a.opportunity_id:
+                continue
 
             emb_b = claim_embeddings.get(claim_b.id)
             if not emb_b:
@@ -83,8 +85,10 @@ async def deduplicate_claims(
 
             similarity = _cosine_similarity(emb_a, emb_b)
             if similarity >= _DUPLICATE_THRESHOLD:
-                # claim_b is a near-duplicate of claim_a; supersede it
+                # claim_a is newer (claims are ordered newest first); the
+                # superseded row points to the newer replacement.
                 claim_b.supersession_id = claim_a.id
+                claim_b.valid_time_end = claim_a.valid_time_start
                 superseded.add(claim_b.id)
                 deduplicated += 1
 

@@ -1,12 +1,63 @@
-from app.collectors.jobs import score_research_axis
+from app.collectors.base import Seed, classify_connector_failure
+from app.collectors.jobs import (
+    _collection_source_for_seed,
+    _rating,
+    classify_seed_entity,
+    score_research_axis,
+)
+
+
+def test_discovery_seed_entity_classification_keeps_non_people_out_of_founder_scoring() -> None:
+    assert classify_seed_entity("hackathons", Seed(source_type="hackathons", handle="project")) == (
+        "project",
+        0.98,
+    )
+    assert classify_seed_entity("youtube", Seed(source_type="youtube", handle="channel")) == (
+        "channel",
+        0.98,
+    )
+    assert classify_seed_entity("github", Seed(source_type="github", handle="founder")) == (
+        "person",
+        0.95,
+    )
+    assert classify_seed_entity(
+        "tavily_search", Seed(source_type="web", handle="https://example.test")
+    ) == (
+        "unknown",
+        0.35,
+    )
+
+
+def test_tavily_url_seeds_route_to_web_and_entity_leads_are_not_collected() -> None:
+    url_seed = Seed(source_type="web", handle="https://example.test/profile")
+    entity_seed = Seed(source_type="tavily_entity", handle="Ada Founder")
+
+    assert _collection_source_for_seed("tavily_search", url_seed) == "web"
+    assert _collection_source_for_seed("tavily_search", entity_seed) is None
+
+
+def test_connector_failures_are_classified_for_retry() -> None:
+    assert classify_connector_failure(RuntimeError("HTTP 429 rate limit")) == (
+        "rate_limited",
+        True,
+    )
+    assert classify_connector_failure(TimeoutError("request timed out")) == (
+        "transient",
+        True,
+    )
+    assert classify_connector_failure(RuntimeError("404 user not found")) == (
+        "permanent",
+        False,
+    )
 
 
 def test_research_axis_without_results_is_low_confidence() -> None:
     result = score_research_axis("founder", {"results": [], "answer": ""}, ["Ada Founder"])
 
-    assert result["score"] == 0.3
+    assert result["score"] == 0.5
     assert result["confidence"] == 0.0
     assert result["result_count"] == 0.0
+    assert _rating(result["score"]) == "Neutral"
 
 
 def test_positive_source_backed_evidence_scores_above_negative_case() -> None:

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import math
 
+from app.activation_priority import compute_activation_priority
+
 
 def info_gain(
     signal_score: float,
@@ -43,6 +45,15 @@ def priority(
     info_gain: float,
     cost: float,
     authority: float,
+    *,
+    thesis_fit: float | None = None,
+    novelty: float | None = None,
+    momentum: float | None = None,
+    evidence_confidence: float | None = None,
+    identity_confidence: float | None = None,
+    contactability: float | None = None,
+    deadline_pressure: float | None = None,
+    exploration_quota: float | None = None,
 ) -> float:
     """Compute the final priority score for a collection task.
 
@@ -50,6 +61,32 @@ def priority(
     Cost is inverted so cheaper tasks get a boost.
     Authority amplifies high-quality sources.
     """
+    if any(
+        value is not None
+        for value in (
+            thesis_fit,
+            novelty,
+            momentum,
+            evidence_confidence,
+            identity_confidence,
+            contactability,
+            deadline_pressure,
+            exploration_quota,
+        )
+    ):
+        activation = compute_activation_priority(
+            thesis_fit=thesis_fit,
+            novelty=novelty,
+            momentum=momentum,
+            evidence_confidence=evidence_confidence,
+            identity_confidence=identity_confidence,
+            contactability=contactability,
+            deadline_pressure=deadline_pressure,
+            cost=cost,
+            exploration_quota=exploration_quota,
+        )
+        authority_factor = 0.5 + 0.5 * max(0.0, min(1.0, authority))
+        return round(10.0 * activation.score * authority_factor, 4)
     if cost <= 0:
         cost = 0.01
     cost_factor = 1.0 / cost

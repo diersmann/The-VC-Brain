@@ -8,6 +8,8 @@ from typing import Any
 import structlog
 
 from app.collectors.jobs import _session_ctx
+from app.db.models import Person
+from app.privacy import external_ai_use_decision
 from app.processing.dedup import deduplicate_claims
 from app.processing.embeddings import embed_observations
 from app.processing.reconcile import reconcile_observations
@@ -32,15 +34,21 @@ async def process_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str
 
     async with _session_ctx(ctx) as session:
         pid = uuid.UUID(person_id)
+        person = await session.get(Person, pid)
+        if person is None:
+            return {"error": "person_not_found", "person_id": person_id}
 
         # 1. Reconcile
         claims_created = await reconcile_observations(session, pid)
 
         # 2. Embed
+        embedding_api_key = settings.llm_api_key
+        if embedding_api_key and not external_ai_use_decision(person, "embeddings").allowed:
+            embedding_api_key = ""
         embeddings_generated = await embed_observations(
             session,
             pid,
-            api_key=settings.llm_api_key,
+            api_key=embedding_api_key,
             model=settings.embedding_model,
             concurrency=settings.embedding_concurrency,
         )

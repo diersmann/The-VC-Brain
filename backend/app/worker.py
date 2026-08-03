@@ -6,6 +6,7 @@ Registers jobs and cron schedules.  The worker is started by the
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -13,10 +14,11 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.contact_job import contact_outbound_job, mock_inbound_reply_job
+from app.agents.contact_job import contact_outbound_job
 from app.agents.inbound_job import process_inbound_pitch_job
 from app.agents.lifecycle_job import advance_pipeline_job
 from app.agents.memo_job import generate_memo_job
+from app.agents.outbox_job import dispatch_outbox_job
 from app.agents.scoring_job import score_candidate_job
 from app.collectors.jobs import (
     auto_discovery_job,
@@ -28,12 +30,19 @@ from app.collectors.jobs import (
     research_candidate_job,
     resolve_identities_job,
 )
-from app.collectors.queue import initialize_agent_budget, reset_tavily_budget
+from app.collectors.queue import initialize_agent_budget, initialize_tavily_budget
 from app.config import get_settings
 from app.db.session import _get_session_factory, get_engine
 from app.processing.pipeline_job import process_candidate_job
+from app.storage import close_client
 
 logger = structlog.get_logger(__name__)
+_WORKER_HEARTBEAT_KEY = "vcbrain:worker:heartbeat"
+
+
+async def worker_heartbeat(ctx: dict[str, Any]) -> None:
+    """Refresh the short-lived readiness marker for the active worker."""
+    await ctx["redis"].set(_WORKER_HEARTBEAT_KEY, datetime.now(UTC).isoformat(), ex=120)
 
 
 async def startup(ctx: dict[str, Any]) -> None:
@@ -42,16 +51,18 @@ async def startup(ctx: dict[str, Any]) -> None:
     ctx["settings"] = settings
     ctx["session_factory"] = _get_session_factory()
 
-    # Reset Tavily budget on worker start (in production, this should be
-    # a monthly cron, but for MVP it's fine to reset on deploy).
-    await reset_tavily_budget(ctx["redis"], settings.tavily_monthly_budget)
+    # Preserve monthly Tavily spend across worker restarts; a billing-period
+    # job must explicitly reset this key at the start of a new period.
+    await initialize_tavily_budget(ctx["redis"], settings.tavily_monthly_budget)
     await initialize_agent_budget(ctx["redis"], settings.agent_monthly_budget)
+    await worker_heartbeat(ctx)
 
     logger.info("worker_started", environment=settings.environment)
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
-    """Arq shutdown hook — dispose DB engine."""
+    """Arq shutdown hook — close object storage and dispose DB engine."""
+    await close_client()
     engine = get_engine()
     await engine.dispose()
     logger.info("worker_shutdown")
@@ -88,12 +99,14 @@ class WorkerSettings:
         process_candidate_job,
         advance_pipeline_job,
         contact_outbound_job,
-        mock_inbound_reply_job,
         auto_discovery_job,
         process_inbound_pitch_job,
+        dispatch_outbox_job,
     ]
 
     cron_jobs = [  # noqa: RUF012
+        cron(worker_heartbeat, minute=set(range(60)), unique=True),
+        cron(dispatch_outbox_job, unique=False),
         # dispatcher_job: every minute
         cron(dispatcher_job, unique=False),
         # recompute_signals_job: every hour at minute 5

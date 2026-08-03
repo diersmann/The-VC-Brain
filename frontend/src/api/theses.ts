@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { ApiError } from "./errors";
 
 export interface InvestmentThesis {
   version: string;
@@ -13,6 +14,10 @@ export interface InvestmentThesis {
   ownership_target_pct: number | null;
   risk_appetite: "conservative" | "balanced" | "bold";
   scoring_weights: Record<string, number>;
+  discovery_queries: string[];
+  source_freshness_days: Record<string, number>;
+  rubric_version: string;
+  rubric_thresholds: Record<string, number>;
 }
 
 export interface ThesisPayload {
@@ -26,6 +31,8 @@ export interface ThesisPayload {
   ownership_target_pct: number;
   risk_appetite: "conservative" | "balanced" | "bold";
   scoring_weights: Record<string, number>;
+  discovery_queries?: string[];
+  source_freshness_days?: Record<string, number>;
 }
 
 export interface ThesisSaveResult {
@@ -36,7 +43,7 @@ export interface ThesisSaveResult {
 export async function fetchActiveThesis(signal?: AbortSignal): Promise<InvestmentThesis | null> {
   const response = await fetch("/api/v1/theses/active", { signal });
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`Thesis request failed with status ${response.status}`);
+  if (!response.ok) throw new ApiError(`Thesis request failed with status ${response.status}`, response.status);
   return (await response.json()) as InvestmentThesis;
 }
 

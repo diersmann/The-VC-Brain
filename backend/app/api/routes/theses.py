@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.db.models import InvestmentThesis
+from app.scoring.rubric import RUBRIC_THRESHOLDS, RUBRIC_VERSION
 from app.scoring.thesis import DEFAULT_WEIGHTS, score_all_candidates
 
 router = APIRouter(prefix="/theses", tags=["theses"])
@@ -72,6 +73,8 @@ class ThesisResponse(BaseModel):
     scoring_weights: dict[str, float]
     discovery_queries: list[str]
     source_freshness_days: dict[str, int]
+    rubric_version: str = RUBRIC_VERSION
+    rubric_thresholds: dict[str, float] = Field(default_factory=lambda: dict(RUBRIC_THRESHOLDS))
 
 
 class ThesisSaveResponse(BaseModel):

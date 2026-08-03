@@ -1,5 +1,9 @@
 """Tests for signal score computation."""
 
+import uuid
+from datetime import UTC, datetime, timedelta
+
+from app.collectors.jobs import _select_latest_signal_observations
 from app.collectors.signals import (
     above_threshold,
     arxiv_signal,
@@ -8,6 +12,7 @@ from app.collectors.signals import (
     producthunt_signal,
     web_signal,
 )
+from app.db.models import Observation
 
 
 def test_github_signal_no_activity() -> None:
@@ -82,3 +87,36 @@ def test_above_threshold_custom_threshold() -> None:
     """Custom threshold should work."""
     assert above_threshold({"composite": 0.7}, threshold=0.8) is False
     assert above_threshold({"composite": 0.9}, threshold=0.8) is True
+
+
+def test_signal_inputs_choose_latest_valid_observation_deterministically() -> None:
+    now = datetime.now(UTC)
+    older = Observation(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        predicate="github_total_stars",
+        object_value="10",
+        observed_at=now - timedelta(days=1),
+        confidence=0.8,
+    )
+    invalid_newer = Observation(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000002"),
+        predicate="github_total_stars",
+        object_value="not-a-number",
+        observed_at=now,
+        confidence=0.9,
+    )
+    latest_other = Observation(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000003"),
+        predicate="github_login",
+        object_value="founder",
+        observed_at=now,
+        confidence=1.0,
+    )
+
+    selected, rejected = _select_latest_signal_observations(
+        [latest_other, invalid_newer, older]
+    )
+
+    assert selected["github_total_stars"] is older
+    assert selected["github_login"] is latest_other
+    assert rejected == [str(invalid_newer.id)]

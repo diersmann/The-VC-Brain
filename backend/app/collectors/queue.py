@@ -74,15 +74,24 @@ async def pop_top(
     Lanes are checked in order: high → normal → low.
     Returns an empty list when the queue is empty.
     """
-    tasks: list[dict[str, Any]] = []
+    tasks_with_priority = await pop_top_with_priority(redis, n)
+    return [task for task, _priority in tasks_with_priority]
+
+
+async def pop_top_with_priority(
+    redis: Any,
+    n: int = 1,
+) -> list[tuple[dict[str, Any], float]]:
+    """Pop tasks while retaining their priority for safe requeue."""
+    tasks: list[tuple[dict[str, Any], float]] = []
     for lane in ("high", "normal", "low"):
         if len(tasks) >= n:
             break
         key = _QUEUE_KEYS[lane]
         # Pop the lowest score (highest priority) member
         results = await redis.zpopmin(key, count=n - len(tasks))
-        for member, _score in results:
-            tasks.append(json.loads(member))
+        for member, score in results:
+            tasks.append((json.loads(member), -float(score)))
     return tasks
 
 
@@ -136,6 +145,11 @@ async def decrement_tavily_budget(redis: Any, amount: int = 1) -> int:
 async def reset_tavily_budget(redis: Any, monthly_limit: int) -> None:
     """Set the Tavily budget counter (called on first-of-month or startup)."""
     await redis.set(_TAVILY_BUDGET_KEY, monthly_limit)
+
+
+async def initialize_tavily_budget(redis: Any, monthly_limit: int) -> None:
+    """Initialize Tavily budget without replenishing it on worker restart."""
+    await redis.set(_TAVILY_BUDGET_KEY, monthly_limit, nx=True)
 
 
 # ---------------------------------------------------------------------------

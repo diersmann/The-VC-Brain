@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.candidates import (
+    CandidateClaimResponse,
+    CandidateObservationResponse,
     CandidateResponse,
     map_person_to_candidate,
 )
@@ -51,10 +53,12 @@ def _make_score_snapshot(
     subject_id: uuid.UUID,
     components: dict[str, object] | None = None,
     rubric_version: str = "founder-v1",
+    subject_type: str = "person",
 ) -> ScoreSnapshot:
     return ScoreSnapshot(
         id=uuid.uuid4(),
         subject_id=subject_id,
+        subject_type=subject_type,
         rubric_version=rubric_version,
         components=components or {},
         confidence_interval=None,
@@ -115,15 +119,15 @@ class TestMapPersonToCandidate:
         assert result.scores.thesis_fit is None
         assert result.scores.evidence_confidence is None
 
-    def test_merges_multi_axis_and_discovery_snapshots(self) -> None:
+    def test_keeps_opportunity_axes_on_the_current_opportunity(self) -> None:
         person = _make_person()
-        multi_axis = _make_score_snapshot(
+        person_score = _make_score_snapshot(
             subject_id=person.id,
             rubric_version="founder-tavily-v1",
             components={
                 "founder": 0.81,
-                "market": 0.74,
-                "idea_market": 0.69,
+                "market": 0.11,
+                "idea_market": 0.12,
                 "evidence_confidence": 0.72,
             },
         )
@@ -132,10 +136,17 @@ class TestMapPersonToCandidate:
             rubric_version="signal-v1",
             components={"composite": 0.42, "github_signal": 0.8},
         )
+        opportunity_score = _make_score_snapshot(
+            subject_id=uuid.uuid4(),
+            subject_type="opportunity",
+            rubric_version="opportunity-axes-v1",
+            components={"market": 0.74, "idea_market": 0.69},
+        )
 
         result = map_person_to_candidate(
             person,
-            score_snapshots=[discovery, multi_axis],
+            score_snapshots=[discovery, person_score],
+            opportunity_score=opportunity_score,
         )
 
         assert result.scores is not None
@@ -151,6 +162,10 @@ class TestMapPersonToCandidate:
             "idea_market": 0.69,
             "evidence_confidence": 0.72,
         }
+        person_only = map_person_to_candidate(person, score_snapshots=[discovery, person_score])
+        assert person_only.scores is not None
+        assert person_only.scores.market is None
+        assert person_only.scores.idea_market is None
 
     def test_person_with_origin(self) -> None:
         person = _make_person()
@@ -198,6 +213,31 @@ class TestMapPersonToCandidate:
         result = map_person_to_candidate(person)
 
         assert result.display_name is None
+
+
+def test_evidence_dtos_retain_stable_entity_ids() -> None:
+    observation_id = uuid.uuid4()
+    claim_id = uuid.uuid4()
+
+    observation = CandidateObservationResponse(
+        id=observation_id,
+        predicate="bio",
+        object_value="Builder",
+        confidence=0.9,
+        observed_at=NOW,
+        source_type="github",
+        source_uri="https://github.com/example",
+    )
+    claim = CandidateClaimResponse(
+        id=claim_id,
+        predicate="role",
+        object_value="Founder",
+        status="supported",
+        confidence=0.9,
+    )
+
+    assert observation.id == observation_id
+    assert claim.id == claim_id
 
 
 # ---------------------------------------------------------------------------
@@ -268,4 +308,10 @@ def test_list_candidates_rejects_invalid_origin(client: TestClient) -> None:
 def test_list_candidates_rejects_excessive_limit(client: TestClient) -> None:
     """Limit > 200 should return 422."""
     response = client.get("/api/v1/candidates?limit=500")
+    assert response.status_code == 422
+
+
+def test_list_candidates_rejects_invalid_stage(client: TestClient) -> None:
+    """Lifecycle filters accept only the canonical stage vocabulary."""
+    response = client.get("/api/v1/candidates?stage=not-a-stage")
     assert response.status_code == 422

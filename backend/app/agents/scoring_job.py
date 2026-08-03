@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any
 
@@ -9,29 +10,17 @@ import structlog
 from sqlalchemy import select
 
 from app.agents.scoring import build_evidence_text, score_candidate
+from app.artifact_provenance import build_artifact_metadata, fingerprint_payload
 from app.collectors.jobs import _session_ctx
 from app.db.models import (
-    Assessment,
     Observation,
     Person,
     ScoreSnapshot,
+    SourceSnapshot,
 )
+from app.privacy import external_ai_use_decision
 
 logger = structlog.get_logger(__name__)
-
-_RATING_BUCKETS = [
-    (67.0, "bullish"),
-    (34.0, "neutral"),
-    (0.0, "bear"),
-]
-
-
-def _rating(score: float) -> str:
-    for threshold, label in _RATING_BUCKETS:
-        if score >= threshold:
-            return label
-    return "bear"
-
 
 async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, Any]:
     """Run the multi-agent scoring committee for one candidate.
@@ -57,7 +46,9 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
         # Fetch all observations for the person
         result = await session.execute(
             select(Observation)
+            .join(SourceSnapshot, SourceSnapshot.id == Observation.snapshot_id)
             .where(Observation.subject_id == person.id)
+            .where(SourceSnapshot.source_use_policy["model_use"].as_string() == "allowed")
             .order_by(Observation.observed_at.desc())
             .limit(500)
         )
@@ -67,8 +58,26 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
             logger.warning("score_candidate_no_observations", person_id=person_id)
             return {"error": "no_observations"}
 
+        ai_policy = external_ai_use_decision(person, "scoring")
+        if settings.llm_api_key and not ai_policy.allowed:
+            logger.warning(
+                "score_candidate_external_ai_blocked",
+                person_id=person_id,
+                reason=ai_policy.reason,
+            )
+            return {
+                "error": "external_ai_blocked",
+                "purpose": ai_policy.purpose,
+                "reason": ai_policy.reason,
+            }
+
         # Build evidence package
         evidence_text, obs_ids = build_evidence_text(observations, person)
+        run_id = uuid.uuid4()
+        input_fingerprint = fingerprint_payload(
+            {"observation_ids": obs_ids, "model": settings.agent_model}
+        )
+        scoring_started = time.perf_counter()
 
         # Run the scoring committee
         scorecard, _metadata = await score_candidate(
@@ -78,36 +87,9 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
             concurrency=settings.agent_concurrency,
         )
 
-        # Find or create an Opportunity for this person
-        from app.opportunity_service import get_or_create_opportunity
-
-        opportunity = await get_or_create_opportunity(
-            session, person, source_kind="outbound", lifecycle_state="investigating",
-        )
-
-        # Write 3 Assessment rows (one per axis)
-        for dim_name, score_val in [
-            ("execution", scorecard.execution),
-            ("technical", scorecard.technical),
-            ("commercial", scorecard.commercial),
-        ]:
-            agent_assessment = scorecard.agents.get(dim_name)
-            if agent_assessment is None:
-                continue
-            session.add(
-                Assessment(
-                    opportunity_id=opportunity.id,
-                    axis=dim_name,
-                    rating=_rating(score_val),
-                    trend="stable",
-                    confidence=agent_assessment.confidence,
-                    evidence_ids=agent_assessment.evidence,
-                    counter_evidence_ids=agent_assessment.counter_evidence,
-                    unknowns=agent_assessment.unknowns,
-                )
-            )
-
-        # Write the final ScoreSnapshot
+        # Specialist dimensions remain inputs to the persistent person-scoped
+        # Founder Score. Opportunity assessments are written only by the
+        # canonical Founder/Market/Idea-Market research job.
         score_components: dict[str, object] = {
             "founder": scorecard.composite / 100.0,  # 0-1 scale for candidates API
             "execution": scorecard.execution,
@@ -115,13 +97,30 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
             "commercial": scorecard.commercial,
             "evidence_confidence": scorecard.confidence,
             "hard_eligible": scorecard.hard_eligible,
+            "validator_status": scorecard.validator_status,
+            "validation_errors": scorecard.validation_errors,
             "critique": [i.model_dump() for i in scorecard.critique],
             "agents": {dim: a.model_dump() for dim, a in scorecard.agents.items()},
         }
+        artifact_metadata = build_artifact_metadata(
+            run_id=run_id,
+            artifact_type="score_snapshot",
+            code_version="scoring-job-v2",
+            input_fingerprint=input_fingerprint,
+            rubric_versions=("founder-agent-v1",),
+            prompt_version="scoring-prompts-v1",
+            model_version=settings.agent_model,
+            parameters={"concurrency": settings.agent_concurrency},
+            latency_ms=round((time.perf_counter() - scoring_started) * 1000),
+            validator_status=scorecard.validator_status,
+            validator_errors=scorecard.validation_errors,
+            compatibility={"reader": "score-snapshot-v1"},
+        )
 
         session.add(
             ScoreSnapshot(
                 subject_id=person.id,
+                subject_type="person",
                 rubric_version="founder-agent-v1",
                 components=score_components,
                 confidence_interval={
@@ -135,6 +134,7 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
                     }
                 },
                 evidence_ids=obs_ids[:50],  # cap to avoid huge rows
+                artifact_metadata=artifact_metadata,
             )
         )
 

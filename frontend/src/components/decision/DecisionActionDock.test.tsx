@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { DecisionActionDock } from "./DecisionActionDock";
 
 afterEach(() => {
+  cleanup();
   vi.restoreAllMocks();
 });
 
@@ -21,7 +22,7 @@ describe("DecisionActionDock", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const onSaved = vi.fn();
-    render(<DecisionActionDock candidateId="candidate-1" currentState="memo_ready" onSaved={onSaved} />);
+    render(<DecisionActionDock candidateId="candidate-1" opportunityId="opportunity-1" currentState="memo_ready" onSaved={onSaved} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Hold" }));
     fireEvent.change(screen.getByPlaceholderText("Add a concise reason for the decision record…"), { target: { value: "Verify retention" } });
@@ -31,7 +32,25 @@ describe("DecisionActionDock", () => {
     expect(await screen.findByText("Decision saved · hold")).toBeDefined();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/candidates/candidate-1/decision",
-      expect.objectContaining({ body: JSON.stringify({ action: "hold", reason: "Verify retention" }) }),
+      expect.objectContaining({ body: JSON.stringify({ opportunity_id: "opportunity-1", action: "hold", reason: "Verify retention" }) }),
     );
+  });
+
+  test("does not expose or submit decisions without a linked opportunity", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const onSaved = vi.fn();
+    render(<DecisionActionDock candidateId="candidate-1" opportunityId={null} currentState="investigating" onSaved={onSaved} />);
+
+    for (const label of ["Proceed", "Hold", "Decline"]) {
+      const button = screen.getByRole("button", { name: label });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute("title", "No opportunity is linked to this candidate");
+      fireEvent.click(button);
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Decision saved/)).not.toBeInTheDocument();
   });
 });

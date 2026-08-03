@@ -1,5 +1,47 @@
 name: ${COMPOSE_PROJECT_NAME:-vc-brain}
 
+x-backend-environment: &backend-environment
+  APP_NAME: ${APP_NAME:-The VC Brain API}
+  APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
+  APP_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vc_brain}:${POSTGRES_PASSWORD:-vc_brain_dev}@postgres:5432/${POSTGRES_DB:-vc_brain}
+  APP_REDIS_URL: redis://redis:6379/0
+  APP_MINIO_ENDPOINT: minio:9000
+  APP_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+  APP_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  APP_MINIO_BUCKET: ${APP_MINIO_BUCKET:-vc-brain-snapshots}
+  APP_MINIO_SECURE: ${APP_MINIO_SECURE:-false}
+  APP_LLM_API_KEY: ${APP_LLM_API_KEY:-}
+  APP_LLM_MODEL: ${APP_LLM_MODEL:-gpt-4o}
+  APP_LLM_MAX_TOKENS: ${APP_LLM_MAX_TOKENS:-4096}
+  APP_LLM_TEMPERATURE: ${APP_LLM_TEMPERATURE:-0.3}
+  APP_CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:5173}
+  APP_GITHUB_TOKEN: ${APP_GITHUB_TOKEN:-}
+  APP_PRODUCTHUNT_TOKEN: ${APP_PRODUCTHUNT_TOKEN:-}
+  APP_TAVILY_API_KEY: ${APP_TAVILY_API_KEY:-}
+  APP_YOUTUBE_API_KEY: ${APP_YOUTUBE_API_KEY:-}
+  APP_SIGNAL_THRESHOLD: ${APP_SIGNAL_THRESHOLD:-0.45}
+  APP_COLLECTION_CONCURRENCY: ${APP_COLLECTION_CONCURRENCY:-4}
+  APP_TAVILY_MONTHLY_BUDGET: ${APP_TAVILY_MONTHLY_BUDGET:-1000}
+  APP_ARXIV_MIN_CITATIONS: ${APP_ARXIV_MIN_CITATIONS:-10}
+  APP_ARXIV_COAUTHOR_CAP: ${APP_ARXIV_COAUTHOR_CAP:-20}
+  APP_WEBSITE_SEED_CAP: ${APP_WEBSITE_SEED_CAP:-10}
+  APP_WEBSITE_MAX_BYTES: ${APP_WEBSITE_MAX_BYTES:-10485760}
+  APP_PERSONS_CREATED_PER_DAY: ${APP_PERSONS_CREATED_PER_DAY:-200}
+  APP_UPLOAD_MAX_BYTES: ${APP_UPLOAD_MAX_BYTES:-26214400}
+  APP_UPLOAD_MAX_PAGES: ${APP_UPLOAD_MAX_PAGES:-100}
+  APP_UPLOAD_MAX_TEXT_CHARS: ${APP_UPLOAD_MAX_TEXT_CHARS:-50000}
+  APP_UPLOAD_MALWARE_SCANNER: ${APP_UPLOAD_MALWARE_SCANNER:-}
+  APP_UPLOAD_SCAN_TIMEOUT_SECONDS: ${APP_UPLOAD_SCAN_TIMEOUT_SECONDS:-30}
+  APP_AGENT_MODEL: ${APP_AGENT_MODEL:-gpt-4o}
+  APP_AGENT_CONCURRENCY: ${APP_AGENT_CONCURRENCY:-2}
+  APP_AGENT_MAX_TOKENS: ${APP_AGENT_MAX_TOKENS:-1000}
+  APP_AGENT_MONTHLY_BUDGET: ${APP_AGENT_MONTHLY_BUDGET:-100}
+  APP_EMBEDDING_MODEL: ${APP_EMBEDDING_MODEL:-text-embedding-3-small}
+  APP_EMBEDDING_CONCURRENCY: ${APP_EMBEDDING_CONCURRENCY:-4}
+  APP_CONTACT_THRESHOLD: ${APP_CONTACT_THRESHOLD:-0.65}
+  APP_PIPELINE_STUCK_AFTER_MINUTES: ${APP_PIPELINE_STUCK_AFTER_MINUTES:-30}
+  APP_PIPELINE_BATCH_SIZE: ${APP_PIPELINE_BATCH_SIZE:-5}
+
 services:
   frontend:
     build:
@@ -22,27 +64,14 @@ services:
       context: ./backend
       target: development
     command: /opt/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    environment:
-      APP_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vc_brain}:${POSTGRES_PASSWORD:-vc_brain_dev}@postgres:5432/${POSTGRES_DB:-vc_brain}
-      APP_REDIS_URL: redis://redis:6379/0
-      APP_MINIO_ENDPOINT: minio:9000
-      APP_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      APP_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      APP_MINIO_BUCKET: vc-brain-snapshots
-      APP_LLM_API_KEY: ${LLM_API_KEY:-}
-      APP_LLM_MODEL: ${LLM_MODEL:-gpt-4o}
-      APP_CORS_ORIGINS: http://localhost:5173
-      APP_GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-      APP_PRODUCTHUNT_TOKEN: ${PRODUCTHUNT_TOKEN:-}
-      APP_TAVILY_API_KEY: ${TAVILY_API_KEY:-}
-      APP_YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
-      APP_SIGNAL_THRESHOLD: ${SIGNAL_THRESHOLD:-0.45}
-      APP_CONTACT_THRESHOLD: ${CONTACT_THRESHOLD:-0.65}
+    environment: *backend-environment
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -60,28 +89,12 @@ services:
       context: ./backend
       target: development
     command: /opt/venv/bin/arq app.worker.WorkerSettings
-    environment:
-      APP_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vc_brain}:${POSTGRES_PASSWORD:-vc_brain_dev}@postgres:5432/${POSTGRES_DB:-vc_brain}
-      APP_REDIS_URL: redis://redis:6379/0
-      APP_MINIO_ENDPOINT: minio:9000
-      APP_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      APP_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      APP_MINIO_BUCKET: vc-brain-snapshots
-      APP_LLM_API_KEY: ${LLM_API_KEY:-}
-      APP_LLM_MODEL: ${LLM_MODEL:-gpt-4o}
-      APP_GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-      APP_PRODUCTHUNT_TOKEN: ${PRODUCTHUNT_TOKEN:-}
-      APP_TAVILY_API_KEY: ${TAVILY_API_KEY:-}
-      APP_YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
-      APP_SIGNAL_THRESHOLD: ${SIGNAL_THRESHOLD:-0.45}
-      APP_CONTACT_THRESHOLD: ${CONTACT_THRESHOLD:-0.65}
-      APP_AGENT_MONTHLY_BUDGET: ${AGENT_MONTHLY_BUDGET:-100}
-      APP_MOCK_REPLY_DELAY_SECONDS: ${MOCK_REPLY_DELAY_SECONDS:-120}
-      APP_PIPELINE_STUCK_AFTER_MINUTES: ${PIPELINE_STUCK_AFTER_MINUTES:-30}
-      APP_PIPELINE_BATCH_SIZE: ${PIPELINE_BATCH_SIZE:-5}
+    environment: *backend-environment
     volumes:
       - ./backend:/app
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -89,6 +102,19 @@ services:
       minio:
         condition: service_started
     restart: unless-stopped
+
+  migrate:
+    build:
+      context: ./backend
+      target: development
+    command: /opt/venv/bin/alembic upgrade head
+    environment:
+      APP_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vc_brain}:${POSTGRES_PASSWORD:-vc_brain_dev}@postgres:5432/${POSTGRES_DB:-vc_brain}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   postgres:
     image: pgvector/pgvector:pg16

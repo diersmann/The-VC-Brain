@@ -18,7 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.collectors.queue import queue_depth
 from app.collectors.registry import all_connectors
 from app.db import get_session
-from app.db.models import Observation, Person, ScoreSnapshot
+from app.db.models import (
+    JobRun,
+    Observation,
+    Opportunity,
+    OpportunityFounder,
+    Person,
+    ScoreSnapshot,
+)
+from app.job_ledger import create_job
 
 logger = structlog.get_logger(__name__)
 
@@ -38,6 +46,20 @@ class DiscoverRequest(BaseModel):
 class DiscoverResponse(BaseModel):
     job_id: str | None = None
     message: str
+
+
+class JobStatusResponse(BaseModel):
+    id: str
+    job_type: str
+    status: str
+    phase: str
+    attempt: int
+    progress: float
+    last_error: str | None = None
+    result: dict[str, object] | None = None
+    cancel_requested: bool
+    started_at: str | None = None
+    finished_at: str | None = None
 
 
 class HealthResponse(BaseModel):
@@ -98,6 +120,17 @@ class AvatarQueueResponse(BaseModel):
     message: str
 
 
+async def _current_opportunity(session: AsyncSession, person_id: uuid.UUID) -> Opportunity | None:
+    result = await session.execute(
+        select(Opportunity)
+        .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
+        .where(OpportunityFounder.person_id == person_id)
+        .order_by(Opportunity.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 # ---------------------------------------------------------------------------
 # Redis dependency
 # ---------------------------------------------------------------------------
@@ -126,6 +159,7 @@ async def get_redis() -> Any:
 async def trigger_discover(
     body: DiscoverRequest,
     redis: Annotated[Any, Depends(get_redis)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> DiscoverResponse:
     """Trigger a discovery job for a given source and query.
 
@@ -140,6 +174,9 @@ async def trigger_discover(
     except KeyError as err:
         raise HTTPException(status_code=400, detail=f"Unknown source: {body.source}") from err
 
+    job = await create_job(session, "discover")
+    await session.commit()
+
     # Enqueue as a discovery task
     from app.collectors.queue import enqueue as queue_enqueue
 
@@ -147,12 +184,37 @@ async def trigger_discover(
         "job_type": "discover",
         "query": body.query,
         "source": body.source,
+        "job_id": str(job.id),
     }
     await queue_enqueue(redis, task, priority=10.0)
 
     logger.info("discover_triggered", query=body.query, source=body.source)
     msg = f"Discovery enqueued for source={body.source} query={body.query}"
-    return DiscoverResponse(message=msg)
+    return DiscoverResponse(job_id=str(job.id), message=msg)
+
+
+@router.get("/jobs/{job_id}", response_model=JobStatusResponse)
+async def get_job_status(
+    job_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> JobStatusResponse:
+    """Return durable status for a queued or completed asynchronous job."""
+    job = await session.get(JobRun, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JobStatusResponse(
+        id=str(job.id),
+        job_type=job.job_type,
+        status=job.status,
+        phase=job.phase,
+        attempt=job.attempt,
+        progress=job.progress,
+        last_error=job.last_error,
+        result=job.result,
+        cancel_requested=job.cancel_requested,
+        started_at=job.started_at.isoformat() if job.started_at else None,
+        finished_at=job.finished_at.isoformat() if job.finished_at else None,
+    )
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -203,6 +265,9 @@ async def fetch_candidate_avatars(
 
     queued_ids: list[str] = []
     for person in people:
+        opportunity = await _current_opportunity(session, person.id)
+        if opportunity is None:
+            continue
         await queue_enqueue(
             redis,
             {
@@ -253,11 +318,15 @@ async def research_candidates(
 
     queued_ids: list[str] = []
     for person in people:
+        opportunity = await _current_opportunity(session, person.id)
+        if opportunity is None:
+            continue
         await queue_enqueue(
             redis,
             {
                 "job_type": "research_candidate",
                 "person_id": str(person.id),
+                "opportunity_id": str(opportunity.id),
                 "source": "tavily_search",
             },
             priority=10.0,
@@ -280,6 +349,9 @@ async def research_candidate(
     person = await session.get(Person, candidate_id)
     if person is None or not person.canonical:
         raise HTTPException(status_code=404, detail="Candidate not found")
+    opportunity = await _current_opportunity(session, person.id)
+    if opportunity is None:
+        raise HTTPException(status_code=409, detail="Candidate has no opportunity to research")
 
     from app.collectors.queue import enqueue as queue_enqueue
 
@@ -288,6 +360,7 @@ async def research_candidate(
         {
             "job_type": "research_candidate",
             "person_id": str(person.id),
+            "opportunity_id": str(opportunity.id),
             "source": "tavily_search",
         },
         priority=10.0,
@@ -307,17 +380,21 @@ async def candidate_research_status(
     person = await session.get(Person, candidate_id)
     if person is None:
         raise HTTPException(status_code=404, detail="Candidate not found")
+    opportunity = await _current_opportunity(session, person.id)
 
-    score_result = await session.execute(
-        select(ScoreSnapshot)
-        .where(
-            ScoreSnapshot.subject_id == candidate_id,
-            ScoreSnapshot.rubric_version == "founder-tavily-v1",
+    snapshot = None
+    if opportunity is not None:
+        score_result = await session.execute(
+            select(ScoreSnapshot)
+            .where(
+                ScoreSnapshot.subject_id == opportunity.id,
+                ScoreSnapshot.subject_type == "opportunity",
+                ScoreSnapshot.rubric_version == "opportunity-axes-v1",
+            )
+            .order_by(ScoreSnapshot.created_at.desc())
+            .limit(1)
         )
-        .order_by(ScoreSnapshot.created_at.desc())
-        .limit(1)
-    )
-    snapshot = score_result.scalar_one_or_none()
+        snapshot = score_result.scalar_one_or_none()
     count_result = await session.execute(
         select(func.count(Observation.id)).where(
             Observation.subject_id == candidate_id,
@@ -362,11 +439,10 @@ async def trigger_identity_resolve(
 @router.get("/identity/matches", response_model=PersonMatchListResponse)
 async def list_pending_matches() -> PersonMatchListResponse:
     """List all pending PersonMatch records for review."""
-    from app.db import get_session
+    from app.db import session_context
     from app.db.models import PersonMatch
 
-    session = await get_session()
-    try:
+    async with session_context() as session:
         from sqlalchemy import select
 
         result = await session.execute(
@@ -390,19 +466,14 @@ async def list_pending_matches() -> PersonMatchListResponse:
                 for m in matches
             ]
         )
-    finally:
-        await session.close()
-
-
 @router.post("/identity/matches/{match_id}/approve", response_model=PersonMatchActionResponse)
 async def approve_match(match_id: str) -> PersonMatchActionResponse:
     """Approve a PersonMatch and merge the two persons."""
-    from app.db import get_session
+    from app.db import session_context
     from app.db.models import Person, PersonMatch
     from app.identity.merge import merge_persons
 
-    session = await get_session()
-    try:
+    async with session_context() as session:
         from sqlalchemy import select
 
         result = await session.execute(select(PersonMatch).where(PersonMatch.id == match_id))
@@ -449,18 +520,13 @@ async def approve_match(match_id: str) -> PersonMatchActionResponse:
             duplicate=str(duplicate_id),
         )
         return PersonMatchActionResponse(message="Match approved and persons merged")
-    finally:
-        await session.close()
-
-
 @router.post("/identity/matches/{match_id}/reject", response_model=PersonMatchActionResponse)
 async def reject_match(match_id: str) -> PersonMatchActionResponse:
     """Reject a PersonMatch (persons are not the same)."""
-    from app.db import get_session
+    from app.db import session_context
     from app.db.models import PersonMatch
 
-    session = await get_session()
-    try:
+    async with session_context() as session:
         from sqlalchemy import select
 
         result = await session.execute(select(PersonMatch).where(PersonMatch.id == match_id))
@@ -481,10 +547,6 @@ async def reject_match(match_id: str) -> PersonMatchActionResponse:
 
         logger.info("identity_match_rejected", match_id=match_id)
         return PersonMatchActionResponse(message="Match rejected")
-    finally:
-        await session.close()
-
-
 # ---------------------------------------------------------------------------
 # Multi-agent scoring routes
 # ---------------------------------------------------------------------------

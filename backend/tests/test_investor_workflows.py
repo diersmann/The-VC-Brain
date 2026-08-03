@@ -21,7 +21,7 @@ async def test_outreach_agent_returns_editable_template_without_api_key() -> Non
     assert draft.generation_mode == "template"
     assert "Aperture AI" in draft.subject
     assert "enterprise traction" in draft.body
-    assert draft.body.endswith("Sophie")
+    assert draft.body.endswith("FirstCheck24 investment team")
 
 
 @pytest.mark.parametrize(

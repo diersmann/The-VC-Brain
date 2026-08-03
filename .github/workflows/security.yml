@@ -1,0 +1,80 @@
+name: Security scans
+
+on:
+  push:
+    branches: [post-hackathon-polish]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Audit npm dependencies
+        run: npm ci && npm audit --audit-level=critical
+        working-directory: frontend
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.8.3
+      - name: Export locked Python dependencies
+        run: uv export --locked --no-dev --format requirements-txt --output-file /tmp/requirements.txt
+        working-directory: backend
+      - name: Audit Python dependencies
+        run: uvx pip-audit -r /tmp/requirements.txt
+      - name: Inventory Python licenses
+        run: uv run --project backend --with pip-licenses pip-licenses --format=json > /tmp/python-licenses.json
+      - name: Inventory Node licenses
+        run: npx --yes license-checker@25.0.1 --production --json > /tmp/node-licenses.json
+        working-directory: frontend
+
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Build production backend image
+        run: docker build --target production --tag vc-brain-backend:security ./backend
+      - name: Build production frontend image
+        run: docker build --target production --tag vc-brain-frontend:security ./frontend
+      - name: Scan backend image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: vc-brain-backend:security
+          format: table
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 1
+      - name: Scan frontend image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: vc-brain-frontend:security
+          format: table
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 1
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan repository for secrets
+        run: docker run --rm --volume "$PWD:/repo" zricethezav/gitleaks:v8.24.3 detect --source=/repo --no-banner --redact

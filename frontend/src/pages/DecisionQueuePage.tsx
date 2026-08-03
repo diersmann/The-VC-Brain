@@ -8,6 +8,7 @@ import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { formatDate, formatPredicate } from "../data/candidateProfile";
 import { buildDecisionBrief, sortDecisionCandidates, type DecisionSort } from "../data/decisionQueue";
 import { candidateDecisionScore, candidateEvidencePercent, candidateThesisPercent, decisionReadiness, ratioPercent } from "../data/portfolioMetrics";
+import { DECISION_RUBRIC } from "../data/rubric";
 
 export function DecisionQueuePage() {
   const navigate = useNavigate();
@@ -27,7 +28,7 @@ export function DecisionQueuePage() {
       </div>
 
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
-        <KeyMetricCard icon={ShieldCheck} label="Ready for review" value={ready} detail="Strong thesis fit backed by sufficient evidence" progress={ratioPercent(ready, data.length)} progressLabel={`${ready} of ${data.length} opportunities`} tone="green" />
+        <KeyMetricCard icon={ShieldCheck} label="Ready for review" value={ready} detail={`Thesis ≥${DECISION_RUBRIC.thesisAlignment}% with evidence ≥${DECISION_RUBRIC.evidenceConfidence}%`} progress={ratioPercent(ready, data.length)} progressLabel={`${ready} of ${data.length} opportunities`} tone="green" />
         <KeyMetricCard icon={Scale} label="Investigate" value={investigate} detail="Promising signal that still needs investor scrutiny" progress={ratioPercent(investigate, data.length)} progressLabel={`${investigate} of ${data.length} opportunities`} tone="blue" />
         <KeyMetricCard icon={AlertTriangle} label="Evidence gaps" value={evidenceGaps} detail="Insufficient signal for a defensible decision" progress={ratioPercent(evidenceGaps, data.length)} progressLabel={`${evidenceGaps} of ${data.length} opportunities`} tone="amber" />
       </div>

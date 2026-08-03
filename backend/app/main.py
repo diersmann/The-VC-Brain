@@ -9,14 +9,18 @@ from app.api.router import api_router
 from app.config import get_settings
 from app.db import get_engine
 from app.logging import configure_logging
+from app.storage import close_client
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     structlog.get_logger().info("application_started")
-    yield
-    await get_engine().dispose()
+    try:
+        yield
+    finally:
+        await close_client()
+        await get_engine().dispose()
 
 
 def create_app() -> FastAPI:

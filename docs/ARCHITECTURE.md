@@ -4,6 +4,10 @@
 
 The VC Brain discovers promising founders, maintains evidence-backed profiles, and supports sourcing, screening, diligence, and investment decisions. Profiles and scores must remain time-aware, explainable, and traceable to their original evidence. Sourcing depth is the MVP priority; the other layers remain deliberately thin where necessary to prove that strong founders can be found before they begin fundraising.
 
+## Implementation status
+
+This document is the target architecture and contract, not a claim that every surface is shipped. The current repository has a working local Docker stack, provenance-aware source collection, inbound PDF submission, deterministic scoring foundations, a persisted inbound decision clock, and tested sourcing/inbound/decision UI states. Authentication and tenant scoping, the complete triage-to-decision lifecycle, authenticated SLA ownership/alerting/metrics, production observability, and several connector depth requirements remain partial or proposed. The durable implementation status is tracked in [`IMPROVEMENT_BACKLOG.md`](../IMPROVEMENT_BACKLOG.md).
+
 ## Evaluation Criteria Coverage
 
 | Criterion | Weight | Primary architecture coverage |
@@ -51,14 +55,21 @@ Core entities are:
 | Organization | Company, institution, accelerator, or fund | Stable ID, names, type, locations |
 | Opportunity | A company and idea evaluated at a point in time | Company, founders, source kind, lifecycle state, thesis version |
 | SourceSnapshot | Immutable copy or reference to collected material | URI, source type, content hash, collected time, license/access metadata |
-| Observation | Extracted source statement before reconciliation | Subject, predicate, object/value, observed time, extractor version, snapshot |
-| Claim | Reconciled assertion used by scoring and memos | Observation references, status, confidence, valid time, supersession link |
+| Observation | Extracted source statement before reconciliation | Subject, opportunity when known, predicate, object/value, source locator, observed time, extractor version, snapshot |
+| Claim | Reconciled assertion used by scoring and memos | Subject, opportunity when known, observation references, status, confidence, valid time, supersession link |
 | Relationship | Typed graph edge | Endpoints, relationship type, evidence, confidence, observed/valid time |
-| ScoreSnapshot | Reproducible score at a point in time | Subject, rubric/model version, components, confidence interval, evidence IDs |
-| Assessment | Per-opportunity Founder, Market, or Idea-vs-Market result | Axis, rating, trend, confidence, evidence and counter-evidence |
-| DecisionEvent | Auditable lifecycle transition | Opportunity, prior/new state, actor, reason, timestamp, SLA metadata |
+| ScoreSnapshot | Reproducible score at a point in time | Person-scoped Founder Score/sourcing/thesis or opportunity-scoped axis snapshot, rubric/model version, components, confidence interval, evidence IDs |
+| Assessment | Per-opportunity Founder, Market, or Idea-vs-Market result | Exactly three canonical axes, rating, trend, confidence, evidence and counter-evidence |
+| DecisionEvent | Auditable lifecycle transition | Opportunity, prior/new state, authenticated actor, idempotency key, reason, timestamp, evidence/thesis snapshot metadata |
+| InboundSubmission | Idempotent application envelope | Idempotency key, person/opportunity/deck references, optional direct-work evidence, accepted status, timestamps |
+| OutboxEvent | Durable handoff from PostgreSQL to workers | Dedupe key, event payload, dispatch status, retry count, availability, error metadata |
+| OutreachMessage | Human-reviewed contact and provider state | Draft, approval, send request, provider ID, delivery state, suppression/failure metadata |
 
-Every observation, claim, relationship, score, and recommendation retains provenance, observation time, confidence, and the version of the extractor, rubric, prompt, or model that produced it. Personally identifying data is stored only when necessary and is subject to correction, retention, and deletion controls; audit records retain non-sensitive tombstones where legally permissible.
+Every observation, claim, relationship, score, and recommendation retains provenance, observation time, confidence, and the version of the extractor, rubric, prompt, or model that produced it. Evidence corrections append a new observation rather than mutating the prior statement. Personally identifying data is stored only when necessary and is subject to correction, retention, and deletion controls; audit records retain non-sensitive tombstones where legally permissible.
+
+Claim evidence is migrating from the legacy `Claim.observation_ids` JSON list to the FK-backed `claim_observations` join table. Reconciliation writes both representations during the compatibility window; historical backfill, typed subject unions, and database-level wrong-scope enforcement remain a tracked migration follow-up.
+
+Derived artifacts carry a shared `artifact_metadata` contract (`artifact-provenance-v1`) with a run ID, code/rubric/prompt/model versions, parameters, input fingerprint, measured latency, explicit unknown cost, validator status, and reader compatibility. Existing rows may have empty metadata until a controlled historical backfill is approved; relationship production and provider billing telemetry remain incomplete.
 
 ### Source Quality and Collection Policy
 
@@ -85,17 +96,21 @@ The investor-facing application provides:
 - A unified opportunity inbox showing stage, deadline, owner, and SLA risk
 - Human approval controls for outreach and investment decisions
 
+The current `/inbox` view composes these persisted candidate and SLA fields into saved URL views and shows derived next actions only as workflow guidance. It must label missing ownership, ancestry, or blockers as unavailable until authenticated assignment and opportunity-level contracts exist.
+
 ### 2. Backend API
 
 The backend coordinates the application:
 
 - Authentication and authorization
 - Founder, company, evidence, and search APIs
-- Inbound applications and deck uploads
+- Inbound applications and deck uploads, committed with an idempotent submission envelope and durable outbox before worker dispatch
+- Optional cold-start inputs include bounded work samples, learning milestones, interview/work-sample context, and reference context; missing public history remains an explicit unknown rather than a negative feature.
 - Sourcing-to-decision workflow state
 - Collection, correlation, and analysis jobs
 - Profile, score, graph, and memo delivery
 - Versioned thesis, rubric, memo, and decision contracts
+- Opportunity-scoped jobs carry and validate the exact opportunity ID; person-only fallback selection is not permitted for research, memo, or decisions.
 - Append-only lifecycle events and investor feedback capture
 
 For an MVP, this should be a modular monolith rather than a set of microservices.
@@ -113,6 +128,8 @@ It should:
 - Queue collected material for processing
 - Assign authority, freshness, and licensing metadata
 - Prioritize deadline-critical and high-information sources
+
+Discovery activation uses `activation-priority-v1`: thesis fit, novelty, momentum, evidence confidence, identity confidence, contactability, deadline pressure, cost efficiency, and exploration quota are independently represented. Missing values are renormalized and shown as coverage gaps; the current collector path has only partial context, so lifecycle/SLA scheduling and thesis-specific floors remain policy work.
 
 ### 4. Processing Pipeline
 
@@ -139,6 +156,12 @@ This is the data correlation layer. It:
 
 The graph must distinguish confirmed collaboration from weak signals such as attending the same institution. Relationship types include `founded_with`, `worked_with`, `coauthored_with`, `participated_in`, `invested_in`, and `possibly_knows`; only the first five may become confirmed, and all require evidence. Network prestige supports sourcing, team analysis, and outreach, but never directly inflates founder merit.
 
+Organizations are first-class company identities. Opportunities link to an
+Organization, while `opportunity_founders` records founder roles with valid
+time intervals so teams and role changes remain explicit. The legacy company
+name is retained as a display fallback during migration, not as the durable
+identity key.
+
 ## Unified Deal Lifecycle
 
 Inbound applications and outbound discoveries converge into one opportunity pipeline:
@@ -157,7 +180,15 @@ Outbound: signal -> threshold -> outreach -> application
                                                           [Decision]
 ```
 
+The canonical lifecycle is versioned as `unified-v2` in `backend/app/lifecycle.py`,
+served at `GET /api/v1/lifecycle`, and consumed by the workflow diagram. Each
+stage declares entry and exit requirements, allowed actors, transitions, and
+timestamp provenance. Opportunity creation establishes the initial state;
+subsequent transitions are timestamped by `DecisionEvent`.
+
 An outbound signal does not trigger an investment. It creates a candidate, and crossing a configurable conviction threshold creates an activation task. Approved outreach asks the founder to submit or confirm the minimum application: company name and deck. The resulting application enters the same `Received` state as inbound applications and is evaluated by the same rules.
+
+Outreach is stateful: drafting and human approval are distinct from a send request, and `contacted` is only recorded after a mail provider confirms submission. Delivery, bounce, reply, opt-out, and failure signals remain separate states.
 
 Every transition emits a `DecisionEvent`, writes the latest evidence and assessment snapshots back to Memory, and records who or what initiated the transition. A closed opportunity retains its reason, evidence, and reopen conditions.
 
@@ -178,6 +209,8 @@ The Intelligence system continuously evaluates new observations against the acti
 ### 24-Hour Decision SLA
 
 The decision clock starts when a valid inbound application is received or an activated founder submits the minimum application. Outbound discovery-to-contact time is measured separately and does not silently consume the applicant's decision window.
+
+Pipeline workers select non-terminal opportunities by earliest persisted decision deadline with deterministic creation/ID tie-breaks and `SKIP LOCKED` concurrency. Budget-blocked work is surfaced as needs-attention telemetry; stage-specific queues and durable operator ownership remain a follow-up to the job ledger contract.
 
 Target stage budgets are:
 
@@ -268,7 +301,7 @@ Ratings are `bullish`, `neutral`, or `bear`; trends are `improving`, `stable`, o
 
 ### Claim-Level Trust Score
 
-A Trust Score belongs to an individual claim, never to an entire founder or company. It combines source authority, directness, independent corroboration, identity-match confidence, freshness, extraction certainty, and unresolved contradiction penalties. The score includes a calibrated confidence interval and a status such as `unverified`, `supported`, `contradicted`, or `superseded`.
+A Trust Score belongs to an individual claim, never to an entire founder or company. Version `claim-trust-v1` combines source authority, directness, independent corroboration, identity-match confidence, freshness, extraction certainty, and unresolved contradiction penalties. The current implementation keeps identity confidence explicit as unknown (`0.5`) until a verified identity signal is available; it does not silently turn that gap into certainty. The score includes a calibrated confidence interval, an explanation, and a status such as `unverified`, `supported`, `contradicted`, or `superseded`. `Claim.supersession_id` always points from an older claim to the newer claim that supersedes it; the older row's `valid_time_end` closes when that replacement is recorded. Reconciliation is idempotent for an unchanged observation set.
 
 Contradictory observations are retained and linked. The validator cannot silently choose the more favorable statement: it must either resolve the contradiction using stronger evidence or expose both versions as an open diligence item. Trust calibration is tested with seeded contradictions and held-out verified claims.
 
@@ -346,7 +379,7 @@ For an MVP, use three specialist agents, one critic, and one deterministic aggre
 
 ## Investment Memo and Decision Contracts
 
-The memo is generated from accepted claims and assessment snapshots, not directly from raw model prose. Every factual sentence links to one or more claim IDs and exposes its Trust Score. Contradictions and unavailable information appear inline rather than being silently omitted or guessed.
+The memo is generated from accepted claims and assessment snapshots, not directly from raw model prose. For the current contract, accepted claims are supported or explicitly synthesized claims that are not superseded; every referenced observation must resolve to the same person and opportunity. Each memo persists the exact claim IDs, assessment IDs, evidence IDs, and pinned thesis version used for generation, so later collection or thesis changes cannot silently change its input package. The server rejects unknown claim/evidence IDs, requires claim support for factual sentences, permits uncited sentences only when they explicitly state an unavailable/unknown condition, and stores citations in deterministic order. Every factual sentence links to one or more claim IDs and exposes its Trust Score. Contradictions and unavailable information appear inline rather than being silently omitted or guessed.
 
 Required memo sections are:
 
@@ -357,6 +390,8 @@ Required memo sections are:
 5. Traction and KPIs
 
 Optional sections include team and history, technology and defensibility, market sizing, competition, financials and round structure, cap table, due diligence log, and exit perspective. Missing optional information is explicit, for example, `Cap table: not disclosed`. Memo versions preserve the evidence and thesis versions used to produce them.
+
+Memo runs are persisted with `pending`, `failed`, `degraded`, or `succeeded` status. Only a validated `succeeded` memo may advance an opportunity to `memo_ready`; degraded or fallback drafts remain visibly non-decision-ready.
 
 The decision proposal is a separate structured artifact:
 
@@ -374,6 +409,15 @@ The decision proposal is a separate structured artifact:
   "openConditions": ["Confirm incorporation details"]
 }
 ```
+
+The persisted `DecisionProposal` artifact also stores the proposal status,
+readiness status and blockers, exact assessment foreign keys, memo/model and
+thesis versions, and any human override reason. Check amount, ownership target,
+and conviction remain explicitly nullable until an investor supplies them; the
+system must not infer capital intent from scores. Proposal risks and open
+conditions are copied only from persisted assessment unknowns or missing
+artifact requirements. A proposal is created with the memo run and updated in
+the same transaction as a human decision override.
 
 A human investor must approve, decline, or escalate the proposal. The system records overrides and reasons but does not autonomously deploy capital or contact founders without configured approval.
 
@@ -458,11 +502,17 @@ Before training predictive models, define measurable outcomes. A vague label suc
 
 Programs, institutions, communities, events, referrals, and web sources are represented as sourcing-channel nodes. Each opportunity preserves first-touch and contributing channels. The system measures application conversion, thesis fit, diligence advancement, investment, subsequent milestones, evidence quality, cost, and time-to-decision by channel.
 
+The current persistence slice stores append-only opportunity channel touches with channel, touch type, source query/ref, occurrence time, and metadata. Inbound applications and outbound discovery record these touches as sourcing/process telemetry only; channel correlation must never enter founder-merit scoring. Full conversion, cost, evidence-yield, false-positive, and outcome reporting remains dependent on the job-ledger and outcome contracts.
+
 Funded and declined outcomes update channel estimates without becoming direct founder-merit features. A Bayesian exploration policy can suggest underexplored channels with promising quality signals while reserving capacity for discovery outside historically successful networks. Reports show quality and uncertainty, not only lead volume.
+
+Evidence-aware source depth is connector-specific. Deep arXiv collection retains a primary PDF and emits bounded page-coordinate observations with author-identity confidence. Podcast and YouTube transcript/timestamp extraction, source-owner licensing, and durable provider cursor contracts are prerequisites before those sources can contribute equivalent evidence depth.
 
 ### Outcome Feedback
 
 The system records investor decisions, overrides, founder corrections, application conversion, and later observable milestones. Labels remain outcome-specific, such as `shipped_product_within_6_months`, rather than collapsing into "successful founder." Historical decisions are not treated as ground truth; they are analyzed for selection bias and missing counterfactuals.
+
+The persistence contract is append-only `opportunity_outcomes`: sourcing, process, decision, and longitudinal domains carry typed values, source provenance, observation time, horizon, censoring status, and confidence. Decision-domain records describe selection behavior and cannot be interpreted as universal founder merit; longitudinal labels require an authoritative source and explicit censoring policy before evaluation use.
 
 Two research questions remain explicit evaluation tracks rather than assumed capabilities. First, prediction intervals around inferred soft skills such as resilience and founder-market fit must be calibrated against observable behavior and should remain wide when evidence is indirect. Second, the predictive value of public footprints must be tested on held-out, time-separated outcome labels with subgroup analysis before any such signal becomes a merit feature; social visibility alone is never treated as founder quality.
 
@@ -489,6 +539,21 @@ Connector value is evaluated by information gain, claim verification rate, fresh
 - Prevent prompts or retrieved content from changing system policy or authorizing external actions.
 - Audit access, automated outreach drafts, score changes, memo generation, and decisions.
 - Do not infer protected characteristics or use them as founder-merit features.
+
+External AI use is governed by the versioned `privacy-ai-v1` policy. Each
+person records legal basis, notice version, per-purpose grants, provider-policy
+version, retention days, and residency. Pending, unknown, opted-out, or
+suppressed consent states cannot send data to an external AI provider. Before
+an allowed call, direct email and phone identifiers are redacted; when policy
+metadata is incomplete, scoring and research are blocked and memo/outreach
+paths use local fallbacks without transmitting the evidence.
+
+Source snapshots separately carry the versioned `source-use-v1` policy. A
+license hint alone is not treated as a model-use grant: connector material is
+retained with `model_use: denied` until an explicit permitted-use decision is
+recorded. Founder-provided inbound decks and internally generated outreach
+artifacts have explicit internal-use policies. Unknown or disallowed connector
+material remains quarantined and cannot create new model-scored observations.
 
 ## Initial Deployment
 

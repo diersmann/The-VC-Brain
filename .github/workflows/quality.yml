@@ -1,0 +1,19 @@
+name: Quality gate
+
+on:
+  push:
+    branches: [post-hackathon-polish]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Run Docker-backed validation
+        run: make check

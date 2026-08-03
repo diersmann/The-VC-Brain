@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help setup up down restart logs ps shell-api shell-db shell-worker shell-redis shell-minio migrate lint typecheck test check build clean
+.PHONY: help setup up down restart logs ps shell-api shell-db shell-worker shell-redis shell-minio migrate seed-demo lint typecheck test bundle-check check build clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -40,7 +40,10 @@ shell-db: ## Open psql in the database container
 	$(COMPOSE) exec postgres psql -U $${POSTGRES_USER:-vc_brain} -d $${POSTGRES_DB:-vc_brain}
 
 migrate: ## Apply backend database migrations
-	$(COMPOSE) exec api /opt/venv/bin/alembic upgrade head
+	$(COMPOSE) run --rm migrate
+
+seed-demo: up ## Seed deterministic, synthetic local demo records
+	$(COMPOSE) run --rm --no-deps api /opt/venv/bin/python -m scripts.seed_demo
 
 lint: ## Run frontend and backend linters
 	$(COMPOSE) run --rm api /opt/venv/bin/ruff check .
@@ -54,10 +57,15 @@ test: ## Run all unit tests
 	$(COMPOSE) run --rm api /opt/venv/bin/pytest
 	$(COMPOSE) run --rm frontend npm test -- --run
 
-check: lint typecheck test ## Run all validation
+bundle-check: ## Build the frontend and enforce the tracked bundle budget
+	$(COMPOSE) run --rm frontend npm run build
+	$(COMPOSE) run --rm frontend npm run bundle:check
+
+check: lint typecheck test bundle-check ## Run all validation
 
 build: ## Build production images
-	$(COMPOSE) build api frontend
+	docker build --target production --tag vc-brain-backend:local ./backend
+	docker build --target production --tag vc-brain-frontend:local ./frontend
 
 clean: ## Stop stack and remove local data volumes
 	$(COMPOSE) down --volumes --remove-orphans
