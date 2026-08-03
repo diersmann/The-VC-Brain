@@ -1,44 +1,17 @@
-# FirstCheck24 database seed
+# Database seed policy
 
-`firstcheck24_seed.sql.gz` is a portable, data-only PostgreSQL snapshot for the hackathon demo. It is intended to be restored after Alembic has created the schema.
+The repository does not commit a database snapshot. The former snapshot contained
+public-profile demo rows and was removed to avoid distributing unnecessary personal
+data and unreviewed source material.
 
-Snapshot contents (2026-07-20):
-
-- 112 founder/person records
-- 34 opportunities and 34 founder links
-- 742 source snapshots
-- 1,458 observations
-- 105 claims and 105 assessments
-- 4,195 score snapshots
-- 2 investment theses
-
-The snapshot contains public-source demo/research data. Credentials, API keys, database passwords, Docker volumes, and Alembic's internal version row are not included.
-
-## Restore
-
-Start the stack and apply migrations:
+For a local walkthrough, use the synthetic, deterministic, idempotent fixture:
 
 ```bash
-docker compose up -d
-docker compose exec api /opt/venv/bin/alembic upgrade head
+make seed-demo
 ```
 
-Restore into an empty, migrated `vc_brain` database:
-
-```bash
-gunzip -c infra/postgres/seed/firstcheck24_seed.sql.gz \
-  | docker compose exec -T postgres sh -lc \
-    'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
-```
-
-Do not import the seed repeatedly into the same database because primary-key and unique constraints will reject duplicate rows.
-
-## Recreate the snapshot
-
-```bash
-docker compose exec -T postgres sh -lc \
-  'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-    --data-only --exclude-table=alembic_version \
-    --no-owner --no-privileges --format=plain' \
-  | gzip -9 > infra/postgres/seed/firstcheck24_seed.sql.gz
-```
+The optional `backend/scripts/import_public_inbound.py` importer is not part of
+normal setup. It fetches official public pages, stores them as `public_demo`
+references, and marks their source metadata as excluded from operational metrics.
+Run it only after source-owner/legal review confirms the permitted collection,
+retention, display, and model-use terms for each source.

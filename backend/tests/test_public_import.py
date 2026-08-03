@@ -8,7 +8,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from scripts.import_public_inbound import _upsert_observation
+from scripts.import_public_inbound import (
+    PUBLIC_DEMO_POLICY_VERSION,
+    PUBLIC_DEMO_SOURCE_KIND,
+    _upsert_observation,
+)
+
+
+def test_public_demo_import_is_not_classified_as_inbound_operations() -> None:
+    assert PUBLIC_DEMO_SOURCE_KIND == "public_demo"
+    assert PUBLIC_DEMO_POLICY_VERSION == "public-demo-reference-v1"
 
 
 def _result(observation: object | None) -> MagicMock:

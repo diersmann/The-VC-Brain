@@ -1,7 +1,8 @@
-"""Import a small, idempotent set of official public pitch decks as inbound demos.
+"""Import a small, idempotent set of official public pitch decks as references.
 
 These records are explicitly labelled as public examples. They are not represented
-as applications submitted by the founders or companies.
+as applications submitted by the founders or companies, and their opportunities are
+excluded from inbound operational metrics.
 """
 
 from __future__ import annotations
@@ -23,6 +24,9 @@ from app.db.models import (
 )
 from app.db.session import _get_session_factory
 from app.storage import close_client, put_snapshot
+
+PUBLIC_DEMO_SOURCE_KIND = "public_demo"
+PUBLIC_DEMO_POLICY_VERSION = "public-demo-reference-v1"
 
 PUBLIC_INBOUND = [
     {
@@ -178,6 +182,8 @@ async def import_public_inbound() -> list[dict[str, str]]:
                     license_metadata={
                         "source": "Official public pitch-deck page",
                         "usage": "Public demo reference; not a submitted fund application",
+                        "policy_version": PUBLIC_DEMO_POLICY_VERSION,
+                        "exclude_from_operational_metrics": True,
                     },
                     collected_at=now,
                 )
@@ -213,7 +219,7 @@ async def import_public_inbound() -> list[dict[str, str]]:
                 .join(OpportunityFounder, OpportunityFounder.opportunity_id == Opportunity.id)
                 .where(
                     OpportunityFounder.person_id == person.id,
-                    Opportunity.source_kind == "inbound",
+                    Opportunity.source_kind == PUBLIC_DEMO_SOURCE_KIND,
                     Opportunity.company_name == record["company"],
                 )
                 .limit(1)
@@ -222,7 +228,7 @@ async def import_public_inbound() -> list[dict[str, str]]:
             if opportunity is None:
                 opportunity = Opportunity(
                     company_name=record["company"],
-                    source_kind="inbound",
+                    source_kind=PUBLIC_DEMO_SOURCE_KIND,
                     lifecycle_state="received",
                     thesis_version="public-demo-v1",
                 )
