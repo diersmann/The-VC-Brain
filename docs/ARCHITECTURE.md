@@ -67,6 +67,8 @@ Core entities are:
 
 Every observation, claim, relationship, score, and recommendation retains provenance, observation time, confidence, and the version of the extractor, rubric, prompt, or model that produced it. Evidence corrections append a new observation rather than mutating the prior statement. Personally identifying data is stored only when necessary and is subject to correction, retention, and deletion controls; audit records retain non-sensitive tombstones where legally permissible.
 
+Claim evidence is migrating from the legacy `Claim.observation_ids` JSON list to the FK-backed `claim_observations` join table. Reconciliation writes both representations during the compatibility window; historical backfill, typed subject unions, and database-level wrong-scope enforcement remain a tracked migration follow-up.
+
 ### Source Quality and Collection Policy
 
 Collection is prioritized by expected decision value rather than volume:

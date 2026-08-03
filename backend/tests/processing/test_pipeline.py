@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.db.models import Claim
+from app.db.models import Claim, ClaimObservationLink
 from app.processing.dedup import _cosine_similarity
 from app.processing.reconcile import (
     _observation_strength,
@@ -114,8 +114,18 @@ async def test_reconcile_keeps_same_predicate_separate_per_opportunity() -> None
     created = await reconcile_observations(session, person_id)
 
     assert created == 2
-    claims = [call.args[0] for call in session.add.call_args_list]
+    claims = [
+        call.args[0]
+        for call in session.add.call_args_list
+        if isinstance(call.args[0], Claim)
+    ]
     assert {claim.opportunity_id for claim in claims} == {opportunity_a, opportunity_b}
+    links = [
+        call.args[0]
+        for call in session.add.call_args_list
+        if isinstance(call.args[0], ClaimObservationLink)
+    ]
+    assert len(links) == 2
 
 
 @pytest.mark.asyncio

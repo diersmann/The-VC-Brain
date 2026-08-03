@@ -14,7 +14,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Claim, Observation
+from app.db.models import Claim, ClaimObservationLink, Observation
 
 logger = structlog.get_logger(__name__)
 
@@ -166,6 +166,17 @@ def _close_superseded_claims(
         previous.valid_time_end = replacement.valid_time_start
 
 
+def _link_claim_observations(session: AsyncSession, claim: Claim) -> None:
+    """Write FK-backed links while retaining the legacy JSON evidence list."""
+    for observation_id in claim.observation_ids:
+        session.add(
+            ClaimObservationLink(
+                claim_id=claim.id,
+                observation_id=uuid.UUID(str(observation_id)),
+            )
+        )
+
+
 async def reconcile_observations(
     session: AsyncSession,
     person_id: uuid.UUID,
@@ -225,6 +236,7 @@ async def reconcile_observations(
             _apply_trust(claim, [obs], contradicted=False)
             session.add(claim)
             await session.flush()
+            _link_claim_observations(session, claim)
             existing_claims.append(claim)
             claims_created += 1
             continue
@@ -254,6 +266,7 @@ async def reconcile_observations(
             _apply_trust(claim, group, contradicted=False)
             session.add(claim)
             await session.flush()
+            _link_claim_observations(session, claim)
             _close_superseded_claims(scoped_claims, claim, predicate=predicate)
             existing_claims.append(claim)
             claims_created += 1
@@ -285,6 +298,7 @@ async def reconcile_observations(
             _apply_trust(winner_claim, [winner], contradicted=True)
             session.add(winner_claim)
             await session.flush()
+            _link_claim_observations(session, winner_claim)
             _close_superseded_claims(scoped_claims, winner_claim, predicate=predicate)
             existing_claims.append(winner_claim)
             scoped_claims.append(winner_claim)
@@ -313,6 +327,7 @@ async def reconcile_observations(
             _apply_trust(counter_claim, [loser], contradicted=True)
             session.add(counter_claim)
             await session.flush()
+            _link_claim_observations(session, counter_claim)
             existing_claims.append(counter_claim)
             scoped_claims.append(counter_claim)
             claims_created += 1

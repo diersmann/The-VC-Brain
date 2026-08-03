@@ -437,6 +437,23 @@ class Claim(TimestampMixin, Base):
     )
 
 
+class ClaimObservationLink(Base):
+    """Typed evidence link retained alongside legacy Claim.observation_ids."""
+
+    __tablename__ = "claim_observations"
+
+    claim_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("claims.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    observation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("observations.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Relationships (graph edges)
 # ---------------------------------------------------------------------------
