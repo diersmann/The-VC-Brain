@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.models import InboundSubmission, Person, SourceSnapshot
 from app.db.session import get_session
-from app.opportunity_service import create_inbound_opportunity
+from app.opportunity_service import create_inbound_opportunity, record_channel_touch
 from app.outbox import inbound_outbox_event
 from app.source_policy import build_source_use_policy
 from app.storage import put_snapshot
@@ -134,6 +134,14 @@ async def submit_pitch(
         db, person, company_name=company_name
     )
     await db.flush()
+    record_channel_touch(
+        db,
+        opportunity.id,
+        "inbound_application",
+        "application_received",
+        source_ref=str(snapshot.id),
+        metadata={"source_type": "founder_submission"},
+    )
 
     submission = InboundSubmission(
         idempotency_key=idempotency_key,

@@ -502,6 +502,8 @@ Before training predictive models, define measurable outcomes. A vague label suc
 
 Programs, institutions, communities, events, referrals, and web sources are represented as sourcing-channel nodes. Each opportunity preserves first-touch and contributing channels. The system measures application conversion, thesis fit, diligence advancement, investment, subsequent milestones, evidence quality, cost, and time-to-decision by channel.
 
+The current persistence slice stores append-only opportunity channel touches with channel, touch type, source query/ref, occurrence time, and metadata. Inbound applications and outbound discovery record these touches as sourcing/process telemetry only; channel correlation must never enter founder-merit scoring. Full conversion, cost, evidence-yield, false-positive, and outcome reporting remains dependent on the job-ledger and outcome contracts.
+
 Funded and declined outcomes update channel estimates without becoming direct founder-merit features. A Bayesian exploration policy can suggest underexplored channels with promising quality signals while reserving capacity for discovery outside historically successful networks. Reports show quality and uncertainty, not only lead volume.
 
 ### Outcome Feedback

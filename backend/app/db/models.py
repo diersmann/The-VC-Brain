@@ -195,6 +195,25 @@ class OpportunityFounder(Base):
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class OpportunityChannelTouch(Base):
+    """Append-only source/channel touch retained for opportunity attribution."""
+
+    __tablename__ = "opportunity_channel_touches"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    touch_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    touch_metadata: Mapped[dict[str, object]] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
+
+
 # ---------------------------------------------------------------------------
 # Investment theses
 # ---------------------------------------------------------------------------

@@ -676,7 +676,14 @@ async def discover_job(
                 )
 
                 opportunity = await get_or_create_opportunity(
-                    session, person, source_kind="outbound", lifecycle_state="discovered"
+                    session,
+                    person,
+                    source_kind="outbound",
+                    lifecycle_state="discovered",
+                    channel=collection_source,
+                    touch_type="discovery",
+                    source_query=query,
+                    source_ref=seed.handle,
                 )
                 composite = float(components.get("composite", 0.0))
                 if composite >= threshold and opportunity.lifecycle_state == "discovered":
@@ -736,7 +743,14 @@ async def discover_job(
             from app.opportunity_service import get_or_create_opportunity, transition_opportunity
 
             opportunity = await get_or_create_opportunity(
-                session, person, source_kind="outbound", lifecycle_state="discovered"
+                session,
+                person,
+                source_kind="outbound",
+                lifecycle_state="discovered",
+                channel=collection_source,
+                touch_type="discovery",
+                source_query=query,
+                source_ref=seed.handle,
             )
             composite = float(components.get("composite", 0.0))
             if composite >= threshold and opportunity.lifecycle_state == "discovered":

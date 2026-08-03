@@ -16,7 +16,14 @@ from starlette.datastructures import Headers
 
 from app.api.routes import inbound
 from app.config import Settings
-from app.db.models import InboundSubmission, Opportunity, OutboxEvent, Person, SourceSnapshot
+from app.db.models import (
+    InboundSubmission,
+    Opportunity,
+    OpportunityChannelTouch,
+    OutboxEvent,
+    Person,
+    SourceSnapshot,
+)
 from app.db.session import get_session
 from app.main import app
 from app.uploads import UploadRejected, extract_pdf_pages, quarantine_pitch_upload
@@ -235,6 +242,12 @@ def test_submission_persists_uploaded_deck_and_returns_opportunity_id(monkeypatc
     snapshot = next(item for item in session.added if isinstance(item, SourceSnapshot))
     assert snapshot.content_hash == "hash-1"
     assert snapshot.storage_path == "snapshots/hash-1.pdf"
+    touch = next(item for item in session.added if isinstance(item, OpportunityChannelTouch))
+    assert touch.opportunity_id == opportunity.id
+    assert touch.channel == "inbound_application"
+    assert touch.touch_type == "application_received"
+    assert touch.source_ref == str(snapshot.id)
+    assert touch.touch_metadata == {"source_type": "founder_submission"}
     put_snapshot.assert_awaited_once()
     assert put_snapshot.await_args.kwargs["content"].startswith(b"%PDF-")
     assert len([item for item in session.added if isinstance(item, InboundSubmission)]) == 1

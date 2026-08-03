@@ -9,12 +9,20 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from datetime import UTC, datetime
 
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DecisionEvent, Opportunity, OpportunityFounder, Organization, Person
+from app.db.models import (
+    DecisionEvent,
+    Opportunity,
+    OpportunityChannelTouch,
+    OpportunityFounder,
+    Organization,
+    Person,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -40,6 +48,34 @@ async def get_or_create_organization(session: AsyncSession, name: str) -> Organi
     return organization
 
 
+def record_channel_touch(
+    session: AsyncSession,
+    opportunity_id: uuid.UUID,
+    channel: str,
+    touch_type: str,
+    *,
+    source_query: str | None = None,
+    source_ref: str | None = None,
+    metadata: dict[str, object] | None = None,
+) -> OpportunityChannelTouch:
+    """Record append-only sourcing/process attribution for an opportunity.
+
+    Channel touches are operational telemetry only. They must not be used as
+    a founder-quality signal or merged into score inputs.
+    """
+    touch = OpportunityChannelTouch(
+        opportunity_id=opportunity_id,
+        channel=channel,
+        touch_type=touch_type,
+        source_query=source_query,
+        source_ref=source_ref,
+        occurred_at=datetime.now(UTC),
+        touch_metadata=metadata or {},
+    )
+    session.add(touch)
+    return touch
+
+
 async def get_or_create_opportunity(
     session: AsyncSession,
     person: Person,
@@ -47,6 +83,10 @@ async def get_or_create_opportunity(
     source_kind: str = "outbound",
     lifecycle_state: str = "discovered",
     company_name: str | None = None,
+    channel: str | None = None,
+    touch_type: str = "discovery",
+    source_query: str | None = None,
+    source_ref: str | None = None,
 ) -> Opportunity:
     """Find the latest opportunity for *person*, or create one.
 
@@ -62,6 +102,15 @@ async def get_or_create_opportunity(
     )
     opportunity = result.scalar_one_or_none()
     if opportunity is not None:
+        if channel is not None:
+            record_channel_touch(
+                session,
+                opportunity.id,
+                channel,
+                touch_type,
+                source_query=source_query,
+                source_ref=source_ref,
+            )
         return opportunity
 
     resolved_company_name = company_name or person.display_name or person.stable_id
@@ -78,6 +127,15 @@ async def get_or_create_opportunity(
         OpportunityFounder(opportunity_id=opportunity.id, person_id=person.id, role="founder")
     )
     await session.flush()
+    if channel is not None:
+        record_channel_touch(
+            session,
+            opportunity.id,
+            channel,
+            touch_type,
+            source_query=source_query,
+            source_ref=source_ref,
+        )
     return opportunity
 
 
