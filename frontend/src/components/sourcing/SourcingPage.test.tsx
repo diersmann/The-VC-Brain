@@ -32,6 +32,7 @@ describe("SourcingPage mutation states", () => {
     render(<TestQueryProvider><MemoryRouter><SourcingPage /></MemoryRouter></TestQueryProvider>);
     const query = await screen.findByRole("textbox", { name: "Discovery query" });
     const originalQuery = (query as HTMLInputElement).value;
+    expect(screen.getByLabelText("Sourcing query plan")).toHaveTextContent("GitHub location filter: Berlin");
 
     fireEvent.click(screen.getByRole("button", { name: "Discover live" }));
 

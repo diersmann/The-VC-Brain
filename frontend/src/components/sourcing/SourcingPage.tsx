@@ -5,6 +5,7 @@ import { triggerDiscovery, useCandidates } from "../../api/candidates";
 import { KeyMetricCard } from "../common/KeyMetricCard";
 import { isEvidenceReady, isThesisAligned, ratioPercent } from "../../data/portfolioMetrics";
 import { hasHighMultiAxisSignal, rankCandidates, rankingExplanation } from "../../data/sourcingSignals";
+import { buildSourcingQueryPlan } from "../../data/sourcingQueryPlan";
 import { DECISION_RUBRIC } from "../../data/rubric";
 import type { Candidate } from "../../types/candidate";
 import { CandidateCard } from "./CandidateCard";
@@ -21,6 +22,7 @@ export function SourcingPage() {
   const [discovering,setDiscovering]=useState(false);
   const [discoveryError,setDiscoveryError]=useState(false);
   const [outreachCandidate,setOutreachCandidate]=useState<Candidate|null>(null);
+  const queryPlan=buildSourcingQueryPlan(query);
   const runDiscovery=async()=>{setDiscovering(true);setDiscoveryError(false);try{await triggerDiscovery(query,"github");window.setTimeout(()=>void refetch(),5000);}catch{setDiscoveryError(true)}finally{setDiscovering(false)}};
   const highSignal=candidates.filter(hasHighMultiAxisSignal).length;
   const thesisAligned=candidates.filter(isThesisAligned).length;
@@ -39,6 +41,13 @@ export function SourcingPage() {
     <section className="panel mb-6 rounded-lg p-5">
       <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-accent"/><span className="text-xs font-semibold text-accent">Live GitHub founder discovery · search by location</span></div>
       <div className="flex gap-2"><div className="relative flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-2"/><label htmlFor="discovery-query" className="sr-only">Discovery query</label><input id="discovery-query" value={query} onChange={e=>setQuery(e.target.value)} className="w-full rounded-md border border-line bg-surface-2 py-3.5 pl-11 pr-4 text-sm outline-none focus:border-accent-muted"/></div><button onClick={() => void runDiscovery()} disabled={discovering||!query.trim()} className="rounded-md bg-accent px-4 text-xs font-bold text-white disabled:opacity-50">{discovering?"Queuing…":"Discover live"}</button></div>
+      <div className="mt-4 rounded-md bg-white/65 px-3.5 py-3" aria-label="Sourcing query plan">
+        <div className="data-label">Search plan</div>
+        <div className="mt-2 flex flex-wrap gap-1.5">{queryPlan.clauses.map((clause) => <span key={`${clause.kind}-${clause.value}`} className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${clause.forwardedToSource ? "bg-[#e4f2ed] text-[#347c67]" : "bg-surface-2 text-muted"}`}>{clause.kind}: {clause.value}</span>)}</div>
+        {queryPlan.geography.length > 0 && <p className="mt-2 text-[10px] font-semibold text-[#347c67]">GitHub location filter: {queryPlan.geography.join(", ")}</p>}
+        {queryPlan.downstreamClauseCount > 0 && <p className="mt-1 text-[10px] leading-4 text-muted">Other clauses are retained as downstream research intent; GitHub discovery currently applies geography only.</p>}
+        {queryPlan.corrections.map((correction) => <p key={correction} className="mt-1 text-[10px] font-semibold text-[#946225]">{correction}</p>)}
+      </div>
       {discoveryError && <div role="alert" className="mt-3 rounded-md border border-danger/20 bg-[#fbe8e9] px-3 py-2 text-xs font-semibold text-danger">Unable to queue discovery. Check the API service and retry.</div>}
     </section>
 
