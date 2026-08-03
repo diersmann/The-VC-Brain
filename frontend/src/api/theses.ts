@@ -14,6 +14,8 @@ export interface InvestmentThesis {
   ownership_target_pct: number | null;
   risk_appetite: "conservative" | "balanced" | "bold";
   scoring_weights: Record<string, number>;
+  discovery_queries: string[];
+  source_freshness_days: Record<string, number>;
   rubric_version: string;
   rubric_thresholds: Record<string, number>;
 }
@@ -29,6 +31,8 @@ export interface ThesisPayload {
   ownership_target_pct: number;
   risk_appetite: "conservative" | "balanced" | "bold";
   scoring_weights: Record<string, number>;
+  discovery_queries?: string[];
+  source_freshness_days?: Record<string, number>;
 }
 
 export interface ThesisSaveResult {
