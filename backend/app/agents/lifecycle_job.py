@@ -39,6 +39,8 @@ logger = structlog.get_logger(__name__)
 # Maximum retries before closing a stuck opportunity
 _MAX_RETRIES = 3
 _INVESTIGATION_AGENT_CALLS = 5  # 3 specialists + critic + batched embeddings
+_FOUNDER_SCORE_AGENT_CALLS = 5
+_RESEARCH_AGENT_CALLS = 3
 
 
 async def _count_retries(session: AsyncSession, opportunity_id: Any) -> int:
@@ -338,67 +340,131 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                 # audit history.
                 continue
 
-            # --- received -> memo_ready ---
+            # --- received -> triage ---
             elif state == "received":
-                if await _has_memo(session, opp.id):
-                    await transition_opportunity(
-                        session, opp, "memo_ready",
-                        reason="Investment memo generated",
+                if not await _has_scoped_claims(session, person.id, opp.id):
+                    cutoff = datetime.now(UTC) - timedelta(
+                        minutes=settings.pipeline_stuck_after_minutes
                     )
-                    transitions += 1
-                else:
-                    # Inbound submissions arrive at received, but a memo is
-                    # not a triage shortcut. First ensure processing has
-                    # produced scoped claims, Founder Score exists, and all
-                    # three opportunity axes have been persisted.
-                    missing_outputs: list[str] = []
-                    if not await _has_scoped_claims(session, person.id, opp.id):
-                        missing_outputs.append("scoped_claims")
-                    if not await _has_founder_score(session, person.id):
-                        missing_outputs.append("founder_score")
-                    if not await _has_opportunity_axes(session, opp.id):
-                        missing_outputs.append("opportunity_axes")
-
-                    if missing_outputs:
-                        cutoff = datetime.now(UTC) - timedelta(
-                            minutes=settings.pipeline_stuck_after_minutes
-                        )
-                        recently_queued = await _has_recent_pipeline_event(
-                            session, opp.id, "Inbound triage queued", cutoff
-                        )
-                        budget = await get_agent_budget_remaining(redis)
-                        if budget >= _INVESTIGATION_AGENT_CALLS and not recently_queued:
-                            await decrement_agent_budget(redis, _INVESTIGATION_AGENT_CALLS)
-                            await _queue_investigation_jobs(redis, person.id, opp.id)
-                            session.add(
-                                DecisionEvent(
-                                    opportunity_id=opp.id,
-                                    prior_state="received",
-                                    new_state="received",
-                                    actor="pipeline:auto",
-                                    reason="Inbound triage queued",
-                                    sla_metadata={
-                                        "pipeline_stage": "inbound_triage",
-                                        "missing_outputs": missing_outputs,
-                                        "required_outputs": [
-                                            "scoped_claims",
-                                            "founder_score",
-                                            "opportunity_axes",
-                                        ],
-                                    },
-                                )
-                            )
-                        continue
-
-                    # Enqueue memo generation if it has not been queued
-                    # recently. This avoids one enqueue every cron cycle.
+                    recently_queued = await _has_recent_pipeline_event(
+                        session, opp.id, "Inbound processing queued", cutoff
+                    )
                     budget = await get_agent_budget_remaining(redis)
+                    if budget > 0 and not recently_queued:
+                        await decrement_agent_budget(redis, 1)
+                        await queue_enqueue(
+                            redis,
+                            {"job_type": "process_candidate", "person_id": str(person.id)},
+                            priority=10.0,
+                        )
+                        session.add(
+                            DecisionEvent(
+                                opportunity_id=opp.id,
+                                prior_state="received",
+                                new_state="received",
+                                actor="pipeline:auto",
+                                reason="Inbound processing queued",
+                                sla_metadata={
+                                    "pipeline_stage": "received",
+                                    "missing_outputs": ["scoped_claims"],
+                                },
+                            )
+                        )
+                    continue
+
+                await transition_opportunity(
+                    session, opp, "triage", reason="Scoped inbound processing completed"
+                )
+                transitions += 1
+
+            # --- triage -> screening ---
+            elif state == "triage":
+                if not await _has_founder_score(session, person.id):
+                    cutoff = datetime.now(UTC) - timedelta(
+                        minutes=settings.pipeline_stuck_after_minutes
+                    )
+                    recently_queued = await _has_recent_pipeline_event(
+                        session, opp.id, "Founder Score queued", cutoff
+                    )
+                    budget = await get_agent_budget_remaining(redis)
+                    if budget >= _FOUNDER_SCORE_AGENT_CALLS and not recently_queued:
+                        await decrement_agent_budget(redis, _FOUNDER_SCORE_AGENT_CALLS)
+                        await queue_enqueue(
+                            redis,
+                            {"job_type": "score_candidate", "person_id": str(person.id)},
+                            priority=10.0,
+                        )
+                        session.add(
+                            DecisionEvent(
+                                opportunity_id=opp.id,
+                                prior_state="triage",
+                                new_state="triage",
+                                actor="pipeline:auto",
+                                reason="Founder Score queued",
+                                sla_metadata={
+                                    "pipeline_stage": "triage",
+                                    "missing_outputs": ["founder_score"],
+                                },
+                            )
+                        )
+                    continue
+
+                await transition_opportunity(
+                    session, opp, "screening", reason="Triage output and Founder Score completed"
+                )
+                transitions += 1
+
+            # --- screening -> diligence ---
+            elif state == "screening":
+                if not await _has_opportunity_axes(session, opp.id):
+                    cutoff = datetime.now(UTC) - timedelta(
+                        minutes=settings.pipeline_stuck_after_minutes
+                    )
+                    recently_queued = await _has_recent_pipeline_event(
+                        session, opp.id, "Opportunity research queued", cutoff
+                    )
+                    budget = await get_agent_budget_remaining(redis)
+                    if budget >= _RESEARCH_AGENT_CALLS and not recently_queued:
+                        await decrement_agent_budget(redis, _RESEARCH_AGENT_CALLS)
+                        await queue_enqueue(
+                            redis,
+                            {
+                                "job_type": "research_candidate",
+                                "person_id": str(person.id),
+                                "opportunity_id": str(opp.id),
+                            },
+                            priority=10.0,
+                        )
+                        session.add(
+                            DecisionEvent(
+                                opportunity_id=opp.id,
+                                prior_state="screening",
+                                new_state="screening",
+                                actor="pipeline:auto",
+                                reason="Opportunity research queued",
+                                sla_metadata={
+                                    "pipeline_stage": "screening",
+                                    "missing_outputs": ["opportunity_axes"],
+                                },
+                            )
+                        )
+                    continue
+
+                await transition_opportunity(
+                    session, opp, "diligence", reason="Three opportunity axes completed"
+                )
+                transitions += 1
+
+            # --- diligence -> memo_ready ---
+            elif state == "diligence":
+                if not await _has_memo(session, opp.id):
                     cutoff = datetime.now(UTC) - timedelta(
                         minutes=settings.pipeline_stuck_after_minutes
                     )
                     recently_queued = await _has_recent_pipeline_event(
                         session, opp.id, "Memo generation queued", cutoff
                     )
+                    budget = await get_agent_budget_remaining(redis)
                     if budget > 0 and not recently_queued:
                         await decrement_agent_budget(redis, 1)
                         await queue_enqueue(
@@ -413,13 +479,22 @@ async def advance_pipeline_job(ctx: dict[str, Any]) -> dict[str, Any]:
                         session.add(
                             DecisionEvent(
                                 opportunity_id=opp.id,
-                                prior_state="received",
-                                new_state="received",
+                                prior_state="diligence",
+                                new_state="diligence",
                                 actor="pipeline:auto",
                                 reason="Memo generation queued",
-                                sla_metadata={},
+                                sla_metadata={
+                                    "pipeline_stage": "diligence",
+                                    "missing_outputs": ["succeeded_memo"],
+                                },
                             )
                         )
+                    continue
+
+                await transition_opportunity(
+                    session, opp, "memo_ready", reason="Validated investment memo generated"
+                )
+                transitions += 1
 
             # --- memo_ready -> (human decision via existing endpoint) ---
             # No auto-transition — human decides via POST /{id}/decision

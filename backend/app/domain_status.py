@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Final, Literal, cast
 
+from app.lifecycle import STAGES as CANONICAL_LIFECYCLE_STAGES
+
 ClaimStatus = Literal["supported", "contradicted", "unverified", "tavily_synthesized"]
 AssessmentAxis = Literal["Founder", "Market", "Idea-Market", "execution", "technical", "commercial"]
 AssessmentRating = Literal["Bullish", "Neutral", "Bearish"]
@@ -34,20 +36,7 @@ ASSESSMENT_AXES: Final = (
 )
 ASSESSMENT_RATINGS: Final = ("Bullish", "Neutral", "Bearish")
 ASSESSMENT_TRENDS: Final = ("Improving", "Stable", "Declining")
-LIFECYCLE_STAGES: Final = (
-    "discovered",
-    "interesting",
-    "investigating",
-    "contacted",
-    "received",
-    "memo_ready",
-    "hold",
-    "approved",
-    "closed",
-    "screening",
-    "triage",
-    "diligence",
-)
+LIFECYCLE_STAGES: Final = tuple(CANONICAL_LIFECYCLE_STAGES)
 
 
 def normalize_claim_status(value: str) -> ClaimStatus:

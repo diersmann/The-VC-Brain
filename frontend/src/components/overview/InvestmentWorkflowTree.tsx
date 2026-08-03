@@ -8,6 +8,7 @@ import {
   Scale,
   Target,
 } from "lucide-react";
+import type { LifecycleContract } from "../../api/lifecycle";
 
 type WorkflowCounts = {
   inbound: number;
@@ -22,6 +23,7 @@ type InvestmentWorkflowTreeProps = {
   thesisName: string;
   thesisVersion?: string;
   counts: WorkflowCounts;
+  lifecycle?: LifecycleContract;
   onNavigate: (path: string) => void;
 };
 
@@ -33,7 +35,12 @@ const nodeTones = {
   slate: "bg-gradient-to-br from-[#e9eef4] to-[#f7f9fc] text-[#586b84]",
 } as const;
 
-export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNavigate }: InvestmentWorkflowTreeProps) {
+export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, lifecycle, onNavigate }: InvestmentWorkflowTreeProps) {
+  if (!lifecycle) {
+    return <section className="panel mb-6 rounded-lg p-5 text-sm text-muted" role="status">Workflow contract unavailable.</section>;
+  }
+  const label = (key: string) => lifecycle.stages.find((stage) => stage.key === key)?.label ?? key;
+
   return (
     <section className="panel mb-6 overflow-hidden rounded-lg p-5 md:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -94,7 +101,7 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
             step="03 · Converge"
             title="Opportunity pipeline"
             value={`${counts.total} opportunities`}
-            detail="Received · triage · identity resolution"
+            detail={`${label("received")} · ${label("triage")} · identity resolution`}
             tone="slate"
             onClick={() => onNavigate("/investigated")}
           />
@@ -104,9 +111,9 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
           <WorkflowNode
             icon={BrainCircuit}
             step="04 · Intelligence"
-            title="Screen & diligence"
+            title={`${label("screening")} & ${label("diligence")}`}
             value={`${counts.scored} scored`}
-            detail={`Founder · Market · Idea × Market · ${counts.pending} pending`}
+            detail={`${label("investigating")} · Founder · Market · Idea × Market · ${counts.pending} pending`}
             tone="green"
             onClick={() => onNavigate("/investigated")}
           />
@@ -116,7 +123,7 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
           <WorkflowNode
             icon={FileCheck2}
             step="05 · IC review"
-            title="Memo & decision"
+            title={`${label("memo_ready")} & decision`}
             value={`${counts.highSignal} high signal`}
             detail="Evidence memo + human approval"
             tone="amber"
@@ -128,7 +135,7 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
           <WorkflowNode
             icon={Scale}
             step="06 · Memory"
-            title="Decision feedback"
+            title={`${label("approved")} / ${label("closed")} feedback`}
             value={`${counts.scored} snapshots`}
             detail="No separate Memory workspace yet"
             tone="blue"
@@ -141,7 +148,7 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
             step="03 · Converge"
             title="Opportunity pipeline"
             value={`${counts.total} opportunities`}
-            detail="Received · triage · identity resolution"
+            detail={`${label("received")} · ${label("triage")} · identity resolution`}
             tone="slate"
             onClick={() => onNavigate("/investigated")}
           />
@@ -149,9 +156,9 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
           <WorkflowNode
             icon={BrainCircuit}
             step="04 · Intelligence"
-            title="Screen & diligence"
+            title={`${label("screening")} & ${label("diligence")}`}
             value={`${counts.scored} scored`}
-            detail={`Founder · Market · Idea × Market · ${counts.pending} pending`}
+            detail={`${label("investigating")} · Founder · Market · Idea × Market · ${counts.pending} pending`}
             tone="green"
             onClick={() => onNavigate("/investigated")}
           />
@@ -159,7 +166,7 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
           <WorkflowNode
             icon={FileCheck2}
             step="05 · IC review"
-            title="Memo & decision"
+            title={`${label("memo_ready")} & decision`}
             value={`${counts.highSignal} high signal`}
             detail="Evidence memo + human approval"
             tone="amber"
@@ -169,7 +176,7 @@ export function InvestmentWorkflowTree({ thesisName, thesisVersion, counts, onNa
           <WorkflowNode
             icon={Scale}
             step="06 · Memory"
-            title="Decision feedback"
+            title={`${label("approved")} / ${label("closed")} feedback`}
             value={`${counts.scored} snapshots`}
             detail="No separate Memory workspace yet"
             tone="blue"

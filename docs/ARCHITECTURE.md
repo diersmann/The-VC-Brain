@@ -165,6 +165,12 @@ Outbound: signal -> threshold -> outreach -> application
                                                           [Decision]
 ```
 
+The canonical lifecycle is versioned as `unified-v2` in `backend/app/lifecycle.py`,
+served at `GET /api/v1/lifecycle`, and consumed by the workflow diagram. Each
+stage declares entry and exit requirements, allowed actors, transitions, and
+timestamp provenance. Opportunity creation establishes the initial state;
+subsequent transitions are timestamped by `DecisionEvent`.
+
 An outbound signal does not trigger an investment. It creates a candidate, and crossing a configurable conviction threshold creates an activation task. Approved outreach asks the founder to submit or confirm the minimum application: company name and deck. The resulting application enters the same `Received` state as inbound applications and is evaluated by the same rules.
 
 Outreach is stateful: drafting and human approval are distinct from a send request, and `contacted` is only recorded after a mail provider confirms submission. Delivery, bounce, reply, opt-out, and failure signals remain separate states.

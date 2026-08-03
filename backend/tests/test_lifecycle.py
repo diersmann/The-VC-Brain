@@ -23,7 +23,10 @@ def test_valid_transitions() -> None:
     assert is_valid_transition("interesting", "investigating") is True
     assert is_valid_transition("investigating", "contacted") is True
     assert is_valid_transition("contacted", "received") is True
-    assert is_valid_transition("received", "memo_ready") is True
+    assert is_valid_transition("received", "triage") is True
+    assert is_valid_transition("triage", "screening") is True
+    assert is_valid_transition("screening", "diligence") is True
+    assert is_valid_transition("diligence", "memo_ready") is True
     assert is_valid_transition("memo_ready", "approved") is True
     assert is_valid_transition("memo_ready", "hold") is True
     assert is_valid_transition("hold", "approved") is True
@@ -62,6 +65,9 @@ def test_is_outbound() -> None:
 def test_is_inbound() -> None:
     """Inbound stages should be classified correctly."""
     assert is_inbound("received") is True
+    assert is_inbound("triage") is True
+    assert is_inbound("screening") is True
+    assert is_inbound("diligence") is True
     assert is_inbound("memo_ready") is True
     assert is_inbound("approved") is True
     assert is_inbound("hold") is True
@@ -90,10 +96,9 @@ def test_only_succeeded_memos_are_ready() -> None:
     assert is_memo_ready("pending") is False
 
 
-def test_legacy_stages() -> None:
-    """Legacy stages (screening, triage, diligence) should have valid transitions."""
+def test_inbound_stages_are_canonical() -> None:
+    """Triage, screening, and diligence are part of the canonical flow."""
     assert is_valid_transition("screening", "diligence") is True
-    assert is_valid_transition("screening", "memo_ready") is True
     assert is_valid_transition("screening", "closed") is True
     assert is_valid_transition("triage", "screening") is True
     assert is_valid_transition("triage", "closed") is True

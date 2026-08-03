@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router";
 import { AlertTriangle, ArrowRight, CheckCircle2, CircleGauge, ShieldCheck, Target } from "lucide-react";
 import { useCandidates } from "../api/candidates";
+import { useLifecycleContract } from "../api/lifecycle";
 import { useActiveThesis } from "../api/theses";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { ApiStateNotice } from "../components/common/ApiStateNotice";
@@ -13,6 +14,7 @@ import { DECISION_RUBRIC } from "../data/rubric";
 export function HomePage() {
   const navigate = useNavigate();
   const candidatesQuery = useCandidates();
+  const lifecycleQuery = useLifecycleContract();
   const thesisQuery = useActiveThesis();
   const data = candidatesQuery.data ?? [];
   const candidateDataAvailable = candidatesQuery.data !== undefined;
@@ -59,6 +61,7 @@ export function HomePage() {
           pending: data.length - scored.length,
           highSignal: highSignal.length,
         }}
+        lifecycle={lifecycleQuery.data}
         onNavigate={navigate}
       />}
 

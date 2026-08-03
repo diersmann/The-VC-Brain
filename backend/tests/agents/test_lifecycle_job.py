@@ -136,7 +136,7 @@ async def test_investigated_candidate_above_threshold_queues_contact() -> None:
 
 
 @pytest.mark.asyncio
-async def test_received_inbound_queues_prerequisites_before_memo() -> None:
+async def test_received_inbound_queues_processing_before_triage() -> None:
     person_id = uuid.uuid4()
     opportunity = MagicMock(
         id=uuid.uuid4(),
@@ -158,13 +158,8 @@ async def test_received_inbound_queues_prerequisites_before_memo() -> None:
 
     with (
         patch("app.agents.lifecycle_job._session_ctx") as context,
-        patch("app.agents.lifecycle_job._has_memo", new=AsyncMock(return_value=False)),
         patch(
             "app.agents.lifecycle_job._has_scoped_claims", new=AsyncMock(return_value=False)
-        ),
-        patch("app.agents.lifecycle_job._has_founder_score", new=AsyncMock(return_value=False)),
-        patch(
-            "app.agents.lifecycle_job._has_opportunity_axes", new=AsyncMock(return_value=False)
         ),
         patch(
             "app.agents.lifecycle_job._has_recent_pipeline_event",
@@ -182,25 +177,122 @@ async def test_received_inbound_queues_prerequisites_before_memo() -> None:
 
     assert result["transitions"] == 0
     assert opportunity.lifecycle_state == "received"
-    assert [call.args[1]["job_type"] for call in enqueue.await_args_list] == [
-        "research_candidate",
-        "score_candidate",
-        "process_candidate",
-    ]
-    assert enqueue.await_args_list[0].args[1]["opportunity_id"] == str(opportunity.id)
-    assert "opportunity_id" not in enqueue.await_args_list[1].args[1]
+    enqueue.assert_awaited_once()
+    assert enqueue.await_args.args[1] == {
+        "job_type": "process_candidate",
+        "person_id": str(person.id),
+    }
     event = session.add.call_args.args[0]
-    assert event.reason == "Inbound triage queued"
-    assert event.sla_metadata["missing_outputs"] == [
-        "scoped_claims",
-        "founder_score",
-        "opportunity_axes",
-    ]
+    assert event.reason == "Inbound processing queued"
+    assert event.sla_metadata["pipeline_stage"] == "received"
 
 
 @pytest.mark.asyncio
-async def test_received_inbound_queues_memo_only_after_prerequisites() -> None:
+async def test_received_inbound_advances_to_triage_after_processing() -> None:
     opportunity = MagicMock(id=uuid.uuid4(), lifecycle_state="received", updated_at=None)
+    person = MagicMock(id=uuid.uuid4())
+    session = _session()
+    session.execute = AsyncMock(side_effect=[_result(rows=[opportunity]), _result(scalar=person)])
+    ctx = {
+        "settings": MagicMock(pipeline_batch_size=5, pipeline_stuck_after_minutes=30),
+        "redis": AsyncMock(),
+    }
+
+    async def transition(_session: Any, opp: Any, new_state: str, **_: object) -> None:
+        opp.lifecycle_state = new_state
+
+    with (
+        patch("app.agents.lifecycle_job._session_ctx") as context,
+        patch("app.agents.lifecycle_job._has_scoped_claims", new=AsyncMock(return_value=True)),
+        patch("app.agents.lifecycle_job.transition_opportunity", new=transition),
+        patch("app.agents.lifecycle_job.queue_enqueue", new=AsyncMock()) as enqueue,
+    ):
+        context.return_value.__aenter__.return_value = session
+        result = await advance_pipeline_job(ctx)
+
+    assert result["transitions"] == 1
+    assert opportunity.lifecycle_state == "triage"
+    enqueue.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_triage_queues_founder_score_before_screening() -> None:
+    opportunity = MagicMock(id=uuid.uuid4(), lifecycle_state="triage", updated_at=None)
+    person = MagicMock(id=uuid.uuid4())
+    session = _session()
+    session.execute = AsyncMock(side_effect=[_result(rows=[opportunity]), _result(scalar=person)])
+    ctx = {
+        "settings": MagicMock(pipeline_batch_size=5, pipeline_stuck_after_minutes=30),
+        "redis": AsyncMock(),
+    }
+
+    with (
+        patch("app.agents.lifecycle_job._session_ctx") as context,
+        patch("app.agents.lifecycle_job._has_founder_score", new=AsyncMock(return_value=False)),
+        patch(
+            "app.agents.lifecycle_job._has_recent_pipeline_event",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "app.agents.lifecycle_job.get_agent_budget_remaining",
+            new=AsyncMock(return_value=5),
+        ),
+        patch("app.agents.lifecycle_job.decrement_agent_budget", new=AsyncMock()),
+        patch("app.agents.lifecycle_job.queue_enqueue", new=AsyncMock()) as enqueue,
+    ):
+        context.return_value.__aenter__.return_value = session
+        await advance_pipeline_job(ctx)
+
+    enqueue.assert_awaited_once()
+    assert enqueue.await_args.args[1] == {
+        "job_type": "score_candidate",
+        "person_id": str(person.id),
+    }
+    assert session.add.call_args.args[0].reason == "Founder Score queued"
+
+
+@pytest.mark.asyncio
+async def test_screening_queues_opportunity_research_before_diligence() -> None:
+    opportunity = MagicMock(id=uuid.uuid4(), lifecycle_state="screening", updated_at=None)
+    person = MagicMock(id=uuid.uuid4())
+    session = _session()
+    session.execute = AsyncMock(side_effect=[_result(rows=[opportunity]), _result(scalar=person)])
+    ctx = {
+        "settings": MagicMock(pipeline_batch_size=5, pipeline_stuck_after_minutes=30),
+        "redis": AsyncMock(),
+    }
+
+    with (
+        patch("app.agents.lifecycle_job._session_ctx") as context,
+        patch(
+            "app.agents.lifecycle_job._has_opportunity_axes", new=AsyncMock(return_value=False)
+        ),
+        patch(
+            "app.agents.lifecycle_job._has_recent_pipeline_event",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "app.agents.lifecycle_job.get_agent_budget_remaining",
+            new=AsyncMock(return_value=3),
+        ),
+        patch("app.agents.lifecycle_job.decrement_agent_budget", new=AsyncMock()),
+        patch("app.agents.lifecycle_job.queue_enqueue", new=AsyncMock()) as enqueue,
+    ):
+        context.return_value.__aenter__.return_value = session
+        await advance_pipeline_job(ctx)
+
+    enqueue.assert_awaited_once()
+    assert enqueue.await_args.args[1] == {
+        "job_type": "research_candidate",
+        "person_id": str(person.id),
+        "opportunity_id": str(opportunity.id),
+    }
+    assert session.add.call_args.args[0].reason == "Opportunity research queued"
+
+
+@pytest.mark.asyncio
+async def test_diligence_queues_memo_before_memo_ready() -> None:
+    opportunity = MagicMock(id=uuid.uuid4(), lifecycle_state="diligence", updated_at=None)
     person = MagicMock(id=uuid.uuid4())
     session = _session()
     session.execute = AsyncMock(side_effect=[_result(rows=[opportunity]), _result(scalar=person)])
@@ -212,11 +304,6 @@ async def test_received_inbound_queues_memo_only_after_prerequisites() -> None:
     with (
         patch("app.agents.lifecycle_job._session_ctx") as context,
         patch("app.agents.lifecycle_job._has_memo", new=AsyncMock(return_value=False)),
-        patch("app.agents.lifecycle_job._has_scoped_claims", new=AsyncMock(return_value=True)),
-        patch("app.agents.lifecycle_job._has_founder_score", new=AsyncMock(return_value=True)),
-        patch(
-            "app.agents.lifecycle_job._has_opportunity_axes", new=AsyncMock(return_value=True)
-        ),
         patch(
             "app.agents.lifecycle_job._has_recent_pipeline_event",
             new=AsyncMock(return_value=False),
@@ -237,3 +324,4 @@ async def test_received_inbound_queues_memo_only_after_prerequisites() -> None:
         "person_id": str(person.id),
         "opportunity_id": str(opportunity.id),
     }
+    assert session.add.call_args.args[0].reason == "Memo generation queued"
