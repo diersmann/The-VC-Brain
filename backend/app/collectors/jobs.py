@@ -697,6 +697,7 @@ async def discover_job(
                         info_gain=info_gain(components.get("composite", 0.0), staleness_days=0.0),
                         cost=seed_connector.cost,
                         authority=seed_connector.authority,
+                        evidence_confidence=components.get("signal_coverage"),
                     )
                     await queue_enqueue(ctx["redis"], task, p)
                 continue
@@ -757,6 +758,7 @@ async def discover_job(
                     info_gain=info_gain(composite, staleness_days=0.0),
                     cost=seed_connector.cost,
                     authority=seed_connector.authority,
+                    evidence_confidence=components.get("signal_coverage"),
                 )
                 await queue_enqueue(ctx["redis"], task, p)
 

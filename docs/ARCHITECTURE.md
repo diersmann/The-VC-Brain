@@ -126,6 +126,8 @@ It should:
 - Assign authority, freshness, and licensing metadata
 - Prioritize deadline-critical and high-information sources
 
+Discovery activation uses `activation-priority-v1`: thesis fit, novelty, momentum, evidence confidence, identity confidence, contactability, deadline pressure, cost efficiency, and exploration quota are independently represented. Missing values are renormalized and shown as coverage gaps; the current collector path has only partial context, so lifecycle/SLA scheduling and thesis-specific floors remain policy work.
+
 ### 4. Processing Pipeline
 
 The pipeline converts raw material into normalized observations:

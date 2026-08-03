@@ -105,7 +105,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-037 - Stop ranking candidates by averaging the three axes.** Observed: SourcingPage.tsx:57-64 averages Founder, Market, and Idea-Market despite the product contract. **Partial completion:** sourcing now ranks complete profiles by the lowest independent axis, keeps incomplete profiles in a discovery-signal queue without assigning zero merit, and shows the ranking rationale above each card. **Blocked:** a thesis-specific floor/material-risk policy and offline evaluation still need product ownership and labeled ranking outcomes.
 
-- [ ] **VCB-038 - Use a versioned activation priority model.** Observed: lifecycle gates mostly on signal composite/founder aggregate. Done when priority includes thesis fit, novelty, momentum, evidence confidence, identity confidence, contactability, deadline, cost, and exploration quota, with missing values explicit and offline evaluation.
+- [blocked] **VCB-038 - Use a versioned activation priority model.** Observed: lifecycle gates mostly on signal composite/founder aggregate. **Partial completion:** `activation-priority-v1` now computes a bounded, weighted activation score across thesis fit, novelty, momentum, evidence confidence, identity confidence, contactability, deadline pressure, cost efficiency, and exploration quota; missing inputs are renormalized and surfaced, and discovery deep-collection queueing uses the model when evidence coverage is available. **Blocked:** lifecycle/SLA scheduling integration, thesis-specific floor/material-risk policy, exploration quota ownership, and labeled offline evaluation require product-owned policy and outcomes.
 
 - [ ] **VCB-039 - Add a real cold-start evidence path.** Missing: structured work samples, prototypes, references, interviews, and learning-velocity inputs. Done when quiet/no-profile applicants can submit comparable direct work evidence and missing public history widens uncertainty without lowering merit.
 
@@ -329,6 +329,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-03: VCB-032 organization slice added Migration 024, deterministic organization linkage for new opportunities, temporal founder-role fields, and candidate-detail organization IDs; historical backfill/merge, team APIs, and company-scoped research remain blocked.
 - 2026-08-03: VCB-033 evidence-link slice added Migration 025 and reconciliation writes for FK-backed claim/observation links while preserving legacy JSON compatibility; historical backfill, typed subject unions, and wrong-scope constraints remain blocked.
 - 2026-08-03: VCB-034 artifact-provenance slice added Migration 026, a shared versioned metadata contract, and writer coverage for reconciliation, thesis/agent scoring, research assessments, memos, and decision proposals; historical backfill, billing telemetry, and relationship-run coverage remain blocked.
+- 2026-08-03: VCB-038 activation-priority slice added `activation-priority-v1` with explicit missing-signal coverage and discovery queue integration; lifecycle/SLA policy, exploration quotas, and labeled offline ranking evaluation remain blocked.
 
 ## First practical milestone
 
