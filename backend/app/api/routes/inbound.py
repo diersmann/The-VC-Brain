@@ -2,7 +2,10 @@ from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 import structlog
+from arq import create_pool
+from arq.connections import ArqRedis, RedisSettings
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +21,13 @@ from app.uploads import UploadRejected, quarantine_pitch_upload
 
 router = APIRouter(prefix="/inbound", tags=["inbound"])
 logger = structlog.get_logger(__name__)
+
+
+class InboundPitchResponse(BaseModel):
+    status: str
+    person_id: str
+    opportunity_id: str
+
 
 _FOUNDER_EVIDENCE_LIMITS = {
     "work_sample_url": 2048,
@@ -47,6 +57,35 @@ def _founder_evidence(values: dict[str, str | None]) -> dict[str, str]:
         evidence[field] = value
     return evidence
 
+
+async def _get_redis() -> ArqRedis:
+    """Create a Redis pool for callers that need direct job enqueueing."""
+    settings = get_settings()
+    return await create_pool(RedisSettings.from_dsn(settings.redis_url))
+
+
+async def _enqueue_inbound_pitch(
+    redis: ArqRedis,
+    *,
+    person_id: str,
+    snapshot_id: str,
+    opportunity_id: str,
+    company_name: str,
+) -> None:
+    """Enqueue inbound processing and always release the temporary Redis pool."""
+    try:
+        await redis.enqueue_job(
+            "process_inbound_pitch_job",
+            person_id=person_id,
+            snapshot_id=snapshot_id,
+            opportunity_id=opportunity_id,
+            company_name=company_name,
+            _queue_name="arq:queue",
+        )
+    finally:
+        await redis.aclose()
+
+
 @router.post("/pitch")
 async def submit_pitch(
     founder_name: str = Form(...),
@@ -59,8 +98,8 @@ async def submit_pitch(
     reference_context: str | None = Form(None),
     interview_context: str | None = Form(None),
     idempotency_key: str = Header(..., alias="Idempotency-Key"),
-    db: AsyncSession = Depends(get_session)  # noqa: B008
-) -> dict[str, str]:
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> InboundPitchResponse:
     logger.info("inbound_pitch_received", company=company_name)
 
     idempotency_key = idempotency_key.strip()
@@ -81,25 +120,24 @@ async def submit_pitch(
     )
     existing = existing_result.scalar_one_or_none()
     if existing is not None:
-        return {
-            "status": existing.status,
-            "person_id": str(existing.person_id),
-            "opportunity_id": str(existing.opportunity_id),
-        }
+        return InboundPitchResponse(
+            status=existing.status,
+            person_id=str(existing.person_id),
+            opportunity_id=str(existing.opportunity_id),
+        )
 
     try:
         content = await quarantine_pitch_upload(file, get_settings())
     except UploadRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # 1. Store only after quarantine and validation
+    # Store only after quarantine and validation.
     content_hash, storage_path = await put_snapshot(
         content=content,
         content_type="application/pdf",
-        source_type="inbound_deck"
+        source_type="inbound_deck",
     )
-    
-    # 2. Create SourceSnapshot
+
     snapshot = SourceSnapshot(
         uri=f"inbound://{file.filename}",
         source_type="inbound_deck",
@@ -111,28 +149,24 @@ async def submit_pitch(
         ),
     )
     db.add(snapshot)
-    
-    # 3. Get or Create Person (Founder)
-    # Using email as stable_id for inbound
+
+    # Use email as the stable identifier for an inbound founder.
     stable_id = f"email:{founder_email.lower().strip()}"
     result = await db.execute(select(Person).where(Person.stable_id == stable_id))
     person = result.scalar_one_or_none()
-    
+
     if not person:
         person = Person(
             stable_id=stable_id,
             display_name=founder_name,
             email=founder_email,
             handles={"email": founder_email},
-            consent_state="pending"
+            consent_state="pending",
         )
         db.add(person)
-        await db.flush() # get ID
-        
-    # 4. Create Opportunity
-    opportunity = await create_inbound_opportunity(
-        db, person, company_name=company_name
-    )
+        await db.flush()
+
+    opportunity = await create_inbound_opportunity(db, person, company_name=company_name)
     await db.flush()
     record_channel_touch(
         db,
@@ -152,6 +186,8 @@ async def submit_pitch(
         founder_evidence=founder_evidence,
     )
     db.add(submission)
+    # Dispatch is durable through the outbox after commit; do not enqueue the
+    # same job directly here, which would duplicate processing.
     db.add(inbound_outbox_event(submission, company_name))
 
     try:
@@ -164,14 +200,14 @@ async def submit_pitch(
         existing = existing_result.scalar_one_or_none()
         if existing is None:
             raise
-        return {
-            "status": existing.status,
-            "person_id": str(existing.person_id),
-            "opportunity_id": str(existing.opportunity_id),
-        }
+        return InboundPitchResponse(
+            status=existing.status,
+            person_id=str(existing.person_id),
+            opportunity_id=str(existing.opportunity_id),
+        )
 
-    return {
-        "status": submission.status,
-        "person_id": str(submission.person_id),
-        "opportunity_id": str(submission.opportunity_id),
-    }
+    return InboundPitchResponse(
+        status=submission.status,
+        person_id=str(submission.person_id),
+        opportunity_id=str(submission.opportunity_id),
+    )

@@ -4,6 +4,7 @@ import type { Candidate, CandidateDetail } from "../types/candidate";
 
 export type OutreachEmailType = "founder_intro" | "request_deck" | "diligence" | "follow_up";
 export type DecisionAction = "proceed" | "hold" | "decline";
+export type CandidateOrigin = "inbound" | "outbound";
 
 export type OutreachDraft = {
   subject: string;
@@ -23,9 +24,14 @@ export type DecisionResult = {
   created_at: string;
 };
 
-export async function fetchCandidates(signal?: AbortSignal, stage?: string): Promise<Candidate[]> {
+export async function fetchCandidates(
+  signal?: AbortSignal,
+  stage?: string,
+  origin?: CandidateOrigin,
+): Promise<Candidate[]> {
   const params = new URLSearchParams({ limit: "200" });
   if (stage) params.set("stage", stage);
+  if (origin) params.set("origin", origin);
   const response = await fetch(`/api/v1/candidates?${params.toString()}`, { signal });
 
   if (!response.ok) {
@@ -35,10 +41,10 @@ export async function fetchCandidates(signal?: AbortSignal, stage?: string): Pro
   return (await response.json()) as Candidate[];
 }
 
-export function useCandidates(stage?: string) {
+export function useCandidates(stage?: string, origin?: CandidateOrigin) {
   return useQuery({
-    queryKey: ["candidates", stage ?? "all"],
-    queryFn: ({ signal }) => fetchCandidates(signal, stage),
+    queryKey: ["candidates", stage ?? "all", origin ?? "all"],
+    queryFn: ({ signal }) => fetchCandidates(signal, stage, origin),
     staleTime: 60_000,
   });
 }
@@ -78,6 +84,15 @@ export function useCandidate(candidateId?: string) {
     queryKey: ["candidate", candidateId],
     queryFn: ({ signal }) => fetchCandidate(candidateId!, signal),
     enabled: Boolean(candidateId),
+    staleTime: 30_000,
+  });
+}
+
+export function useCandidateMemo(candidateId?: string, opportunityId?: string) {
+  return useQuery({
+    queryKey: ["candidate-memo", candidateId, opportunityId],
+    queryFn: ({ signal }) => fetchCandidateMemo(candidateId!, opportunityId!, signal),
+    enabled: Boolean(candidateId && opportunityId),
     staleTime: 30_000,
   });
 }

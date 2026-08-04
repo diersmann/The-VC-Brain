@@ -1,6 +1,11 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { draftCandidateOutreach, fetchCandidates, recordCandidateDecision } from "./candidates";
+import {
+  draftCandidateOutreach,
+  fetchCandidateMemo,
+  fetchCandidates,
+  recordCandidateDecision,
+} from "./candidates";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -36,6 +41,20 @@ test("returns candidates from the API", async () => {
   expect(result).toEqual(mockData);
 });
 
+test("sends stage and origin filters to the API", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  await fetchCandidates(undefined, "memo_ready", "inbound");
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/candidates?limit=200&stage=memo_ready&origin=inbound",
+    { signal: undefined },
+  );
+});
+
 test("throws on non-ok response", async () => {
   vi.stubGlobal(
     "fetch",
@@ -45,6 +64,23 @@ test("throws on non-ok response", async () => {
   );
 
   await expect(fetchCandidates()).rejects.toThrow("Candidates request failed with status 500");
+});
+
+test("returns an empty memo when no memo has been generated", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 404 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(fetchCandidateMemo("candidate-1", "opportunity-1")).resolves.toEqual({
+    sections: [],
+    status: "missing",
+    generation_mode: null,
+    model_version: null,
+    created_at: null,
+  });
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/candidates/candidate-1/memo?opportunity_id=opportunity-1",
+    { signal: undefined },
+  );
 });
 
 test("requests an agent-authored outreach draft", async () => {
