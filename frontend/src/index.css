@@ -7,7 +7,7 @@
   --color-surface-3: #e7edf6;
   --color-ink: #1b2638;
   --color-ink-2: #344258;
-  --color-muted: #5f7087;
+  --color-muted: #53657e;
   --color-muted-2: #53657e;
   --color-line: #e3eaf3;
   --color-line-2: #cfd9e7;
@@ -49,12 +49,12 @@ button { cursor: pointer; }
   backdrop-filter: blur(18px) saturate(125%);
 }
 .soft-card { background: rgba(244,247,251,.82); border: 0; box-shadow: inset 0 1px 0 rgba(255,255,255,.7); }
-.eyebrow { color: #65758a; font-size: 10px; line-height: 1.4; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.eyebrow { color: var(--color-muted); font-size: 10px; line-height: 1.4; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
 .page-title { font-size: clamp(1.75rem, 2.4vw, 2.25rem); line-height: 1.12; font-weight: 700; letter-spacing: -.035em; }
 .page-description { margin-top: .5rem; max-width: 46rem; color: var(--color-muted-2); font-size: .875rem; line-height: 1.65; }
 .section-title { color: #1b2638; font-size: 1rem; line-height: 1.35; font-weight: 700; letter-spacing: -.015em; }
 .supporting-text { color: var(--color-muted-2); font-size: .75rem; line-height: 1.6; }
-.data-label { color: #65758a; font-size: .625rem; line-height: 1.35; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+.data-label { color: var(--color-muted); font-size: .625rem; line-height: 1.35; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
 .data-value { margin-top: .3rem; color: #344258; font-size: .8125rem; line-height: 1.35; font-weight: 600; }
 .metric-value { color: #1b2638; font-size: 1.5rem; line-height: 1; font-weight: 700; letter-spacing: -.025em; }
 .numeric, .metric-value { font-variant-numeric: tabular-nums lining-nums; font-feature-settings: "tnum" 1, "lnum" 1; }
@@ -73,8 +73,22 @@ button { cursor: pointer; }
     transition-duration: .01ms !important;
   }
 
-  [class~="group-hover:translate-x-1"],
-  [class~="group-hover:scale-125"] {
-    transform: none !important;
+  [class*="hover:translate-"],
+  [class*="hover:-translate-"],
+  [class*="group-hover:translate-"],
+  [class*="group-hover:-translate-"] {
+    translate: none !important;
+  }
+
+  [class*="hover:scale-"],
+  [class*="group-hover:scale-"] {
+    scale: none !important;
+  }
+
+  [class*="hover:rotate-"],
+  [class*="hover:-rotate-"],
+  [class*="group-hover:rotate-"],
+  [class*="group-hover:-rotate-"] {
+    rotate: none !important;
   }
 }
