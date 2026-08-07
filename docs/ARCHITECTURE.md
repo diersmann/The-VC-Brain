@@ -605,7 +605,7 @@ Keep logical boundaries while minimizing operational complexity:
 
 PostgreSQL can initially store graph edges. Introduce a dedicated graph database only if deep graph traversal becomes a central product capability.
 
-The application emits structured logs and traces carrying opportunity, lifecycle stage, job, source, model, and request IDs. Local and production dashboards cover queue depth, connector health, parse failures, identity-resolution uncertainty, model latency/cost, Trust Score calibration, SLA attainment, and outreach conversion. Sensitive evidence is referenced by ID and never written directly to logs.
+The application emits structured logs and traces carrying opportunity, lifecycle stage, job, source, model, and request IDs. Each API response includes a fresh opaque `X-Request-ID`, and middleware binds it to structlog context without trusting caller-supplied identifiers or logging request data. Local and production dashboards cover queue depth, connector health, parse failures, identity-resolution uncertainty, model latency/cost, Trust Score calibration, SLA attainment, and outreach conversion. Sensitive evidence is referenced by ID and never written directly to logs; complete job/source/model correlation and dashboard delivery remain operational follow-up work.
 
 ## MVP Demonstration Slice
 
