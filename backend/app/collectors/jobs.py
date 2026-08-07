@@ -1778,6 +1778,7 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
         await pool.enqueue_job(
             "process_candidate_job",
             task.get("person_id", ""),
+            task.get("job_id"),
         )
     elif job_type == "contact_outbound":
         await pool.enqueue_job(
