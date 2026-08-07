@@ -20,8 +20,9 @@ from app.client_lifecycle import redis_connection
 from app.collectors.base import CONNECTOR_READINESS, ConnectorMaturity
 from app.collectors.queue import queue_depth
 from app.collectors.registry import all_connectors
-from app.db import get_session
+from app.db import get_session, session_context
 from app.db.models import (
+    ConnectorTelemetry,
     JobRun,
     Observation,
     Opportunity,
@@ -166,6 +167,50 @@ async def get_redis() -> AsyncIterator[Any]:
         yield redis
 
 
+async def get_optional_session() -> AsyncIterator[AsyncSession | None]:
+    """Yield a DB session when available without making health DB-dependent.
+
+    Collection health is useful for queue/registration diagnostics even while
+    PostgreSQL is restarting.  The telemetry projection is therefore best
+    effort here; readiness remains the authoritative dependency check.
+    """
+    context = session_context()
+    try:
+        session = await context.__aenter__()
+    except Exception as exc:
+        logger.warning(
+            "connector_telemetry_session_unavailable",
+            error_type=type(exc).__name__,
+        )
+        yield None
+        return
+
+    try:
+        yield session
+    except BaseException as exc:
+        # Preserve handler exceptions while still closing the session with
+        # the same rollback semantics as the shared DB dependency.
+        try:
+            await context.__aexit__(type(exc), exc, exc.__traceback__)
+        except Exception as close_exc:
+            logger.warning(
+                "connector_telemetry_session_close_failed",
+                error_type=type(close_exc).__name__,
+            )
+        raise
+    else:
+        try:
+            await context.__aexit__(None, None, None)
+        except Exception as exc:
+            # The response is already independent of telemetry at this point;
+            # keep a cleanup failure from turning the health surface into a
+            # false outage signal.
+            logger.warning(
+                "connector_telemetry_session_close_failed",
+                error_type=type(exc).__name__,
+            )
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -249,6 +294,7 @@ async def get_job_status(
 @router.get("/health", response_model=HealthResponse)
 async def collection_health(
     redis: Annotated[Any, Depends(get_redis)],
+    session: Annotated[AsyncSession | None, Depends(get_optional_session)] = None,
 ) -> HealthResponse:
     """Return queue depth, registration status, and static connector readiness.
 
@@ -256,18 +302,38 @@ async def collection_health(
     existing ``connectors`` map remains a backwards-compatible registration
     status surface, while ``connector_readiness`` exposes the typed contract
     metadata without implying provider health.  Runtime success telemetry is
-    not available yet, so each ``last_success_at`` value is null.
+    represented by ``last_success_at``, a durable runtime watermark written by
+    successful discovery/collection jobs.  A missing row remains null and
+    means no success has been recorded in this installation; it is not a
+    provider health or reachability claim.
     """
     depths = await queue_depth(redis)
     connectors = {name: "registered" for name in all_connectors()}
+    last_success_at: dict[str, str] = {}
+    if session is not None:
+        try:
+            telemetry_result = await session.execute(select(ConnectorTelemetry))
+            for telemetry in telemetry_result.scalars().all():
+                timestamp = telemetry.last_success_at
+                if timestamp.tzinfo is None:
+                    from datetime import UTC
+
+                    timestamp = timestamp.replace(tzinfo=UTC)
+                last_success_at[telemetry.source_type] = timestamp.isoformat()
+        except Exception as exc:
+            # Health remains useful when the optional telemetry projection is
+            # temporarily unavailable.  Do not expose provider internals or
+            # turn a stale watermark into a health claim.
+            logger.warning(
+                "connector_telemetry_unavailable",
+                error_type=type(exc).__name__,
+            )
     readiness = {
         name: ConnectorReadinessResponse(
             maturity=metadata.maturity,
             contract_version=metadata.contract_version,
             limitations=list(metadata.limitations),
-            # Runtime collection telemetry is not persisted yet.  Keep this
-            # null even if static metadata is later extended with other fields.
-            last_success_at=None,
+            last_success_at=last_success_at.get(name),
         )
         for name, metadata in CONNECTOR_READINESS.items()
     }

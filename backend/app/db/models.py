@@ -360,6 +360,23 @@ class JobRun(TimestampMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ConnectorTelemetry(TimestampMixin, Base):
+    """Durable runtime success watermark for a connector.
+
+    A row is created only after a connector operation has produced a valid
+    result and the enclosing job has reached its persistence boundary.  The
+    absence of a row therefore means that this installation has no recorded
+    success, not that the provider is unhealthy or unavailable.
+    """
+
+    __tablename__ = "connector_telemetry"
+
+    source_type: Mapped[str] = mapped_column(String(32), primary_key=True)
+    last_success_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
 class CandidateFeedback(TimestampMixin, Base):
     """Append-only analyst feedback kept separate from investment outcomes."""
 

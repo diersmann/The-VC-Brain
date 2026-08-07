@@ -107,12 +107,16 @@ failure without claiming that every provider shares the same pagination
 behavior. Collection health preserves the existing registration-status map and
 also exposes typed static readiness metadata for every registered connector.
 Its `maturity`, `contract_version`, and `limitations` fields are contract
-metadata only; `last_success_at` remains `null` until runtime collection
-telemetry is persisted, so this surface does not claim that a provider is
-currently healthy or reachable. Provider cursor/continuation state, cross-page
+metadata only. Successful discovery and registered collection jobs (including
+light/deep collection invoked by discovery) now persist a per-source
+`last_success_at` watermark in PostgreSQL in the same transaction as their
+source/observation writes; missing rows remain `null` and never claim that a
+provider is currently healthy or reachable. Direct provider calls outside
+these collection jobs, such as research enrichment, are intentionally not
+folded into this watermark. Provider cursor/continuation state, cross-page
 deduplication, coordinate and licensing fixtures, provider-specific retry
-matrices, durable last-success telemetry, and credentialed end-to-end checks
-remain connector-by-connector follow-up work.
+matrices, and credentialed end-to-end checks remain connector-by-connector
+follow-up work.
 
 ### 1. Frontend
 

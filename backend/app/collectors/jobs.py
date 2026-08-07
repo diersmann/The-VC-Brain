@@ -73,6 +73,7 @@ from app.collectors.signals import (
     producthunt_signal as compute_producthunt_signal,
 )
 from app.collectors.signals import web_signal as compute_web_signal
+from app.collectors.telemetry import record_connector_success
 from app.db.models import (
     Assessment,
     JobRun,
@@ -944,6 +945,10 @@ async def _discover_job_impl(
 
             snapshot = await _write_snapshot(session, collected)
             await _write_observations(session, snapshot, collected.observations, person.id)
+            # Keep light collection telemetry in the same transaction as the
+            # discovery persistence.  A later processing failure rolls back
+            # this watermark instead of claiming a partial run succeeded.
+            await record_connector_success(session, collection_source)
 
             # Update Person display_name from observations if available
             for obs in collected.observations:
@@ -1000,6 +1005,10 @@ async def _discover_job_impl(
             "entity_counts": entity_counts,
             "above_threshold": above_count,
         }
+        # Discovery itself is a connector operation.  Record it only after
+        # all seed processing and queue work has completed successfully so a
+        # provider response cannot mask a persistence/dispatch failure.
+        await record_connector_success(session, source)
         if job_id:
             await update_job(
                 session,
@@ -1147,6 +1156,10 @@ async def collect_job(
 
             # Recompute signal score after deep collect
             await _compute_and_store_signal(session, person, source)
+            # The watermark shares this transaction with snapshot,
+            # observations, and score persistence; failed commits cannot
+            # produce a false-positive success timestamp.
+            await record_connector_success(session, source)
 
             obs_count = len(collected.observations)
             success_result = {
