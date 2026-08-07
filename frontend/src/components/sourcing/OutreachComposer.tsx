@@ -5,6 +5,7 @@ import { draftCandidateOutreach, type OutreachDraft, type OutreachEmailType } fr
 import { safeMailto } from "../../data/candidateLinks";
 import type { Candidate } from "../../types/candidate";
 import { CandidateAvatar } from "../common/CandidateAvatar";
+import { SafeLink } from "../common/SafeLink";
 
 const emailTypes: { value: OutreachEmailType; label: string; description: string }[] = [
   { value: "founder_intro", label: "Founder intro", description: "Warm, low-pressure first contact" },
@@ -185,7 +186,7 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
         {draft && (
           <footer className="flex flex-wrap items-center gap-2 bg-white/75 px-5 py-4 shadow-[0_-8px_24px_rgba(70,91,120,.06)]">
             <button type="button" onClick={() => void copyDraft()} className="inline-flex items-center gap-2 rounded-md bg-surface-2 px-4 py-2.5 text-xs font-bold text-ink-2"><Copy className="h-3.5 w-3.5" />{status === "copied" ? "Copied" : "Copy draft"}</button>
-            {mailto && !suppressionReason ? <a role="link" href={approved ? mailto : undefined} aria-disabled={!approved} onClick={(event) => { if (!approved) event.preventDefault(); }} className={`ml-auto inline-flex items-center gap-2 rounded-md px-4 py-2.5 text-xs font-bold text-white ${approved ? "bg-accent" : "cursor-not-allowed bg-accent/40"}`}><Send className="h-3.5 w-3.5" />{approved ? "Open in email" : "Approve to hand off"}<ExternalLink className="h-3 w-3" /></a> : <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted"><FileQuestion className="h-3.5 w-3.5" />No verified email; copy the draft manually.</span>}
+            {mailto && !suppressionReason ? approved ? <SafeLink role="link" href={mailto} allowMailto className="ml-auto inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-xs font-bold text-white"><Send className="h-3.5 w-3.5" />Open in email<ExternalLink className="h-3 w-3" /></SafeLink> : <span role="link" aria-disabled="true" className="ml-auto inline-flex cursor-not-allowed items-center gap-2 rounded-md bg-accent/40 px-4 py-2.5 text-xs font-bold text-white"><Send className="h-3.5 w-3.5" />Approve to hand off<ExternalLink className="h-3 w-3" /></span> : <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted"><FileQuestion className="h-3.5 w-3.5" />No verified email; copy the draft manually.</span>}
           </footer>
         )}
       </section>

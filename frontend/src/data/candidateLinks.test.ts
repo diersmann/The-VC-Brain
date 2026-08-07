@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { candidateExternalLinks, safeExternalUrl, safeHttpUrl, safeMailto } from "./candidateLinks";
+import { candidateExternalLinks, safeActionUrl, safeExternalUrl, safeHttpUrl, safeMailto } from "./candidateLinks";
 import type { CandidateDetail } from "../types/candidate";
 
 function detail(): CandidateDetail {
@@ -96,5 +96,42 @@ describe("safeMailto", () => {
 
   it("rejects an overlong mailbox local part", () => {
     expect(safeMailto(`${"a".repeat(65)}@example.com`, "Subject", "Body")).toBeNull();
+  });
+});
+
+describe("safeActionUrl", () => {
+  it("allows HTTP and generated mailto actions only", () => {
+    expect(safeActionUrl("https://safe.example/source")).toBe("https://safe.example/source");
+    expect(safeActionUrl("mailto:ada@example.com?subject=Hello%20there&body=Line%20one", { allowMailto: true })).toBe(
+      "mailto:ada@example.com?subject=Hello%20there&body=Line%20one",
+    );
+    expect(safeActionUrl("mailto:ada@example.com")).toBeNull();
+  });
+
+  it.each([
+    "mailto:ada@example.com?bcc=attacker@example.com",
+    "mailto:ada@example.com?subject=Hello%0D%0ABcc%3A%20attacker%40example.com",
+    "mailto:ada@example.com?subject=Hello&body=Line%0D%0ABcc%3A%20attacker%40example.com",
+    "mailto:ada@example.com?subject=Hello%ZZ",
+    `mailto:${"a".repeat(65)}@example.com?subject=Hello`,
+  ])("rejects malformed or injected mailto actions: %s", (value) => {
+    expect(safeActionUrl(value, { allowMailto: true })).toBeNull();
+  });
+
+  it("keeps multiline message bodies compatible with approved handoff", () => {
+    expect(safeActionUrl("mailto:ada@example.com?subject=Hello&body=Line%0ASecond%20line", { allowMailto: true })).toBe(
+      "mailto:ada@example.com?subject=Hello&body=Line%0ASecond%20line",
+    );
+  });
+});
+
+describe("candidate handle host policy", () => {
+  it("does not label an unrelated host as a supported social profile", () => {
+    const candidate = detail();
+    candidate.handles = { linkedin: "https://evil.example/in/founder", github: "https://evil.example/founder" };
+    candidate.observations = [];
+
+    expect(candidateExternalLinks(candidate)).not.toContainEqual(expect.objectContaining({ kind: "linkedin" }));
+    expect(candidateExternalLinks(candidate)).not.toContainEqual(expect.objectContaining({ kind: "github" }));
   });
 });

@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowRight, ExternalLink, FileText, Inbox, Search, Shiel
 import { useInfiniteCandidateList } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
+import { SafeLink } from "../components/common/SafeLink";
 import { formatDate, formatPredicate, percentage } from "../data/candidateProfile";
 import { safeExternalUrl } from "../data/candidateLinks";
 import { hasDecisionScore, isThesisAligned, ratioPercent } from "../data/portfolioMetrics";
@@ -77,7 +78,7 @@ export function InboundInboxPage() {
                 <div className="flex items-center gap-3"><CandidateAvatar name={candidate.display_name} avatarUrl={candidate.avatar_url} className="h-10 w-10 rounded-md bg-[#eee8f8] text-xs font-bold text-[#7656a5]" /><div><div className="text-sm font-bold leading-tight">{candidate.display_name ?? candidate.stable_id}</div><div className="mt-1 text-[11px] text-muted">{candidate.profile?.company ?? formatPredicate(source)}</div>{candidate.profile?.inbound_label && <div className="mt-1 text-[10px] font-semibold text-[#7656a5]">{candidate.profile.inbound_label}</div>}</div></div>
                 <Cell label="Received" value={formatDate(candidate.created_at)} />
                 <ThesisScore value={candidate.scores?.thesis_fit} />
-                <div><div className="data-label">Deck</div>{safeExternalUrl(candidate.profile?.deck_url) ? <a href={safeExternalUrl(candidate.profile?.deck_url) ?? undefined} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"><FileText className="h-3.5 w-3.5" />{candidate.profile?.deck_stage ?? "Open deck"}<ExternalLink className="h-3 w-3" /></a> : <div className="mt-1.5 flex items-center gap-1 text-xs font-semibold"><Sparkles className="h-3.5 w-3.5 text-warn" />Needs assessment</div>}<div className="mt-1 max-w-[220px] truncate text-[10px] text-muted">{candidate.profile?.deck_title ?? `Consent: ${formatPredicate(candidate.consent_state)}`}</div></div>
+                <div><div className="data-label">Deck</div>{safeExternalUrl(candidate.profile?.deck_url) ? <SafeLink href={safeExternalUrl(candidate.profile?.deck_url)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"><FileText className="h-3.5 w-3.5" />{candidate.profile?.deck_stage ?? "Open deck"}<ExternalLink className="h-3 w-3" /></SafeLink> : <div className="mt-1.5 flex items-center gap-1 text-xs font-semibold"><Sparkles className="h-3.5 w-3.5 text-warn" />Needs assessment</div>}<div className="mt-1 max-w-[220px] truncate text-[10px] text-muted">{candidate.profile?.deck_title ?? `Consent: ${formatPredicate(candidate.consent_state)}`}</div></div>
                 <ArrowRight className="h-4 w-4 text-accent" />
               </div>
             );

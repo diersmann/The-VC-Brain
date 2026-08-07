@@ -78,6 +78,20 @@ describe("CandidateCard", () => {
     expect(inboundElements.length).toBeGreaterThanOrEqual(1);
   });
 
+  test("renders a sanitized website action with a safe external target", () => {
+    renderCandidate(
+      <CandidateCard
+        candidate={{ ...baseCandidate, profile: { company: "Example", role: null, location: null, summary: null, website: "https://example.com", deck_url: null, deck_title: null, deck_stage: null, inbound_label: null, source_types: [], observation_count: 0, completeness: 0 } }}
+        onViewFounder={() => {}}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "Website" });
+    expect(link).toHaveAttribute("href", "https://example.com/");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noreferrer");
+  });
+
   test("renders outbound badge for outbound origin", () => {
     const outbound = { ...baseCandidate, origin: "outbound" };
     renderCandidate(

@@ -102,6 +102,24 @@ describe("OutreachComposer", () => {
     expect(screen.queryByRole("link", { name: /Open in email/ })).not.toBeInTheDocument();
   });
 
+  test("keeps an approved multiline draft actionable", async () => {
+    vi.mocked(draftCandidateOutreach).mockResolvedValue({
+      subject: "Hello",
+      body: "Line one\nLine two",
+      recipient_email: candidate.email,
+      generation_mode: "template",
+      model: null,
+      warning: null,
+    });
+    render(<OutreachComposer candidate={candidate} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Draft with email agent" }));
+    await screen.findByDisplayValue("Hello");
+    fireEvent.click(screen.getByRole("checkbox", { name: /I approve this edited draft/ }));
+
+    expect(screen.getByRole("link", { name: "Open in email" })).toHaveAttribute("href", expect.stringContaining("%0A"));
+  });
+
   test("invalidates approval when the recipient changes", async () => {
     vi.mocked(draftCandidateOutreach).mockResolvedValue({
       subject: "Hello",

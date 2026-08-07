@@ -33,6 +33,9 @@ describe("InvestmentMemo provenance", () => {
 
     expect(screen.getByText("Direct source with corroboration.")).toBeInTheDocument();
     expect(screen.getByText("Coordinates: {\"page\":2}")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open source" })).toHaveAttribute("href", "https://github.com/example");
+    const source = screen.getByRole("link", { name: "Open source" });
+    expect(source).toHaveAttribute("href", "https://github.com/example");
+    expect(source).toHaveAttribute("target", "_blank");
+    expect(source).toHaveAttribute("rel", "noreferrer");
   });
 });

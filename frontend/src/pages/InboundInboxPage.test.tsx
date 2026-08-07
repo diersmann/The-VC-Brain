@@ -19,7 +19,7 @@ const candidates = [
     handles: { linkedin: "alice-example" },
     consent_state: "granted",
     origin: "inbound",
-    profile: { company: "Aperture AI", deck_title: "Aperture seed deck", deck_url: null, source_types: ["inbound_deck"] },
+    profile: { company: "Aperture AI", deck_title: "Aperture seed deck", deck_url: "https://example.com/deck", source_types: ["inbound_deck"] },
     scores: null,
     created_at: "2026-07-01T10:00:00Z",
     latest_score_at: null,
@@ -49,6 +49,10 @@ describe("InboundInboxPage search states", () => {
     renderInbox();
 
     expect(await screen.findByText("Alice Example")).toBeInTheDocument();
+    const deck = screen.getByRole("link", { name: /Open deck/ });
+    expect(deck).toHaveAttribute("href", "https://example.com/deck");
+    expect(deck).toHaveAttribute("target", "_blank");
+    expect(deck).toHaveAttribute("rel", "noreferrer");
     expect(screen.queryByText("Bob Example")).not.toBeInTheDocument();
     expect(screen.getByText("Showing 1 of 2 inbound applications")).toBeInTheDocument();
     expect(screen.getAllByText("2", { selector: ".numeric" })).toHaveLength(2);
