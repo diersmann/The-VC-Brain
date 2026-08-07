@@ -1747,7 +1747,7 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
             task.get("job_id"),
         )
     elif job_type == "resolve_identities":
-        await pool.enqueue_job("resolve_identities_job")
+        await pool.enqueue_job("resolve_identities_job", task.get("job_id"))
     elif job_type == "research_candidate":
         await pool.enqueue_job(
             "research_candidate_job",
@@ -1840,7 +1840,9 @@ async def recompute_signals_job(ctx: dict[str, Any]) -> dict[str, Any]:
     return {"persons_checked": len(persons), "above_threshold": above_count}
 
 
-async def resolve_identities_job(ctx: dict[str, Any]) -> dict[str, int]:
+async def resolve_identities_job(
+    ctx: dict[str, Any], job_id: str | None = None
+) -> dict[str, int]:
     """Periodic cron: run identity resolution across all canonical persons.
 
     Detects duplicate Person records from different sources and either
@@ -1849,10 +1851,77 @@ async def resolve_identities_job(ctx: dict[str, Any]) -> dict[str, int]:
     logger.info("resolve_identities_job_started")
 
     async with _session_ctx(ctx) as session:
-        from app.identity import resolve_identities
+        ledger_job_id = job_id
+        job_attempt = 1
+        try:
+            if ledger_job_id is None:
+                created_job = await create_job(session, "resolve_identities")
+                ledger_job_id = str(created_job.id)
+            started_job = await start_job(session, ledger_job_id, phase="identity")
+            if started_job is not None:
+                job_attempt = started_job.attempt
+                if started_job.status in {"succeeded", "cancelled"}:
+                    await session.commit()
+                    return {
+                        key: int(value)
+                        for key, value in (started_job.result or {}).items()
+                        if isinstance(value, int)
+                    }
+            await session.commit()
+            logger.info(
+                "resolve_identities_job_running",
+                job_id=ledger_job_id,
+                attempt=job_attempt,
+            )
 
-        summary = await resolve_identities(session, ctx["redis"])
-        await session.commit()
+            from app.identity import resolve_identities
+
+            summary = await resolve_identities(session, ctx["redis"])
+            result = dict(summary)
+            if ledger_job_id:
+                await update_job(
+                    session,
+                    ledger_job_id,
+                    status="succeeded",
+                    phase="complete",
+                    attempt=job_attempt,
+                    clear_error=True,
+                    result=result,
+                )
+            await session.commit()
+        except Exception as exc:
+            failure_kind, retryable = classify_connector_failure(exc)
+            logger.error(
+                "resolve_identities_job_failed",
+                failure_kind=failure_kind,
+                retryable=retryable,
+                error_type=type(exc).__name__,
+            )
+            if ledger_job_id:
+                try:
+                    await session.rollback()
+                    await update_job(
+                        session,
+                        ledger_job_id,
+                        status="failed",
+                        phase="identity",
+                        attempt=job_attempt,
+                        last_error=str(exc),
+                        result={
+                            "status": "failed",
+                            "error": str(exc),
+                            "failure_kind": failure_kind,
+                            "retryable": retryable,
+                        },
+                    )
+                    await session.commit()
+                except Exception as ledger_exc:
+                    logger.error(
+                        "resolve_identities_job_ledger_update_failed",
+                        job_id=ledger_job_id,
+                        error_type=type(ledger_exc).__name__,
+                    )
+            raise
 
     logger.info("resolve_identities_job_completed", **summary)
     return summary
