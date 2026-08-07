@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { throwIfNotOk } from "./errors";
 import type { Candidate, CandidateDetail } from "../types/candidate";
 
@@ -14,6 +14,8 @@ export type CandidateListResponse = {
   limit: number;
   search: string | null;
   filters: Record<string, string>;
+  /** True only when an older server returned the legacy bare array shape. */
+  legacy?: boolean;
 };
 
 export type OutreachDraft = {
@@ -82,6 +84,7 @@ export async function fetchCandidateListPage({
       limit: payload.length,
       search: search?.trim() || null,
       filters: { ...(stage ? { stage } : {}), ...(origin ? { origin } : {}) },
+      legacy: true,
     };
   }
   return payload;
@@ -104,6 +107,21 @@ export function useCandidateList(stage?: string, origin?: CandidateOrigin, searc
   return useQuery({
     queryKey: ["candidate-list", stage ?? "all", origin ?? "all", search?.trim() ?? ""],
     queryFn: ({ signal }) => fetchCandidateListPage({ signal, stage, origin, search }),
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Read a cursor-paginated v1 candidate list. Each page keeps the server's
+ * authoritative total and next cursor so screens can explicitly consume more
+ * records without silently fetching an unbounded result set.
+ */
+export function useInfiniteCandidateList(stage?: string, origin?: CandidateOrigin, search?: string) {
+  return useInfiniteQuery({
+    queryKey: ["candidate-list-pages", stage ?? "all", origin ?? "all", search?.trim() ?? ""],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ signal, pageParam }) => fetchCandidateListPage({ signal, stage, origin, search, cursor: pageParam }),
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     staleTime: 60_000,
   });
 }

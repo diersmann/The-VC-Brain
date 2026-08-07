@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { AlertTriangle, ArrowRight, ExternalLink, FileText, Inbox, Search, ShieldCheck, Sparkles, Target } from "lucide-react";
-import { useCandidateList } from "../api/candidates";
+import { useInfiniteCandidateList } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { formatDate, formatPredicate, percentage } from "../data/candidateProfile";
@@ -15,22 +15,32 @@ export function InboundInboxPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get("q") ?? "";
   // Filter at the API so inbound applications are not lost behind the
-  // candidates endpoint's 200-row limit as outbound discovery grows.
-  const { data: allPage, isLoading: allLoading, error: allError } = useCandidateList(undefined, "inbound");
-  const { data: filteredPage, isLoading: filteredLoading, error: filteredError } = useCandidateList(undefined, "inbound", query);
-  const allData = useMemo(() => allPage?.items ?? [], [allPage]);
-  const filteredData = useMemo(() => filteredPage?.items ?? [], [filteredPage]);
+  // candidates endpoint's page limit. Pages are accumulated only when the
+  // reviewer explicitly asks for more records.
+  const allQuery = useInfiniteCandidateList(undefined, "inbound");
+  const filteredQuery = useInfiniteCandidateList(undefined, "inbound", query);
+  const allData = useMemo(() => allQuery.data?.pages.flatMap((page) => page.items) ?? [], [allQuery.data]);
+  const filteredData = useMemo(() => filteredQuery.data?.pages.flatMap((page) => page.items) ?? [], [filteredQuery.data]);
+  const filteredLegacy = filteredQuery.data?.pages.some((page) => page.legacy) ?? false;
+  const allPage = allQuery.data?.pages[0];
+  const filteredPage = filteredQuery.data?.pages[0];
   const totalCount = allPage?.total_count ?? allData.length;
   const filteredTotalCount = filteredPage?.total_count ?? filteredData.length;
-  const isLoading = allLoading || filteredLoading;
-  const error = allError || filteredError;
+  const activeQuery = query.trim() ? filteredQuery : allQuery;
+  const isLoading = allQuery.isLoading || activeQuery.isLoading;
+  const error = allQuery.error || activeQuery.error;
   const inboundRecords = useMemo(() => allData.filter((candidate) => candidate.origin === "inbound"), [allData]);
   const filteredInboundRecords = useMemo(() => filteredData.filter((candidate) => candidate.origin === "inbound"), [filteredData]);
   const inbound = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     if (!normalizedQuery) return inboundRecords;
+    // v1 responses have already applied search across observations,
+    // predicates, and source URIs. Only legacy bare-array responses need the
+    // DTO-level fallback filter, otherwise valid evidence-only matches would
+    // be silently removed here.
+    if (!filteredLegacy) return filteredInboundRecords;
     return filteredInboundRecords.filter((candidate) => searchableCandidateText(candidate).includes(normalizedQuery));
-  }, [filteredInboundRecords, inboundRecords, query]);
+  }, [filteredInboundRecords, filteredLegacy, inboundRecords, query]);
   const thesisAligned = inboundRecords.filter(isThesisAligned).length;
   const needsAttention = inboundRecords.filter((candidate) => !hasDecisionScore(candidate)).length;
   const setQuery = (value: string) => {
@@ -47,7 +57,7 @@ export function InboundInboxPage() {
       </div>
 
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
-        <KeyMetricCard icon={Inbox} label="Applications" value={totalCount} detail="Founder-submitted opportunities in the live database" progress={100} progressLabel={`${allData.length} loaded in this page`} tone="purple" />
+        <KeyMetricCard icon={Inbox} label="Applications" value={totalCount} detail="Founder-submitted opportunities in the live database" progress={100} progressLabel={`${allData.length} loaded of ${totalCount} total`} tone="purple" />
         <KeyMetricCard icon={Target} label="Thesis aligned" value={thesisAligned} detail={`Loaded-page applications clearing the ${DECISION_RUBRIC.thesisAlignment}% strategy-fit threshold`} progress={ratioPercent(thesisAligned, allData.length)} progressLabel={`${thesisAligned} of ${allData.length} loaded`} tone="green" />
         <KeyMetricCard icon={AlertTriangle} label="Needs assessment" value={needsAttention} detail="Loaded-page applications without a usable decision score" progress={ratioPercent(needsAttention, allData.length)} progressLabel={`${needsAttention} of ${allData.length} loaded`} tone="amber" />
       </div>
@@ -73,6 +83,32 @@ export function InboundInboxPage() {
             );
           })}
         </div>
+        {activeQuery.isFetchNextPageError && (
+          <div role="alert" className="flex items-center justify-center gap-3 border-t border-danger/20 px-3 py-4 text-xs text-danger">
+            <span>Unable to load more inbound applications.</span>
+            <button
+              type="button"
+              onClick={() => void activeQuery.fetchNextPage()}
+              className="font-bold underline underline-offset-2"
+              aria-label="Retry loading more inbound applications"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+        {!isLoading && !error && inbound.length > 0 && activeQuery.hasNextPage && (
+          <div className="flex justify-center border-t border-slate-200/70 px-3 py-4">
+            <button
+              type="button"
+              onClick={() => void activeQuery.fetchNextPage()}
+              disabled={activeQuery.isFetchingNextPage}
+              className="rounded-md border border-accent/30 bg-white px-4 py-2 text-xs font-bold text-accent shadow-sm transition-colors hover:bg-accent-soft disabled:cursor-wait disabled:opacity-60"
+              aria-label={activeQuery.isFetchingNextPage ? "Loading more inbound applications" : "Load more inbound applications"}
+            >
+              {activeQuery.isFetchingNextPage ? "Loading more…" : `Load more applications (${Math.max(filteredTotalCount - inbound.length, 0)} remaining)`}
+            </button>
+          </div>
+        )}
       </section>
       <div className="mt-4 flex items-center gap-2 text-[10px] text-muted"><FileText className="h-3.5 w-3.5 text-accent" />Only records whose opportunity origin is inbound appear here.</div>
     </div>

@@ -77,6 +77,72 @@ describe("InboundInboxPage search states", () => {
 
     expect(await screen.findByText("250")).toBeInTheDocument();
     expect(screen.getByText("Showing 2 of 250 inbound applications")).toBeInTheDocument();
-    expect(screen.getByText("2 loaded in this page")).toBeInTheDocument();
+    expect(screen.getByText("2 loaded of 250 total")).toBeInTheDocument();
+  });
+
+  it("loads the next cursor only after an explicit request", async () => {
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      const hasCursor = url.includes("cursor=next-page");
+      const page = hasCursor
+        ? {
+            version: "v1",
+            items: [candidates[1]],
+            next_cursor: null,
+            total_count: 2,
+            limit: 1,
+            search: null,
+            filters: { origin: "inbound" },
+          }
+        : {
+            version: "v1",
+            items: [candidates[0]],
+            next_cursor: "next-page",
+            total_count: 2,
+            limit: 1,
+            search: null,
+            filters: { origin: "inbound" },
+          };
+      return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TestQueryProvider><MemoryRouter initialEntries={["/inbound"]}><InboundInboxPage /></MemoryRouter></TestQueryProvider>);
+    expect(await screen.findByText("Alice Example")).toBeInTheDocument();
+    expect(screen.queryByText("Bob Example")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Load more inbound applications/ }));
+    expect(await screen.findByText("Bob Example")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("cursor=next-page"))).toBe(true);
+    expect(screen.queryByRole("button", { name: /Load more inbound applications/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps a v1 server match whose evidence is outside the candidate DTO", async () => {
+    const evidenceMatch = {
+      ...candidates[0],
+      id: "candidate-evidence",
+      display_name: "Evidence Match",
+      profile: { company: "Opaque Labs", deck_title: null, deck_url: null, source_types: [] },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        const isSearch = url.includes("search=retention");
+        const page = {
+          version: "v1",
+          items: isSearch ? [evidenceMatch] : [evidenceMatch],
+          next_cursor: null,
+          total_count: 1,
+          limit: 1,
+          search: isSearch ? "retention" : null,
+          filters: { origin: "inbound" },
+        };
+        return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
+      }),
+    );
+
+    render(<TestQueryProvider><MemoryRouter initialEntries={["/inbound?q=retention"]}><InboundInboxPage /></MemoryRouter></TestQueryProvider>);
+    expect(await screen.findByText("Evidence Match")).toBeInTheDocument();
   });
 });
