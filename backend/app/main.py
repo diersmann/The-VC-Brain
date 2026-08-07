@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.router import api_router
+from app.client_lifecycle import close_clients
 from app.config import get_settings
 from app.db import get_engine
 from app.logging import configure_logging
@@ -155,8 +156,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        await close_client()
-        await get_engine().dispose()
+        # Release process-owned providers even if another shutdown hook fails.
+        try:
+            await close_client()
+        finally:
+            try:
+                await close_clients()
+            finally:
+                await get_engine().dispose()
 
 
 def create_app() -> FastAPI:

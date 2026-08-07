@@ -20,6 +20,7 @@ from app.agents.lifecycle_job import advance_pipeline_job
 from app.agents.memo_job import generate_memo_job
 from app.agents.outbox_job import dispatch_outbox_job
 from app.agents.scoring_job import score_candidate_job
+from app.client_lifecycle import close_clients
 from app.collectors.jobs import (
     auto_discovery_job,
     collect_job,
@@ -62,9 +63,14 @@ async def startup(ctx: dict[str, Any]) -> None:
 
 async def shutdown(ctx: dict[str, Any]) -> None:
     """Arq shutdown hook — close object storage and dispose DB engine."""
-    await close_client()
-    engine = get_engine()
-    await engine.dispose()
+    try:
+        await close_client()
+    finally:
+        try:
+            await close_clients()
+        finally:
+            engine = get_engine()
+            await engine.dispose()
     logger.info("worker_shutdown")
 
 

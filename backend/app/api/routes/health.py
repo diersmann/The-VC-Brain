@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from app.client_lifecycle import redis_connection
 from app.config import Settings, get_settings
 from app.db import get_engine
 from app.storage import check_health as check_storage_health
@@ -30,15 +31,10 @@ async def _check_postgres() -> None:
 
 
 async def _check_redis() -> None:
-    import redis.asyncio as aioredis
-
-    redis = aioredis.from_url(get_settings().redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
-    try:
+    async with redis_connection() as redis:
         await redis.ping()
         if not await redis.exists("vcbrain:worker:heartbeat"):
             raise RuntimeError("worker heartbeat is missing")
-    finally:
-        await redis.aclose()
 
 
 async def _check_storage() -> None:

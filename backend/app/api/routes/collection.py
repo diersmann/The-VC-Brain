@@ -7,6 +7,7 @@ and manage identity resolution.
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
 import structlog
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.client_lifecycle import redis_connection
 from app.collectors.queue import queue_depth
 from app.collectors.registry import all_connectors
 from app.db import get_session
@@ -140,18 +142,10 @@ async def _current_opportunity(session: AsyncSession, person_id: uuid.UUID) -> O
 # ---------------------------------------------------------------------------
 
 
-async def get_redis() -> Any:
-    """Return a Redis connection (lazy-initialized)."""
-    import redis.asyncio as aioredis
-
-    from app.config import get_settings
-
-    settings = get_settings()
-    r = aioredis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
-    try:
-        yield r
-    finally:
-        await r.aclose()
+async def get_redis() -> AsyncIterator[Any]:
+    """Yield a request-scoped Redis connection and always close it."""
+    async with redis_connection() as redis:
+        yield redis
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.client_lifecycle import get_openai_client
 from app.db.models import Observation
 
 logger = structlog.get_logger(__name__)
@@ -53,7 +54,11 @@ async def embed_observations(
 
     Returns the number of embeddings generated.
     """
-    client = AsyncOpenAI(api_key=api_key) if api_key else None
+    client = (
+        await get_openai_client(api_key, factory=AsyncOpenAI)
+        if api_key
+        else None
+    )
     if client is None:
         logger.warning("embedding_skipped_no_api_key")
         return 0

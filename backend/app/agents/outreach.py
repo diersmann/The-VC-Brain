@@ -8,6 +8,8 @@ from typing import Literal
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
+from app.client_lifecycle import get_openai_client
+
 OutreachEmailType = Literal["founder_intro", "request_deck", "diligence", "follow_up"]
 
 
@@ -43,7 +45,7 @@ async def draft_outreach_email(
     if not api_key:
         return fallback
 
-    client = AsyncOpenAI(api_key=api_key)
+    client = await get_openai_client(api_key, factory=AsyncOpenAI)
     system_prompt = (
         "You are an investment-firm outreach email drafting agent. Produce concise, warm, "
         "specific founder outreach for human review. Never invent facts, funding, traction, "

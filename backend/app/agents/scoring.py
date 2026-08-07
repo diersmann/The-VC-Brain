@@ -23,6 +23,7 @@ import structlog
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
+from app.client_lifecycle import get_openai_client
 from app.privacy import redact_direct_identifiers
 
 logger = structlog.get_logger(__name__)
@@ -513,7 +514,11 @@ async def score_candidate(
 
     Metadata includes per-agent assessments and token usage for logging.
     """
-    client = AsyncOpenAI(api_key=api_key) if api_key else None
+    client = (
+        await get_openai_client(api_key, factory=AsyncOpenAI)
+        if api_key
+        else None
+    )
     semaphore = asyncio.Semaphore(concurrency)
 
     # Run 3 specialists concurrently (same evidence, independent evaluation)

@@ -22,6 +22,7 @@ from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.outreach import OutreachEmailType, draft_outreach_email
+from app.client_lifecycle import redis_connection
 from app.config import get_settings
 from app.db import get_session
 from app.db.models import (
@@ -1503,21 +1504,14 @@ async def contact_candidate(
     if person is None or not person.canonical:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
-    import redis.asyncio as aioredis
-
     from app.collectors.queue import enqueue as queue_enqueue
-    from app.config import get_settings
 
-    settings = get_settings()
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
-    try:
+    async with redis_connection() as redis:
         await queue_enqueue(
             redis,
             {"job_type": "contact_outbound", "person_id": str(person.id)},
             priority=10.0,
         )
-    finally:
-        await redis.aclose()
 
     return {"message": f"Outreach queued for {candidate_id}"}
 
@@ -1603,16 +1597,13 @@ async def generate_candidate_memo(
     if opportunity_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=409, detail="Candidate is not linked to this opportunity")
 
-    import redis.asyncio as aioredis
-
     from app.collectors.queue import enqueue as queue_enqueue
-    from app.config import get_settings
 
-    settings = get_settings()
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
-    job = await create_job(session, "generate_memo")
-    await session.commit()
-    try:
+    async with redis_connection() as redis:
+        # Acquire the request-scoped pool before committing the durable queue
+        # row. A connection-construction failure must not orphan a queued job.
+        job = await create_job(session, "generate_memo")
+        await session.commit()
         try:
             await queue_enqueue(
                 redis,
@@ -1635,7 +1626,5 @@ async def generate_candidate_memo(
             )
             await session.commit()
             raise HTTPException(status_code=503, detail="Unable to queue memo job") from exc
-    finally:
-        await redis.aclose()
 
     return {"job_id": str(job.id), "message": f"Memo generation queued for {candidate_id}"}

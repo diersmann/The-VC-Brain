@@ -17,6 +17,8 @@ import structlog
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
+from app.client_lifecycle import get_openai_client
+
 logger = structlog.get_logger(__name__)
 
 
@@ -182,7 +184,7 @@ async def generate_memo(
     if not api_key:
         return _fallback_memo(evidence_text, person_name, status="degraded")
 
-    client = AsyncOpenAI(api_key=api_key)
+    client = await get_openai_client(api_key, factory=AsyncOpenAI)
 
     user_prompt = (
         f"Candidate: {person_name}\n"
