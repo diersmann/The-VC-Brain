@@ -1,8 +1,11 @@
-import { useRef, useState } from "react";
+import { useContext, useRef, useState } from "react";
+import { QueryClientContext } from "@tanstack/react-query";
 import { UploadCloud, CheckCircle, FileText, X, ArrowRight, Building2, UserCircle, Mail, Sparkles } from "lucide-react";
+import { invalidateCandidateQueries } from "../api/candidates";
 import { submitPitch } from "../api/inbound";
 
 export function PitchSubmissionPage() {
+  const queryClient = useContext(QueryClientContext);
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submission, setSubmission] = useState<{ opportunityId: string } | null>(null);
@@ -29,6 +32,7 @@ export function PitchSubmissionPage() {
     try {
       const response = await submitPitch(formData, undefined, idempotencyKey);
       setSubmission({ opportunityId: response.opportunity_id });
+      if (queryClient) void invalidateCandidateQueries(queryClient, response.person_id).catch(() => undefined);
     } catch (error) {
       console.error("Failed to submit pitch", error);
       setErrorMessage("We could not submit your application. Your information is still here; please try again.");

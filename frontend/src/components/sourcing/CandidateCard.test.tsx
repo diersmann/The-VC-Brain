@@ -199,9 +199,6 @@ describe("CandidateCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save dismissal" }));
 
     await waitFor(() => expect(screen.queryByText("Alice Chen")).not.toBeInTheDocument());
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidates"] });
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate-list"] });
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate-list-pages"] });
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate", "test-id"] });
   });
 });

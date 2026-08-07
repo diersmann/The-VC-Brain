@@ -139,4 +139,49 @@ describe("OutreachComposer", () => {
     rerender(<OutreachComposer candidate={{ ...candidate, email: "new@example.com" }} onClose={vi.fn()} />);
     expect(screen.getByRole("link", { name: /Approve to hand off/ })).not.toHaveAttribute("href");
   });
+
+  test("invalidates approval when the email type or brief changes", async () => {
+    vi.mocked(draftCandidateOutreach).mockResolvedValue({
+      subject: "Hello",
+      body: "Body",
+      recipient_email: candidate.email,
+      generation_mode: "template",
+      model: null,
+      warning: null,
+    });
+    render(<OutreachComposer candidate={candidate} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Draft with email agent" }));
+    await screen.findByDisplayValue("Hello");
+    fireEvent.click(screen.getByRole("checkbox", { name: /I approve this edited draft/ }));
+    expect(screen.getByRole("link", { name: "Open in email" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Request deck/ }));
+    expect(screen.getByRole("link", { name: /Approve to hand off/ })).not.toHaveAttribute("href");
+    fireEvent.change(screen.getByRole("textbox", { name: /Describe the email/ }), { target: { value: "Ask about retention" } });
+    expect(screen.getByRole("link", { name: /Approve to hand off/ })).not.toHaveAttribute("href");
+  });
+
+  test("revokes an approved handoff when regeneration fails", async () => {
+    vi.mocked(draftCandidateOutreach)
+      .mockResolvedValueOnce({
+        subject: "Hello",
+        body: "Body",
+        recipient_email: candidate.email,
+        generation_mode: "template",
+        model: null,
+        warning: null,
+      })
+      .mockRejectedValueOnce(new Error("agent unavailable"));
+    render(<OutreachComposer candidate={candidate} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Draft with email agent" }));
+    await screen.findByDisplayValue("Hello");
+    fireEvent.click(screen.getByRole("checkbox", { name: /I approve this edited draft/ }));
+    expect(screen.getByRole("link", { name: "Open in email" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate with email agent" }));
+    expect(await screen.findByText("Unable to create the draft. Check the API service and retry.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Approve to hand off/ })).not.toHaveAttribute("href");
+  });
 });

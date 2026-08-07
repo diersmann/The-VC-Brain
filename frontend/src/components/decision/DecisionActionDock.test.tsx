@@ -97,4 +97,31 @@ describe("DecisionActionDock", () => {
     }), { status: 200 }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   });
+
+  test("reuses the same idempotency key when a decision request is retried", async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new Error("connection lost"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        event_id: "event-retry",
+        prior_state: "memo_ready",
+        new_state: "hold",
+        action: "hold",
+        reason: "Verify retention",
+        created_at: "2026-07-19T10:00:00Z",
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const queryClient = createTestQueryClient();
+    renderDock(<DecisionActionDock candidateId="candidate-1" opportunityId="opportunity-1" currentState="memo_ready" onSaved={vi.fn()} />, queryClient);
+
+    fireEvent.click(screen.getByRole("button", { name: "Hold" }));
+    fireEvent.change(screen.getByPlaceholderText("Add a concise reason for the decision record…"), { target: { value: "Verify retention" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Hold" }));
+    await waitFor(() => expect(screen.getByText("Unable to save the decision. Please retry.")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Hold" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const firstHeaders = fetchMock.mock.calls[0][1].headers as Record<string, string>;
+    const secondHeaders = fetchMock.mock.calls[1][1].headers as Record<string, string>;
+    expect(firstHeaders["Idempotency-Key"]).toBe(secondHeaders["Idempotency-Key"]);
+  });
 });

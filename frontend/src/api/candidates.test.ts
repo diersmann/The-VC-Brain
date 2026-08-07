@@ -59,6 +59,40 @@ test("invalidates every candidate projection after a mutation", async () => {
   expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate", "candidate-1"] });
 });
 
+test("invalidates thesis, memo, detail, and terminal job projections together", async () => {
+  const queryClient = { invalidateQueries: vi.fn().mockResolvedValue(undefined) } as unknown as Parameters<typeof invalidateCandidateQueries>[0];
+
+  await invalidateCandidateQueries(queryClient, "candidate-1", {
+    includeActiveThesis: true,
+    includeMemo: true,
+    jobId: "memo-job",
+  });
+
+  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate-memo", "candidate-1"] });
+  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["active-thesis"] });
+  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["job-run", "memo-job"], refetchType: "none" });
+});
+
+test("can invalidate all candidate details without fabricating list data", async () => {
+  const queryClient = { invalidateQueries: vi.fn().mockResolvedValue(undefined) } as unknown as Parameters<typeof invalidateCandidateQueries>[0];
+
+  await invalidateCandidateQueries(queryClient, undefined, { includeAllDetails: true });
+
+  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate"] });
+  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidates"] });
+  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate-list"] });
+  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate-list-pages"] });
+});
+
+test("can leave list projections stable for feedback not represented in list DTOs", async () => {
+  const queryClient = { invalidateQueries: vi.fn().mockResolvedValue(undefined) } as unknown as Parameters<typeof invalidateCandidateQueries>[0];
+
+  await invalidateCandidateQueries(queryClient, "candidate-1", { includeLists: false });
+
+  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate", "candidate-1"] });
+  expect(queryClient.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["candidates"] });
+});
+
 test("sends stage and origin filters to the API", async () => {
   const fetchMock = vi.fn().mockResolvedValue(
     new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } }),
@@ -154,6 +188,25 @@ test("persists a human decision", async () => {
   expect(fetchMock).toHaveBeenCalledWith(
     "/api/v1/candidates/candidate-1/decision",
     expect.objectContaining({ method: "POST", body: JSON.stringify({ opportunity_id: "opportunity-1", action: "hold", reason: "Verify retention" }) }),
+  );
+});
+
+test("accepts a caller-owned idempotency key for safe retries", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    event_id: "event-2",
+    prior_state: "memo_ready",
+    new_state: "hold",
+    action: "hold",
+    reason: "Verify retention",
+    created_at: "2026-07-19T10:00:00Z",
+  }), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await recordCandidateDecision("candidate-1", "opportunity-1", "hold", "Verify retention", "decision-retry-key");
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/candidates/candidate-1/decision",
+    expect.objectContaining({ headers: expect.objectContaining({ "Idempotency-Key": "decision-retry-key" }) }),
   );
 });
 

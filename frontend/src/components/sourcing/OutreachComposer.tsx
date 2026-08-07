@@ -65,6 +65,7 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
 
   const generateDraft = async () => {
     setStatus("drafting");
+    setApproved(false);
     try {
       const nextDraft = await draftCandidateOutreach(candidate.id, emailType, brief);
       setDraft(nextDraft);
@@ -123,7 +124,7 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
                   key={option.value}
                   type="button"
                   aria-pressed={selected}
-                  onClick={() => setEmailType(option.value)}
+                  onClick={() => { setEmailType(option.value); setApproved(false); }}
                   className={`rounded-md p-3 text-left transition ${selected ? "bg-accent text-white shadow-md" : "bg-white/75 text-ink-2 hover:bg-white"}`}
                 >
                   <div className="flex items-center justify-between gap-2 text-xs font-bold"><span>{option.label}</span>{selected && <Check className="h-3.5 w-3.5" />}</div>
@@ -137,7 +138,7 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
             <span className="mb-2 flex items-center gap-1.5 text-xs font-bold text-ink-2"><MessageSquareText className="h-3.5 w-3.5 text-accent" />Describe the email in one sentence</span>
             <input
               value={brief}
-              onChange={(event) => setBrief(event.target.value)}
+              onChange={(event) => { setBrief(event.target.value); setApproved(false); }}
               maxLength={600}
               placeholder="e.g. Mention their AI infrastructure work and ask about enterprise traction."
               className="w-full rounded-md bg-white px-3.5 py-3 text-sm shadow-inner shadow-slate-200/70 outline-none focus:ring-2 focus:ring-accent/20"

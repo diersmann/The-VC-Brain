@@ -39,4 +39,20 @@ describe("SourcingPage mutation states", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Unable to queue discovery");
     expect(query).toHaveValue(originalQuery);
   });
+
+  test("does not queue discovery twice while the first request is unresolved", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([candidate]), { status: 200 }))
+      .mockReturnValueOnce(new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TestQueryProvider><MemoryRouter><SourcingPage /></MemoryRouter></TestQueryProvider>);
+    await screen.findByRole("textbox", { name: "Discovery query" });
+    const button = screen.getByRole("button", { name: "Discover live" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(button).toBeDisabled();
+  });
 });

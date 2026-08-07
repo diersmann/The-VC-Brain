@@ -7,21 +7,69 @@ export type OutreachEmailType = "founder_intro" | "request_deck" | "diligence" |
 export type DecisionAction = "proceed" | "hold" | "decline";
 export type CandidateOrigin = "inbound" | "outbound";
 
+export type CandidateQueryInvalidationOptions = {
+  /** Skip list projections when the mutation is not represented in list DTOs. */
+  includeLists?: boolean;
+  /** Invalidate every candidate detail, used when a thesis changes globally. */
+  includeAllDetails?: boolean;
+  /** Invalidate memo projections for the candidate (or all memos if no id). */
+  includeMemo?: boolean;
+  /** Invalidate the active thesis projection. */
+  includeActiveThesis?: boolean;
+  /** Mark a related durable job projection stale without starting another poll. */
+  jobId?: string;
+};
+
 /**
- * Mark every candidate projection stale after a mutation.
+ * Mark every candidate projection affected by a successful mutation stale.
  *
- * Candidate lists have intentionally separate keys for legacy, bounded, and
- * cursor-paginated consumers, while detail pages use an id-specific key.
- * Invalidating (rather than editing cached data) keeps the UI authoritative
- * and avoids fabricating a post-mutation candidate shape.
+ * Candidate lists intentionally have separate keys for legacy, bounded, and
+ * cursor-paginated consumers. Detail and memo keys are invalidated by prefix
+ * so both the legacy and opportunity-qualified consumers stay consistent.
+ * This helper only invalidates server-authoritative data; it never writes an
+ * optimistic candidate shape into the cache.
  */
-export async function invalidateCandidateQueries(queryClient: QueryClient, candidateId?: string): Promise<void> {
-  await Promise.all([
-    queryClient.invalidateQueries({ queryKey: ["candidates"] }),
-    queryClient.invalidateQueries({ queryKey: ["candidate-list"] }),
-    queryClient.invalidateQueries({ queryKey: ["candidate-list-pages"] }),
-    ...(candidateId ? [queryClient.invalidateQueries({ queryKey: ["candidate", candidateId] })] : []),
-  ]);
+export async function invalidateCandidateQueries(
+  queryClient: QueryClient,
+  candidateId?: string,
+  options: CandidateQueryInvalidationOptions = {},
+): Promise<void> {
+  const invalidations = options.includeLists === false
+    ? []
+    : [
+        queryClient.invalidateQueries({ queryKey: ["candidates"] }),
+        queryClient.invalidateQueries({ queryKey: ["candidate-list"] }),
+        queryClient.invalidateQueries({ queryKey: ["candidate-list-pages"] }),
+      ];
+
+  if (options.includeAllDetails) {
+    invalidations.push(queryClient.invalidateQueries({ queryKey: ["candidate"] }));
+  } else if (candidateId) {
+    invalidations.push(queryClient.invalidateQueries({ queryKey: ["candidate", candidateId] }));
+  }
+
+  if (options.includeMemo) {
+    invalidations.push(
+      queryClient.invalidateQueries({
+        queryKey: candidateId ? ["candidate-memo", candidateId] : ["candidate-memo"],
+      }),
+    );
+  }
+
+  if (options.includeActiveThesis) {
+    invalidations.push(queryClient.invalidateQueries({ queryKey: ["active-thesis"] }));
+  }
+
+  if (options.jobId) {
+    // A terminal job result is already being rendered by useJobRun. Mark the
+    // entry stale for future observers, but do not trigger a second status
+    // request while the terminal transition is being reconciled.
+    invalidations.push(
+      queryClient.invalidateQueries({ queryKey: ["job-run", options.jobId], refetchType: "none" }),
+    );
+  }
+
+  await Promise.all(invalidations);
 }
 
 export type CandidateListResponse = {
@@ -251,12 +299,13 @@ export async function recordCandidateDecision(
   opportunityId: string,
   action: DecisionAction,
   reason: string,
+  idempotencyKey: string = crypto.randomUUID(),
 ): Promise<DecisionResult> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/decision`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Idempotency-Key": crypto.randomUUID(),
+      "Idempotency-Key": idempotencyKey,
     },
     body: JSON.stringify({ opportunity_id: opportunityId, action, reason }),
   });

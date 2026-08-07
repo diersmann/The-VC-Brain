@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, AlertTriangle, AtSign, BrainCircuit, Building2, CheckCircle2, CircleHelp, ExternalLink, FileText, Github, Globe2, Linkedin, MapPin, RefreshCw, ShieldCheck, Sparkles, Target, UserRound } from "lucide-react";
@@ -24,13 +24,19 @@ export function FounderProfilePage() {
   const { data: founder, isLoading, error, refetch } = useCandidate(founderId);
   const [researchJobId, setResearchJobId] = useState<string | null>(null);
   const [researchRequestError, setResearchRequestError] = useState(false);
+  const [researchRequestPending, setResearchRequestPending] = useState(false);
+  const researchRequestLock = useRef(false);
   const researchJob = useJobRun(researchJobId ?? undefined);
   const researchStatus = researchJob.data?.status;
-  const researchRefreshReady = researchStatus === "succeeded" || researchStatus === "degraded";
+  const researchQueued = researchRequestPending || Boolean(researchJobId && !isTerminalJobStatus(researchStatus));
 
   useEffect(() => {
-    if (researchRefreshReady && isTerminalJobStatus(researchStatus)) void invalidateCandidateQueries(queryClient, founderId);
-  }, [founderId, queryClient, researchRefreshReady, researchStatus]);
+    if (isTerminalJobStatus(researchStatus)) void invalidateCandidateQueries(queryClient, founderId, { jobId: researchJobId ?? undefined }).catch(() => undefined);
+  }, [founderId, queryClient, researchJobId, researchStatus]);
+
+  useEffect(() => {
+    if (researchJobId && isTerminalJobStatus(researchStatus)) researchRequestLock.current = false;
+  }, [researchJobId, researchStatus]);
 
   if (isLoading && !founder) return <div className="py-20 text-center text-sm text-muted">Loading source evidence…</div>;
   if (error && !founder) return <div className="mx-auto max-w-[680px] py-20"><ApiStateNotice error={error} onRetry={() => void refetch()} label="founder evidence" /><button onClick={() => navigate("/sourcing")} className="mt-4 block text-xs font-bold text-accent">Back to discover</button></div>;
@@ -39,17 +45,26 @@ export function FounderProfilePage() {
   const profile = buildFounderProfile(founder);
   const externalLinks = candidateExternalLinks(founder);
   const founderAssessment = profile.assessments.find((assessment) => assessment.title === "Founder");
-  const researchState: "idle" | "queued" | "error" = researchRequestError || researchStatus === "failed" || researchStatus === "cancelled" ? "error" : researchStatus === "queued" || researchStatus === "running" ? "queued" : "idle";
-  const researchLabel = researchStatus === "degraded" ? "Research degraded · review" : researchStatus === "succeeded" ? "Research succeeded · run again" : researchState === "queued" ? "Tavily research queued" : researchState === "error" ? "Research failed · retry" : "Research with Tavily";
+  const researchState: "idle" | "queued" | "error" = researchRequestError || researchStatus === "failed" || researchStatus === "cancelled" ? "error" : researchQueued ? "queued" : "idle";
+  const researchLabel = researchRequestPending ? "Queueing research…" : researchStatus === "degraded" ? "Research degraded · review" : researchStatus === "succeeded" ? "Research succeeded · run again" : researchState === "queued" ? "Tavily research queued" : researchState === "error" ? "Research failed · retry" : "Research with Tavily";
   const runResearch = async () => {
+    if (researchRequestLock.current || researchQueued || researchState === "queued") return;
+    researchRequestLock.current = true;
+    setResearchRequestPending(true);
     setResearchRequestError(false);
     setResearchJobId(null);
     try {
       const response = await researchCandidate(founder.id);
       setResearchJobId(response.job_ids[0] ?? null);
-      if (!response.job_ids[0]) setResearchRequestError(true);
+      if (!response.job_ids[0]) {
+        setResearchRequestError(true);
+        researchRequestLock.current = false;
+      }
     } catch {
       setResearchRequestError(true);
+      researchRequestLock.current = false;
+    } finally {
+      setResearchRequestPending(false);
     }
   };
 
@@ -59,7 +74,7 @@ export function FounderProfilePage() {
     {error && <div className="mb-5"><ApiStateNotice error={error} onRetry={() => void refetch()} label="founder evidence" /></div>}
     <button onClick={() => navigate("/sourcing")} className="mb-5 flex items-center gap-2 text-xs font-semibold text-muted hover:text-accent"><ArrowLeft className="h-4 w-4" /> Back to discover</button>
 
-    <header className="panel mb-6 rounded-lg p-5 md:p-6"><div className="flex flex-col justify-between gap-5 md:flex-row md:items-center"><div className="flex items-center gap-4"><CandidateAvatar name={founder.display_name} avatarUrl={founder.avatar_url} className="h-16 w-16 rounded-lg bg-gradient-to-br from-[#dce6f2] to-[#c6d3e3] text-lg font-bold text-accent" /><div><div className="flex items-center gap-2"><h1 className="text-[1.75rem] font-bold leading-tight tracking-[-0.03em]">{founder.display_name}</h1></div><div className="mt-1 flex items-center gap-2 text-sm font-semibold text-ink-2"><Building2 className="h-3.5 w-3.5 text-accent-muted" /> {profile.role} · {profile.company}</div><div className="mt-2 flex flex-wrap gap-3 text-xs text-muted"><span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{profile.location}</span><span>{profile.stage}</span><span>{profile.sector}</span></div>{externalLinks.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{externalLinks.map((link) => { const Icon = candidateLinkIcons[link.kind]; return <SafeLink key={link.kind} href={link.url} className="inline-flex items-center gap-1.5 rounded-md bg-white/75 px-2.5 py-1.5 text-[11px] font-bold text-ink-2 shadow-sm transition hover:-translate-y-0.5 hover:text-accent hover:shadow-md"><Icon className="h-3.5 w-3.5" />{link.label}<ExternalLink className="h-3 w-3 text-muted-2" /></SafeLink>; })}</div>}</div></div><div className="flex flex-wrap items-center gap-2"><button onClick={runResearch} disabled={researchState === "queued"} className="inline-flex items-center gap-2 rounded-md bg-[#eee8f8] px-4 py-3 text-[11px] font-bold text-[#7656a5] disabled:opacity-60"><Sparkles className="h-3.5 w-3.5" />{researchLabel}</button></div></div></header>
+    <header className="panel mb-6 rounded-lg p-5 md:p-6"><div className="flex flex-col justify-between gap-5 md:flex-row md:items-center"><div className="flex items-center gap-4"><CandidateAvatar name={founder.display_name} avatarUrl={founder.avatar_url} className="h-16 w-16 rounded-lg bg-gradient-to-br from-[#dce6f2] to-[#c6d3e3] text-lg font-bold text-accent" /><div><div className="flex items-center gap-2"><h1 className="text-[1.75rem] font-bold leading-tight tracking-[-0.03em]">{founder.display_name}</h1></div><div className="mt-1 flex items-center gap-2 text-sm font-semibold text-ink-2"><Building2 className="h-3.5 w-3.5 text-accent-muted" /> {profile.role} · {profile.company}</div><div className="mt-2 flex flex-wrap gap-3 text-xs text-muted"><span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{profile.location}</span><span>{profile.stage}</span><span>{profile.sector}</span></div>{externalLinks.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{externalLinks.map((link) => { const Icon = candidateLinkIcons[link.kind]; return <SafeLink key={link.kind} href={link.url} className="inline-flex items-center gap-1.5 rounded-md bg-white/75 px-2.5 py-1.5 text-[11px] font-bold text-ink-2 shadow-sm transition hover:-translate-y-0.5 hover:text-accent hover:shadow-md"><Icon className="h-3.5 w-3.5" />{link.label}<ExternalLink className="h-3 w-3 text-muted-2" /></SafeLink>; })}</div>}</div></div><div className="flex flex-wrap items-center gap-2"><button onClick={runResearch} disabled={researchQueued} className="inline-flex items-center gap-2 rounded-md bg-[#eee8f8] px-4 py-3 text-[11px] font-bold text-[#7656a5] disabled:opacity-60"><Sparkles className="h-3.5 w-3.5" />{researchLabel}</button></div></div></header>
     {researchJobNotice && <div role="status" className="mb-5 rounded-md bg-surface-2 px-4 py-3 text-xs text-muted">{researchJobNotice}</div>}
 
     <section className="mb-6 grid gap-3 sm:grid-cols-3"><KeyMetricCard icon={Target} label="Thesis match" value={profile.thesisFit} suffix="%" detail="Fit with the active fund strategy" progress={profile.thesisFit} progressLabel={founder.thesis_match?.hard_eligible ? "Hard constraints passed" : "Review constraints"} tone="purple" /><KeyMetricCard icon={UserRound} label="Founder signal" value={profile.founderScore} suffix="/100" detail="Traits, track record and execution evidence" progress={profile.founderScore} progressLabel={founderAssessment?.rating ?? "Assessment pending"} tone="green" /><KeyMetricCard icon={ShieldCheck} label="Evidence coverage" value={profile.coverageScore} suffix="%" detail="Breadth across identity, product, traction and market" progress={profile.coverageScore} progressLabel={`${profile.claims.length} evidence records`} tone="blue" /></section>

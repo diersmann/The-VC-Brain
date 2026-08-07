@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { ArrowRight, Banknote, Compass, Globe2, Layers3, Sparkles, Target } from "lucide-react";
+import { invalidateCandidateQueries } from "../api/candidates";
 import { saveActiveThesis, useActiveThesis } from "../api/theses";
 import { ChoiceSection, SingleChoiceSection, SummaryRow } from "../components/onboarding/OnboardingChoices";
 import { checkBand, checkRange, checks, labelsFor, regions, sectors, stages, toggleValue } from "../data/onboarding";
@@ -46,7 +47,7 @@ export function OnboardingPage() {
         discovery_queries: activeThesis?.discovery_queries ?? [],
         source_freshness_days: activeThesis?.source_freshness_days ?? {},
       });
-      await Promise.all([queryClient.invalidateQueries({ queryKey: ["active-thesis"] }), queryClient.invalidateQueries({ queryKey: ["candidates"] })]);
+      await invalidateCandidateQueries(queryClient, undefined, { includeActiveThesis: true, includeAllDetails: true }).catch(() => undefined);
       navigate("/sourcing");
     } catch {
       setSaveState("error");

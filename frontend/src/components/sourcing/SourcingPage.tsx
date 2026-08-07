@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Radar, Search, ShieldCheck, Sparkles, Target } from "lucide-react";
@@ -22,17 +22,18 @@ export function SourcingPage() {
   const unresolvedLeads=records.length-candidates.length;
   const [query,setQuery]=useState("technical founder, Berlin, AI infra, enterprise traction, no prior VC backing, top-tier accelerator.");
   const [discovering,setDiscovering]=useState(false);
+  const [discoveryQueued,setDiscoveryQueued]=useState(false);
   const [discoveryError,setDiscoveryError]=useState(false);
   const [discoveryJobId,setDiscoveryJobId]=useState<string|null>(null);
+  const discoveryRequestLock = useRef(false);
   const discoveryJob=useJobRun(discoveryJobId ?? undefined);
   const [outreachCandidate,setOutreachCandidate]=useState<Candidate|null>(null);
   const queryPlan=buildSourcingQueryPlan(query);
-  const runDiscovery=async()=>{setDiscovering(true);setDiscoveryError(false);setDiscoveryJobId(null);try{const response=await triggerDiscovery(query,"github");setDiscoveryJobId(response.job_id);if(!response.job_id)setDiscoveryError(true);}catch{setDiscoveryError(true)}finally{setDiscovering(false)}};
+  const runDiscovery=async()=>{if(discoveryRequestLock.current||discovering||discoveryQueued||discoveryActive||!query.trim())return; discoveryRequestLock.current=true; setDiscoveryQueued(true); setDiscovering(true);setDiscoveryError(false);setDiscoveryJobId(null);try{const response=await triggerDiscovery(query,"github");setDiscoveryJobId(response.job_id);if(!response.job_id){setDiscoveryError(true);discoveryRequestLock.current=false;setDiscoveryQueued(false);}}catch{setDiscoveryError(true);discoveryRequestLock.current=false;setDiscoveryQueued(false)}finally{setDiscovering(false)}};
   const discoveryStatus=discoveryJob.data?.status;
-  const discoveryRefreshReady = discoveryStatus === "succeeded" || discoveryStatus === "degraded";
   const discoveryActive=discoveryStatus === "queued" || discoveryStatus === "running";
   const discoveryNotice=discoveryJob.error ? "Unable to read discovery job status. Retry status when the API is available." : discoveryJob.data && discoveryStatus && discoveryStatus !== "succeeded" ? discoveryStatus === "failed" || discoveryStatus === "cancelled" ? discoveryJob.data.last_error ?? "Discovery job failed. Retry when the service is available." : `Discovery job ${discoveryStatus} · ${Math.round(discoveryJob.data.progress * 100)}%` : discoveryStatus === "succeeded" ? "Discovery completed. Candidate results are refreshing." : null;
-  useEffect(() => { if (discoveryRefreshReady && isTerminalJobStatus(discoveryStatus)) void invalidateCandidateQueries(queryClient); }, [discoveryRefreshReady, discoveryStatus, queryClient]);
+  useEffect(() => { if (isTerminalJobStatus(discoveryStatus)) { discoveryRequestLock.current=false; setDiscoveryQueued(false); void invalidateCandidateQueries(queryClient, undefined, { includeAllDetails: true, jobId: discoveryJobId ?? undefined }).catch(() => undefined); } }, [discoveryJobId, discoveryStatus, queryClient]);
   const highSignal=candidates.filter(hasHighMultiAxisSignal).length;
   const thesisAligned=candidates.filter(isThesisAligned).length;
   const evidenceReady=candidates.filter(isEvidenceReady).length;
@@ -49,7 +50,7 @@ export function SourcingPage() {
 
     <section className="panel mb-6 rounded-lg p-5">
       <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-accent"/><span className="text-xs font-semibold text-accent">Live GitHub founder discovery · search by location</span></div>
-      <div className="flex gap-2"><div className="relative flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-2"/><label htmlFor="discovery-query" className="sr-only">Discovery query</label><input id="discovery-query" value={query} onChange={e=>setQuery(e.target.value)} className="w-full rounded-md border border-line bg-surface-2 py-3.5 pl-11 pr-4 text-sm outline-none focus:border-accent-muted"/></div><button onClick={() => void runDiscovery()} disabled={discovering||discoveryActive||!query.trim()} className="rounded-md bg-accent px-4 text-xs font-bold text-white disabled:opacity-50">{discovering?"Queuing…":discoveryActive?"Discovery running…":"Discover live"}</button></div>
+      <div className="flex gap-2"><div className="relative flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-2"/><label htmlFor="discovery-query" className="sr-only">Discovery query</label><input id="discovery-query" value={query} onChange={e=>setQuery(e.target.value)} className="w-full rounded-md border border-line bg-surface-2 py-3.5 pl-11 pr-4 text-sm outline-none focus:border-accent-muted"/></div><button onClick={() => void runDiscovery()} disabled={discovering||discoveryQueued||discoveryRequestLock.current||discoveryActive||!query.trim()} className="rounded-md bg-accent px-4 text-xs font-bold text-white disabled:opacity-50">{discovering?"Queuing…":discoveryActive?"Discovery running…":"Discover live"}</button></div>
       <div className="mt-4 rounded-md bg-white/65 px-3.5 py-3" aria-label="Sourcing query plan">
         <div className="data-label">Search plan</div>
         <div className="mt-2 flex flex-wrap gap-1.5">{queryPlan.clauses.map((clause) => <span key={`${clause.kind}-${clause.value}`} className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${clause.forwardedToSource ? "bg-[#e4f2ed] text-[#347c67]" : "bg-surface-2 text-muted"}`}>{clause.kind}: {clause.value}</span>)}</div>
