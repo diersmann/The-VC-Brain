@@ -75,12 +75,20 @@ export function InboundInboxPage() {
           {inbound.map((candidate) => {
             const source = Object.keys(candidate.handles ?? {})[0] ?? "inbound";
             return (
-              <div key={candidate.id} role="button" tabIndex={0} onClick={() => navigate(`/founders/${candidate.id}`)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") navigate(`/founders/${candidate.id}`); }} className="grid w-full cursor-pointer items-center gap-4 rounded-md px-3 py-3.5 text-left transition-colors hover:bg-white/65 lg:grid-cols-[1.35fr_.8fr_.7fr_1.1fr_auto]">
+              <div key={candidate.id} className="grid w-full items-center gap-4 rounded-md px-3 py-3.5 text-left transition-colors hover:bg-white/65 lg:grid-cols-[1.35fr_.8fr_.7fr_1.1fr_auto]">
                 <div className="flex items-center gap-3"><CandidateAvatar name={candidate.display_name} avatarUrl={candidate.avatar_url} className="h-10 w-10 rounded-md bg-[#eee8f8] text-xs font-bold text-[#7656a5]" /><div><div className="text-sm font-bold leading-tight">{candidate.display_name ?? candidate.stable_id}</div><div className="mt-1 text-[11px] text-muted">{candidate.profile?.company ?? formatPredicate(source)}</div>{candidate.profile?.inbound_label && <div className="mt-1 text-[10px] font-semibold text-[#7656a5]">{candidate.profile.inbound_label}</div>}</div></div>
                 <Cell label="Received" value={formatDate(candidate.created_at)} />
                 <ThesisScore value={candidate.scores?.thesis_fit} />
                 <div><div className="data-label">Deck</div>{safeExternalUrl(candidate.profile?.deck_url) ? <SafeLink href={safeExternalUrl(candidate.profile?.deck_url)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"><FileText className="h-3.5 w-3.5" />{candidate.profile?.deck_stage ?? "Open deck"}<ExternalLink className="h-3 w-3" /></SafeLink> : <div className="mt-1.5 flex items-center gap-1 text-xs font-semibold"><Sparkles className="h-3.5 w-3.5 text-warn" />Needs assessment</div>}<div className="mt-1 max-w-[220px] truncate text-[10px] text-muted">{candidate.profile?.deck_title ?? `Consent: ${formatPredicate(candidate.consent_state)}`}</div></div>
-                <ArrowRight className="h-4 w-4 text-accent" />
+                <button
+                  type="button"
+                  onClick={() => navigate(`/founders/${candidate.id}`)}
+                  className="inline-flex min-h-11 items-center justify-end gap-1 px-2 text-xs font-bold text-accent hover:underline"
+                  aria-label={`View founder ${candidate.display_name ?? candidate.stable_id}`}
+                >
+                  View founder
+                  <ArrowRight className="h-4 w-4" />
+                </button>
               </div>
             );
           })}

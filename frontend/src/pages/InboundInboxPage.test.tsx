@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 
 import { InboundInboxPage } from "./InboundInboxPage";
 import { TestQueryProvider } from "../test/queryClient";
@@ -44,7 +44,28 @@ function renderInbox(initialEntry = "/inbound?q=aperture", body: unknown = candi
   return render(<TestQueryProvider><MemoryRouter initialEntries={[initialEntry]}><InboundInboxPage /></MemoryRouter></TestQueryProvider>);
 }
 
+function CurrentPath() {
+  return <output data-testid="current-path">{useLocation().pathname}</output>;
+}
+
 describe("InboundInboxPage search states", () => {
+  it("uses a native founder action instead of a nested interactive row", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(candidates), { status: 200 }))));
+    render(<TestQueryProvider><MemoryRouter initialEntries={["/inbound"]}><InboundInboxPage /><CurrentPath /></MemoryRouter></TestQueryProvider>);
+
+    expect(await screen.findByText("Alice Example")).toBeInTheDocument();
+    const founderAction = screen.getByRole("button", { name: "View founder Alice Example" });
+    expect(founderAction.tagName).toBe("BUTTON");
+    expect(founderAction.className).toContain("min-h-11");
+    founderAction.focus();
+    expect(document.activeElement).toBe(founderAction);
+    expect(screen.getByRole("link", { name: /Open deck/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Alice Example" })).not.toBeInTheDocument();
+
+    fireEvent.click(founderAction);
+    expect(screen.getByTestId("current-path")).toHaveTextContent("/founders/candidate-1");
+  });
+
   it("searches URL state across company fields and keeps global counts", async () => {
     renderInbox();
 

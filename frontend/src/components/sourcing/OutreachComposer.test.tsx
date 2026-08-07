@@ -60,6 +60,30 @@ describe("OutreachComposer", () => {
     opener.remove();
   });
 
+  test("does not steal focus when the parent callback identity changes", () => {
+    const { rerender } = render(<OutreachComposer candidate={candidate} onClose={() => undefined} />);
+    const brief = screen.getByRole("textbox", { name: /Describe the email/ });
+    brief.focus();
+
+    rerender(<OutreachComposer candidate={candidate} onClose={() => undefined} />);
+
+    expect(brief).toHaveFocus();
+  });
+
+  test("keeps the focus trap when the drafting action becomes disabled", () => {
+    vi.mocked(draftCandidateOutreach).mockReturnValue(new Promise(() => {}) as never);
+    render(<OutreachComposer candidate={candidate} onClose={vi.fn()} />);
+
+    const draftButton = screen.getByRole("button", { name: "Draft with email agent" });
+    draftButton.focus();
+    fireEvent.click(draftButton);
+    expect(draftButton).toBeDisabled();
+    expect(draftButton).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(screen.getByRole("button", { name: "Close outreach composer" })).toHaveFocus();
+  });
+
   test("keeps the draft action available for the mocked API path", async () => {
     vi.mocked(draftCandidateOutreach).mockResolvedValue({
       subject: "Hello",

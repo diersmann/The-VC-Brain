@@ -18,6 +18,7 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
   const dialogRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
   const [emailType, setEmailType] = useState<OutreachEmailType>("founder_intro");
   const [brief, setBrief] = useState("");
   const [draft, setDraft] = useState<OutreachDraft | null>(null);
@@ -27,13 +28,17 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
   const [approved, setApproved] = useState(false);
 
   useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
     restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeButtonRef.current?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab" || !dialogRef.current) return;
@@ -43,10 +48,14 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      const currentIndex = focusable.indexOf(document.activeElement as HTMLElement);
+      if (currentIndex === -1) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && currentIndex === 0) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && currentIndex === focusable.length - 1) {
         event.preventDefault();
         first.focus();
       }
@@ -57,7 +66,7 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
       document.removeEventListener("keydown", handleKeyDown);
       restoreFocusRef.current?.focus();
     };
-  }, [onClose]);
+  }, []);
 
   useEffect(() => {
     setApproved(false);

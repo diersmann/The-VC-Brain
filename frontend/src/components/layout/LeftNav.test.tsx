@@ -25,9 +25,15 @@ describe("workspace navigation", () => {
   test("provides a skip link and a single main landmark in the shell", () => {
     render(<MemoryRouter><RootLayout /></MemoryRouter>);
 
-    expect(screen.getByRole("link", { name: "Skip to main content" })).toHaveAttribute("href", "#main-content");
+    const skipLink = screen.getByRole("link", { name: "Skip to main content" });
+    expect(skipLink).toHaveAttribute("href", "#main-content");
     expect(screen.getAllByRole("main")).toHaveLength(1);
-    expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
+    const main = screen.getByRole("main");
+    expect(main).toHaveAttribute("id", "main-content");
+    expect(main).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.click(skipLink);
+    expect(main).toHaveFocus();
   });
 
   test("keeps the desktop navigation available", () => {
