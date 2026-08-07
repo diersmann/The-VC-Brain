@@ -54,7 +54,7 @@ Core entities are:
 | Person | Persistent identity across opportunities | Stable ID, names, handles, consent/privacy state, cached public avatar bytes and source provenance |
 | Organization | Company, institution, accelerator, or fund | Stable ID, names, type, locations |
 | Opportunity | A company and idea evaluated at a point in time | Company, founders, source kind, lifecycle state, thesis version |
-| SourceSnapshot | Immutable copy or reference to collected material | URI, source type, content hash, collected time, license/access metadata |
+| SourceSnapshot | Immutable copy or reference to collected material | URI, source type, content hash, persistence fingerprint, collected time, license/access metadata |
 | Observation | Extracted source statement before reconciliation | Subject, opportunity when known, predicate, object/value, source locator, observed time, extractor version, snapshot |
 | Claim | Reconciled assertion used by scoring and memos | Subject, opportunity when known, observation references, status, confidence, valid time, supersession link |
 | Relationship | Typed graph edge | Endpoints, relationship type, evidence, confidence, observed/valid time |
@@ -68,6 +68,17 @@ Core entities are:
 Every observation, claim, relationship, score, and recommendation retains provenance, observation time, confidence, and the version of the extractor, rubric, prompt, or model that produced it. Evidence corrections append a new observation rather than mutating the prior statement. Personally identifying data is stored only when necessary and is subject to correction, retention, and deletion controls; audit records retain non-sensitive tombstones where legally permissible.
 
 Claim evidence is migrating from the legacy `Claim.observation_ids` JSON list to the FK-backed `claim_observations` join table. Reconciliation writes both representations during the compatibility window; historical backfill, typed subject unions, and database-level wrong-scope enforcement remain a tracked migration follow-up.
+
+Collection persistence uses deterministic length-prefixed fingerprints for the
+natural keys `(uri, source_type, content_hash)` and
+`(snapshot_id, subject_id, opportunity_id, predicate, object_value,
+extractor_version)`. Migration 031 retains all existing rows, fingerprints one
+deterministic representative per duplicate group, and leaves legacy duplicate
+rows NULL so evidence is never silently deleted or rewritten. Partial unique
+indexes protect new fingerprinted rows, while savepoint/re-read handling makes
+concurrent collector inserts reuse the winning row. A policy-approved review
+is still required before legacy duplicates can be reconciled or fingerprints
+made non-null globally.
 
 Derived artifacts carry a shared `artifact_metadata` contract (`artifact-provenance-v1`) with a run ID, code/rubric/prompt/model versions, parameters, input fingerprint, measured latency, explicit unknown cost, validator status, and reader compatibility. Existing rows may have empty metadata until a controlled historical backfill is approved; relationship production and provider billing telemetry remain incomplete.
 

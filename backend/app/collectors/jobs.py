@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import math
 import re
@@ -28,6 +29,7 @@ from typing import Any, Literal
 
 import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.artifact_provenance import build_artifact_metadata, fingerprint_payload
@@ -38,6 +40,10 @@ from app.collectors.base import (
     canonical_json_bytes,
     classify_connector_failure,
     validate_collected,
+)
+from app.collectors.persistence import (
+    observation_persistence_fingerprint,
+    snapshot_persistence_fingerprint,
 )
 from app.collectors.priority import info_gain
 from app.collectors.priority import priority as compute_priority
@@ -166,6 +172,22 @@ async def _get_or_create_person(
     return person
 
 
+async def _flush_new_row(session: AsyncSession, row: object) -> None:
+    """Flush one persistence row inside a savepoint.
+
+    The unique fingerprint indexes are the final arbiter under concurrent
+    collectors.  A nested transaction lets callers catch a duplicate-key
+    error and re-read the already committed row without rolling back unrelated
+    work in the outer collection transaction.
+    """
+    nested: Any = session.begin_nested()
+    if inspect.isawaitable(nested):
+        nested = await nested
+    async with nested:
+        session.add(row)
+        await session.flush()
+
+
 async def _write_snapshot(
     session: AsyncSession,
     collected: Any,
@@ -195,6 +217,9 @@ async def _write_snapshot(
         uri=collected.uri,
         source_type=collected.source_type,
         content_hash=content_hash,
+        persistence_fingerprint=snapshot_persistence_fingerprint(
+            collected.uri, collected.source_type, content_hash
+        ),
         storage_path=storage_path,
         license_metadata=collected.license_hint,
         source_use_policy=build_source_use_policy(
@@ -202,8 +227,25 @@ async def _write_snapshot(
         ),
         collected_at=datetime.now(UTC),
     )
-    session.add(snapshot)
-    await session.flush()
+    try:
+        await _flush_new_row(session, snapshot)
+    except IntegrityError:
+        # Another collector won the unique fingerprint race. Reuse its row;
+        # if the error came from a different constraint, preserve the error.
+        concurrent_result = await session.execute(
+            select(SourceSnapshot)
+            .where(
+                SourceSnapshot.uri == collected.uri,
+                SourceSnapshot.source_type == collected.source_type,
+                SourceSnapshot.content_hash == content_hash,
+            )
+            .order_by(SourceSnapshot.collected_at.desc())
+            .limit(1)
+        )
+        concurrent = concurrent_result.scalar_one_or_none()
+        if concurrent is None:
+            raise
+        return concurrent
     return snapshot
 
 
@@ -292,11 +334,40 @@ async def _write_observations(
             object_value=object_value,
             observed_at=observed_at,
             extractor_version=extractor_version,
+            persistence_fingerprint=observation_persistence_fingerprint(
+                snapshot_id=snapshot.id,
+                subject_id=subject_id,
+                opportunity_id=opportunity_id,
+                predicate=predicate,
+                object_value=object_value,
+                extractor_version=extractor_version,
+            ),
             confidence=confidence,
             source_locator=source_locator,
         )
-        session.add(observation)
-        await session.flush()
+        try:
+            await _flush_new_row(session, observation)
+        except IntegrityError:
+            # Re-read the winner of a concurrent insert without aborting the
+            # outer collector transaction.
+            concurrent_result = await session.execute(
+                select(Observation)
+                .where(
+                    Observation.snapshot_id == snapshot.id,
+                    Observation.subject_id == subject_id,
+                    Observation.opportunity_id == opportunity_id,
+                    Observation.predicate == predicate,
+                    Observation.object_value == object_value,
+                    Observation.extractor_version == extractor_version,
+                )
+                .order_by(Observation.created_at.desc())
+                .limit(1)
+            )
+            concurrent = concurrent_result.scalar_one_or_none()
+            if concurrent is None:
+                raise
+            observation_ids.append(concurrent.id)
+            continue
         observation_ids.append(observation.id)
     return observation_ids
 

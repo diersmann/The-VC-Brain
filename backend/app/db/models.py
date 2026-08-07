@@ -276,6 +276,11 @@ class SourceSnapshot(TimestampMixin, Base):
     uri: Mapped[str] = mapped_column(Text, nullable=False)
     source_type: Mapped[str] = mapped_column(String(32), nullable=False, default="webpage")
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Nullable during the duplicate-preserving migration window. New writes
+    # carry the deterministic key and are protected by a partial unique index.
+    persistence_fingerprint: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     license_metadata: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     source_use_policy: Mapped[dict[str, object]] = mapped_column(
@@ -429,6 +434,11 @@ class Observation(TimestampMixin, Base):
     source_locator: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     extractor_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Nullable for legacy duplicate rows retained during the non-destructive
+    # backfill; new extraction outputs are database-enforced unique by key.
+    persistence_fingerprint: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
 
