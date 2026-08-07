@@ -9,10 +9,12 @@ for LinkedIn, hackathons, YouTube, podcasts, etc.).
 from __future__ import annotations
 
 import asyncio
+import inspect
 
 import structlog
 from tavily import TavilyClient  # type: ignore[import-untyped]
 
+from app.client_lifecycle import get_tavily_client
 from app.collectors.base import (
     Collected,
     Connector,
@@ -31,19 +33,16 @@ class TavilySearchConnector(Connector):
     authority = 0.6
     cost = 2.0
 
-    def __init__(self) -> None:
-        self._client: TavilyClient | None = None
-
-    def _get_client(self) -> TavilyClient:
-        if self._client is not None:
-            return self._client
+    async def _get_client(self) -> TavilyClient:
         from app.config import get_settings
 
         settings = get_settings()
         if not settings.tavily_api_key:
             logger.warning("tavily_api_key_not_configured")
-        self._client = TavilyClient(api_key=settings.tavily_api_key)
-        return self._client
+        return await get_tavily_client(
+            settings.tavily_api_key,
+            factory=TavilyClient,
+        )
 
     async def discover(self, query: str, page: int = 1) -> list[Seed]:
         """Search Tavily and return seeds from results.
@@ -55,7 +54,8 @@ class TavilySearchConnector(Connector):
         Note: Tavily basic search does not support pagination.
         The page parameter is accepted for interface consistency.
         """
-        client = self._get_client()
+        maybe_client = self._get_client()
+        client = await maybe_client if inspect.isawaitable(maybe_client) else maybe_client
         try:
             response = await asyncio.to_thread(
                 client.search,

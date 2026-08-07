@@ -33,6 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.artifact_provenance import build_artifact_metadata, fingerprint_payload
+from app.client_lifecycle import get_tavily_client
 from app.collectors.avatars import fetch_and_store_avatar
 from app.collectors.base import (
     Collected,
@@ -1409,8 +1410,6 @@ async def research_candidate_job(
     ctx: dict[str, Any], person_id: str, opportunity_id: str, job_id: str | None = None
 ) -> dict[str, Any]:
     """Research one candidate with three Tavily searches and persist scored evidence."""
-    from tavily import TavilyClient  # type: ignore[import-untyped]
-
     settings = ctx["settings"]
     run_id = uuid.uuid4()
     research_started = time.perf_counter()
@@ -1512,7 +1511,13 @@ async def research_candidate_job(
         previous_snapshot = previous_result.scalar_one_or_none()
         previous_components = previous_snapshot.components if previous_snapshot else {}
 
-        client = TavilyClient(api_key=settings.tavily_api_key)
+        try:
+            client = await get_tavily_client(settings.tavily_api_key)
+        except Exception as exc:
+            # A provider constructor/configuration failure must not leave a
+            # started JobRun in ``running`` when no search call occurred.
+            logger.warning("tavily_client_init_failed", error_type=type(exc).__name__)
+            return await finish_error("tavily_client_init_failed")
         axis_scores: dict[str, dict[str, float]] = {}
         axis_evidence: dict[str, list[str]] = {}
         axis_answers: dict[str, str] = {}

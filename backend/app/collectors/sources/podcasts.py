@@ -13,11 +13,13 @@ Collect: delegates to the 'web' connector for the episode URL.
 from __future__ import annotations
 
 import asyncio
+import inspect
 from datetime import UTC, datetime
 
 import structlog
 from tavily import TavilyClient  # type: ignore[import-untyped]
 
+from app.client_lifecycle import get_tavily_client
 from app.collectors.base import (
     Collected,
     Connector,
@@ -45,18 +47,15 @@ class PodcastsConnector(Connector):
     authority = 0.4
     cost = 4.0
 
-    def __init__(self) -> None:
-        self._tavily: TavilyClient | None = None
-
-    def _get_tavily(self) -> TavilyClient | None:
-        if self._tavily is not None:
-            return self._tavily
+    async def _get_tavily(self) -> TavilyClient | None:
         from app.config import get_settings
 
         settings = get_settings()
         if settings.tavily_api_key:
-            self._tavily = TavilyClient(api_key=settings.tavily_api_key)
-            return self._tavily
+            return await get_tavily_client(
+                settings.tavily_api_key,
+                factory=TavilyClient,
+            )
         return None
 
     async def discover(self, query: str, page: int = 1) -> list[Seed]:
@@ -68,7 +67,8 @@ class PodcastsConnector(Connector):
         Note: Tavily basic search does not support pagination.
         The page parameter is accepted for interface consistency.
         """
-        tavily = self._get_tavily()
+        maybe_tavily = self._get_tavily()
+        tavily = await maybe_tavily if inspect.isawaitable(maybe_tavily) else maybe_tavily
         if not tavily:
             logger.warning("podcasts_discover_skipped_no_tavily_key")
             return []

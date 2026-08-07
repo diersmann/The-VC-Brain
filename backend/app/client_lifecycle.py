@@ -19,19 +19,23 @@ from typing import Any
 
 import structlog
 from openai import AsyncOpenAI
+from tavily import TavilyClient  # type: ignore[import-untyped]
 
 logger = structlog.get_logger(__name__)
 
 OpenAIClient = Any
 OpenAIFactory = Callable[..., OpenAIClient]
+TavilySDKClient = Any
+TavilyFactory = Callable[..., TavilySDKClient]
+_ClientKey = tuple[str, int, str, str | None, str | None]
 
 
 class _ClientRegistry:
     """Own process-scoped clients and close each object at most once."""
 
     def __init__(self) -> None:
-        self._clients: dict[tuple[int, str, str | None, str | None], OpenAIClient] = {}
-        self._factories: dict[int, OpenAIFactory] = {}
+        self._clients: dict[_ClientKey, Any] = {}
+        self._factories: dict[tuple[str, int], Callable[..., Any]] = {}
         self._lock = asyncio.Lock()
         self._closing = False
         self._close_finished: asyncio.Event | None = None
@@ -54,7 +58,7 @@ class _ClientRegistry:
         # callable instances), so key by identity rather than by object hash.
         base_url = base_url or None
         organization = organization or None
-        key = (id(factory), api_key, base_url, organization)
+        key = ("openai", id(factory), api_key, base_url, organization)
         async with self._lock:
             if self._closing:
                 raise RuntimeError("OpenAI client registry is closing")
@@ -69,15 +73,43 @@ class _ClientRegistry:
                 kwargs["organization"] = organization
             client = factory(**kwargs)
             self._clients[key] = client
-            self._factories.setdefault(id(factory), factory)
+            self._factories.setdefault(("openai", id(factory)), factory)
+            return client
+
+    async def get_tavily(
+        self,
+        api_key: str,
+        *,
+        factory: TavilyFactory = TavilyClient,
+        api_base_url: str | None = None,
+    ) -> TavilySDKClient:
+        """Return a shared synchronous Tavily client for one configuration.
+
+        Tavily's SDK is synchronous, but calls made by connectors remain
+        explicitly offloaded with ``asyncio.to_thread``. ``factory`` is part
+        of the key so provider-free tests can inject fake clients safely.
+        """
+        api_base_url = api_base_url or None
+        key = ("tavily", id(factory), api_key, api_base_url, None)
+        async with self._lock:
+            if self._closing:
+                raise RuntimeError("Tavily client registry is closing")
+            existing = self._clients.get(key)
+            if existing is not None:
+                return existing
+
+            kwargs: dict[str, str] = {"api_key": api_key}
+            if api_base_url:
+                kwargs["api_base_url"] = api_base_url
+            client = factory(**kwargs)
+            self._clients[key] = client
+            self._factories.setdefault(("tavily", id(factory)), factory)
             return client
 
     async def close(self) -> None:
         """Close every owned client, continuing after an individual failure."""
-        entries: tuple[
-            tuple[tuple[int, str, str | None, str | None], OpenAIClient], ...
-        ] = ()
-        factories: dict[int, OpenAIFactory] = {}
+        entries: tuple[tuple[_ClientKey, Any], ...] = ()
+        factories: dict[tuple[str, int], Callable[..., Any]] = {}
         async with self._lock:
             if self._closing:
                 finished = self._close_finished
@@ -129,7 +161,9 @@ class _ClientRegistry:
                         if id(client) in failed_ids
                     }
                     failed_factory_ids = {
-                        key[0] for key, client in entries if id(client) in failed_ids
+                        (key[0], key[1])
+                        for key, client in entries
+                        if id(client) in failed_ids
                     }
                     self._factories = {
                         factory_id: factory
@@ -161,6 +195,20 @@ async def get_openai_client(
         factory=factory,
         base_url=base_url,
         organization=organization,
+    )
+
+
+async def get_tavily_client(
+    api_key: str,
+    *,
+    factory: TavilyFactory = TavilyClient,
+    api_base_url: str | None = None,
+) -> TavilySDKClient:
+    """Get a process-owned synchronous Tavily client without network calls."""
+    return await _registry.get_tavily(
+        api_key,
+        factory=factory,
+        api_base_url=api_base_url,
     )
 
 

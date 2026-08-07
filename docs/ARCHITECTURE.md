@@ -627,12 +627,14 @@ Keep logical boundaries while minimizing operational complexity:
 PostgreSQL can initially store graph edges. Introduce a dedicated graph database only if deep graph traversal becomes a central product capability.
 
 Runtime client ownership is explicit in the current modular-monolith implementation:
-the API and worker each use process-owned OpenAI clients through
+the API and worker each use process-owned OpenAI and Tavily clients through
 `backend/app/client_lifecycle.py`, and their shutdown hooks close those clients
-alongside MinIO and the SQLAlchemy engine. Redis connections remain
+alongside MinIO and the SQLAlchemy engine. The Tavily registry is shared by all
+five discovery/extraction connectors and candidate-research jobs; its
+synchronous SDK calls remain worker-thread offloaded. Redis connections remain
 request-scoped and are released by a shared async context helper; Arq pools are
-owned and closed by the caller that creates them. This bounded contract does
-not claim lifecycle ownership for non-OpenAI provider SDKs (including Tavily).
+owned and closed by the caller that creates them. Provider credentials are
+never included in lifecycle logs.
 The MinIO singleton now serializes process-local first-client initialization and
 close ownership, cleans up failed setup, and accepts idempotent
 `BucketAlreadyOwnedByYou` responses when multiple
@@ -640,7 +642,10 @@ processes create the configured bucket concurrently. Live clean-start/restart
 leak drills and deployment-specific shutdown semantics remain follow-up work.
 Shutdown assumes the API/worker has quiesced; the bounded client contract
 rejects new acquisitions during close but does not track leases for operations
-that already hold a client reference.
+that already hold a client reference. In-flight synchronous Tavily calls must
+therefore be drained by the service shutdown sequence before closing the
+registry; live clean-start/restart leak drills and deployment-specific
+quiescence semantics remain follow-up work.
 
 The application emits structured logs and traces carrying opportunity, lifecycle stage, job, source, model, and request IDs. Each API response includes a fresh opaque `X-Request-ID`, and middleware binds it to structlog context without trusting caller-supplied identifiers or logging request data. Local and production dashboards cover queue depth, connector health, parse failures, identity-resolution uncertainty, model latency/cost, Trust Score calibration, SLA attainment, and outreach conversion. Sensitive evidence is referenced by ID and never written directly to logs; complete job/source/model correlation and dashboard delivery remain operational follow-up work.
 

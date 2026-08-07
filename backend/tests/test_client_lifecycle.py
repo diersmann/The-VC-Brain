@@ -8,10 +8,21 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.client_lifecycle import close_clients, get_openai_client, redis_connection
+from app.client_lifecycle import (
+    close_clients,
+    get_openai_client,
+    get_tavily_client,
+    redis_connection,
+)
 
 
 class _FakeOpenAI:
+    def __init__(self, *, api_key: str, **_: str) -> None:
+        self.api_key = api_key
+        self.close = AsyncMock()
+
+
+class _FakeTavily:
     def __init__(self, *, api_key: str, **_: str) -> None:
         self.api_key = api_key
         self.close = AsyncMock()
@@ -56,6 +67,77 @@ async def test_close_clients_closes_each_owned_client_once() -> None:
     await close_clients()
 
     assert [client.close.await_count for client in created] == [1, 1]
+
+
+@pytest.mark.asyncio
+async def test_tavily_client_is_reused_and_closed_once() -> None:
+    created: list[_FakeTavily] = []
+
+    def factory(**kwargs: str) -> _FakeTavily:
+        client = _FakeTavily(**kwargs)
+        created.append(client)
+        return client
+
+    first = await get_tavily_client("tavily-test-key", factory=factory)
+    second = await get_tavily_client("tavily-test-key", factory=factory)
+
+    assert first is second
+    assert len(created) == 1
+
+    await close_clients()
+    await close_clients()
+
+    created[0].close.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_tavily_connector_getters_share_lifecycle_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All Tavily connector seams resolve through one process-owned object."""
+    from types import SimpleNamespace
+
+    import app.collectors.sources.hackathons as hackathons
+    import app.collectors.sources.linkedin as linkedin
+    import app.collectors.sources.podcasts as podcasts
+    import app.collectors.sources.tavily_search as tavily_search
+    import app.collectors.sources.website as website
+    created: list[_FakeTavily] = []
+
+    def factory(**kwargs: str) -> _FakeTavily:
+        client = _FakeTavily(**kwargs)
+        created.append(client)
+        return client
+
+    settings = SimpleNamespace(tavily_api_key="tavily-test-key")
+    monkeypatch.setattr(
+        "app.config.get_settings",
+        lambda: settings,
+    )
+    for module in (hackathons, linkedin, podcasts, tavily_search, website):
+        monkeypatch.setattr(module, "TavilyClient", factory)
+
+    connectors = [
+        hackathons.HackathonsConnector(),
+        linkedin.LinkedInConnector(),
+        podcasts.PodcastsConnector(),
+        tavily_search.TavilySearchConnector(),
+        website.WebsiteConnector(),
+    ]
+    clients = [
+        await connector._get_tavily()
+        if not isinstance(connector, tavily_search.TavilySearchConnector)
+        else await connector._get_client()
+        for connector in connectors
+    ]
+
+    assert clients == [clients[0]] * len(clients)
+    assert len(created) == 1
+
+    await close_clients()
+    reopened = await connectors[0]._get_tavily()
+    assert reopened is not clients[0]
+    assert len(created) == 2
 
 
 @pytest.mark.asyncio
