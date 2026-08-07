@@ -262,7 +262,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - Frontend Vitest: 83 tests passed.
 - Frontend production build: passed; current bundle is 407.76 kB JavaScript raw / 137.57 kB gzip and 69.73 kB CSS raw (entry JavaScript 218.56 kB raw / 71.43 kB gzip).
 - Frontend bundle budget: passed.
-- Backend pytest: 258 tests passed with one Starlette/httpx deprecation warning.
+- Backend pytest: 265 tests passed with one Starlette/httpx deprecation warning.
 - Backend Ruff and configured mypy: passed.
 - Alembic: one head, revision 031; migration 030 adds candidate-list cursor/filter indexes and migration 031 adds non-destructive collection persistence fingerprints.
 - `git diff --check`: passed at the milestone boundary.
