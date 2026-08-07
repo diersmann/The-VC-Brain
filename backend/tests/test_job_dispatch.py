@@ -22,6 +22,25 @@ async def test_score_job_dispatch_forwards_job_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_discover_job_dispatch_forwards_job_id() -> None:
+    pool = AsyncMock()
+
+    await enqueue_arq_job(
+        {"redis": pool},
+        {
+            "job_type": "discover",
+            "query": "AI founders",
+            "source": "github",
+            "job_id": "job-1",
+        },
+    )
+
+    pool.enqueue_job.assert_awaited_once_with(
+        "discover_job", "AI founders", "github", "job-1"
+    )
+
+
+@pytest.mark.asyncio
 async def test_memo_job_dispatch_forwards_job_id() -> None:
     pool = AsyncMock()
 

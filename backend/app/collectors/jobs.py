@@ -75,6 +75,7 @@ from app.collectors.signals import (
 from app.collectors.signals import web_signal as compute_web_signal
 from app.db.models import (
     Assessment,
+    JobRun,
     Observation,
     Opportunity,
     OpportunityFounder,
@@ -2088,6 +2089,7 @@ async def auto_discovery_job(ctx: dict[str, Any]) -> dict[str, Any]:
 
     logger.info("auto_discovery_job_started")
     enqueued = 0
+    failed = 0
     async with _session_ctx(ctx) as session:
         active_thesis_result = await session.execute(
             select(InvestmentThesis)
@@ -2098,14 +2100,92 @@ async def auto_discovery_job(ctx: dict[str, Any]) -> dict[str, Any]:
         active_thesis = active_thesis_result.scalar_one_or_none()
 
         if active_thesis and active_thesis.discovery_queries:
+            # Keep each periodic query visible in the durable ledger before
+            # handing it to Redis.  The commit is intentionally before the
+            # fan-out so a Redis outage cannot erase the queue-entry record.
+            thesis_key = str(
+                getattr(active_thesis, "id", None)
+                or getattr(active_thesis, "version", None)
+                or getattr(active_thesis, "name", "active")
+            )
+            period = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
             for query in active_thesis.discovery_queries:
+                # Cron is configured with ``unique=False`` so a previous
+                # tick cannot block a later one.  A UUID5 bucket key keeps
+                # overlapping ticks and duplicate thesis queries idempotent
+                # while retaining a real JobRun ID in every queue payload.
+                job_id = uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"vcbrain:auto-discovery:{thesis_key}:{query}:{period.isoformat()}",
+                )
+                existing = await session.get(JobRun, job_id)
+                if isinstance(existing, JobRun):
+                    # A Redis enqueue failure is safe to retry on the next
+                    # cron tick in the same bucket.  Provider/worker terminal
+                    # failures remain terminal until the next bucket, while
+                    # queued/running/succeeded rows are already represented by
+                    # the existing deduplicated queue entry or delivery.
+                    if (
+                        existing.status == "failed"
+                        and (existing.result or {}).get("error") == "queue_failed"
+                    ):
+                        existing.status = "queued"
+                        existing.phase = "queued"
+                        existing.progress = 0.0
+                        existing.last_error = None
+                        existing.result = None
+                        existing.finished_at = None
+                        await session.commit()
+                    else:
+                        continue
+                    job = existing
+                else:
+                    try:
+                        # Keep a concurrent UUID5 collision inside a
+                        # savepoint so the active session can re-read the
+                        # winning row without losing other query work.
+                        nested: Any = session.begin_nested()
+                        if inspect.isawaitable(nested):
+                            nested = await nested
+                        async with nested:
+                            job = await create_job(session, "discover", job_id=job_id)
+                    except IntegrityError:
+                        existing = await session.get(JobRun, job_id)
+                        if not isinstance(existing, JobRun):
+                            raise
+                        continue
+                    await session.commit()
+
                 task = {
                     "job_type": "discover",
                     "query": query,
                     "source": "github",
+                    "job_id": str(job.id),
                 }
-                await queue_enqueue(ctx["redis"], task, priority=5.0)
+                try:
+                    await queue_enqueue(ctx["redis"], task, priority=5.0)
+                except Exception as exc:
+                    failed += 1
+                    logger.error(
+                        "auto_discovery_enqueue_failed",
+                        job_id=str(job.id),
+                        error_type=type(exc).__name__,
+                    )
+                    await update_job(
+                        session,
+                        job.id,
+                        status="failed",
+                        phase="queue",
+                        last_error="queue_failed",
+                        result={
+                            "status": "failed",
+                            "error": "queue_failed",
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+                    await session.commit()
+                    continue
                 enqueued += 1
 
-    logger.info("auto_discovery_job_completed", enqueued=enqueued)
-    return {"enqueued": enqueued}
+    logger.info("auto_discovery_job_completed", enqueued=enqueued, failed=failed)
+    return {"enqueued": enqueued, "failed": failed}

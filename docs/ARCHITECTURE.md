@@ -155,7 +155,7 @@ The backend coordinates the application:
 - Optional cold-start inputs include bounded work samples, learning milestones, interview/work-sample context, and reference context; missing public history remains an explicit unknown rather than a negative feature.
 - Sourcing-to-decision workflow state
 - Collection, correlation, and analysis jobs
-- Durable `job_runs` IDs/status/result/error metadata now track discovery, collection, processing, research, scoring, memo, avatar, and identity queue entry points; status reads expose `updated_at`, attempt counts, and terminal states for bounded polling. Collection, processing, research, scoring, memo, avatar, and identity workers reopen failed runs with an incremented attempt and no-op duplicate delivery after succeeded/cancelled runs (the client also recognizes model-supported cancellation); collection/avatar/processing/identity worker-created IDs are logged for legacy tasks that omit a job ID, while API-triggered identity resolution, processing, and avatar batch responses expose their IDs. Processing and identity failures retain shared transient/rate-limit/permanent classification. Memo degradation is stored in `result.status` while the JobRun remains failed. API queue-entry failures are persisted as failed runs; dispatcher enqueue failures requeue/refund and leave their runs queued. Lease-based crash recovery and generic cancel/retry orchestration remain follow-up work.
+- Durable `job_runs` IDs/status/result/error metadata now track discovery (including periodic active-thesis fan-out), collection, processing, research, scoring, memo, avatar, and identity queue entry points; status reads expose `updated_at`, attempt counts, and terminal states for bounded polling. Collection, processing, research, scoring, memo, avatar, and identity workers reopen failed runs with an incremented attempt and no-op duplicate delivery after succeeded/cancelled runs (the client also recognizes model-supported cancellation); collection/avatar/processing/identity worker-created IDs are logged for legacy tasks that omit a job ID, while API-triggered identity resolution, processing, and avatar batch responses expose their IDs. Processing and identity failures retain shared transient/rate-limit/permanent classification. Memo degradation is stored in `result.status` while the JobRun remains failed. API and periodic queue-entry failures are persisted as failed runs; dispatcher enqueue failures requeue/refund and leave their runs queued. Lease-based crash recovery and generic cancel/retry orchestration remain follow-up work.
 - Frontend mutations use one server-authoritative invalidation helper for legacy, bounded, cursor-paginated, candidate-detail, active-thesis, memo, and terminal-job projections. Thesis saves invalidate all candidate details; discovery can update existing people and therefore invalidates all details; research and decisions target the affected person; memo terminal states refresh the candidate and memo projections; inbound submissions refresh the returned person when a workspace query client is present. Decision controls plus research and discovery queueing are locked while requests/jobs are in flight, and decision retries reuse one idempotency key. Read-only outreach drafting stays local and revokes human approval on edits or failed regeneration. Dismissal feedback is not represented in list DTOs, so dismissal invalidates only the detail projection and can reappear after a later list remount. This remains a bounded client coordination slice, not server-side dismissal filtering, persisted outreach approval/provider transitions, authenticated optimistic concurrency, or a generic mutation error protocol.
 - Profile, score, graph, and memo delivery
 - Versioned thesis, rubric, memo, and decision contracts
@@ -197,10 +197,15 @@ record terminal non-retryable failures without requeueing, while retryable
 failures are raised for Arq retry handling; a successful provider response with
 zero results remains a successful empty page. A reserved discovery page is
 rolled back when provider/validation or later discovery processing fails.
-Exceptions after discovery enters persistence/queue work, and the periodic
-`auto_discovery_job` queue fan-out (which does not own a `JobRun`), still need a
-broader transaction/ledger contract; complete partial-failure matrices and
-credentialed provider E2E remain blocked.
+Exceptions after discovery enters persistence/queue work are terminalized on
+the associated `JobRun`. The periodic `auto_discovery_job` fan-out now creates,
+flushes, and commits one discover run per active-thesis query before enqueue,
+uses a deterministic per-thesis/query/hour UUID to preserve queue dedupe across
+cron overlap, forwards that ID through the dispatcher, and marks queue-entry
+failures as failed with stable metadata (retrying those queue failures in the
+same bucket). This preserves the existing queue dedupe and legacy task shapes;
+crash-safe leases/ack-requeue, atomic DB/Redis transitions, durable backoff,
+complete partial-failure matrices, and credentialed provider E2E remain blocked.
 
 Discovery activation uses `activation-priority-v1`: thesis fit, novelty, momentum, evidence confidence, identity confidence, contactability, deadline pressure, cost efficiency, and exploration quota are independently represented. Missing values are renormalized and shown as coverage gaps; the current collector path has only partial context, so lifecycle/SLA scheduling and thesis-specific floors remain policy work.
 

@@ -11,9 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import JobRun
 
 
-async def create_job(session: AsyncSession, job_type: str) -> JobRun:
+async def create_job(
+    session: AsyncSession,
+    job_type: str,
+    *,
+    job_id: uuid.UUID | None = None,
+) -> JobRun:
     """Create and flush a queued job record before dispatch."""
-    job = JobRun(job_type=job_type, status="queued", phase="queued")
+    job = JobRun(id=job_id, job_type=job_type, status="queued", phase="queued")
     session.add(job)
     await session.flush()
     return job
