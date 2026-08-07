@@ -71,7 +71,7 @@ from app.db.models import (
     ScoreSnapshot,
     SourceSnapshot,
 )
-from app.job_ledger import update_job
+from app.job_ledger import start_job, update_job
 from app.privacy import external_ai_use_decision
 from app.source_policy import build_source_use_policy, source_allows_model_use
 from app.storage import put_snapshot
@@ -1106,8 +1106,17 @@ async def research_candidate_job(
     research_started = time.perf_counter()
 
     async with _session_ctx(ctx) as session:
+        job_attempt = 1
         if job_id:
-            await update_job(session, job_id, status="running", phase="research", attempt=1)
+            started_job = await start_job(session, job_id, phase="research")
+            if started_job is not None:
+                if started_job.status in {"succeeded", "cancelled"}:
+                    return {
+                        "person_id": person_id,
+                        "status": "already_terminal",
+                        "job_id": str(started_job.id),
+                    }
+                job_attempt = started_job.attempt
             await session.commit()
 
         async def finish_error(error: str, **details: Any) -> dict[str, Any]:
@@ -1118,7 +1127,7 @@ async def research_candidate_job(
                     job_id,
                     status="failed",
                     phase="research",
-                    attempt=1,
+                    attempt=job_attempt,
                     last_error=str(details.get("reason", error)),
                     result=payload,
                 )
@@ -1132,7 +1141,7 @@ async def research_candidate_job(
                     job_id,
                     status="failed",
                     phase="research",
-                    attempt=1,
+                    attempt=job_attempt,
                     last_error=str(exc),
                     result={"error": "research_failed", "person_id": person_id},
                 )
@@ -1141,7 +1150,11 @@ async def research_candidate_job(
         if not settings.tavily_api_key:
             return await finish_error("tavily_not_configured")
 
-        person = await session.get(Person, uuid.UUID(person_id))
+        try:
+            parsed_person_id = uuid.UUID(person_id)
+        except ValueError:
+            return await finish_error("invalid_person_id")
+        person = await session.get(Person, parsed_person_id)
         if person is None or not person.canonical:
             return await finish_error("person_not_found")
         ai_policy = external_ai_use_decision(person, "research")
@@ -1373,7 +1386,7 @@ async def research_candidate_job(
                 job_id,
                 status="succeeded",
                 phase="complete",
-                attempt=1,
+                attempt=job_attempt,
                 clear_error=True,
                 result=result,
             )

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.db.models import JobRun
-from app.job_ledger import update_job
+from app.job_ledger import start_job, update_job
 
 
 @pytest.mark.asyncio
@@ -67,3 +67,32 @@ async def test_update_job_clears_previous_error_on_success() -> None:
     )
 
     assert job.last_error is None
+
+
+@pytest.mark.asyncio
+async def test_start_job_advances_retry_attempt_and_clears_error() -> None:
+    job = JobRun(id=uuid.uuid4(), job_type="research_candidate", attempt=2, last_error="timeout")
+    session = AsyncMock()
+    session.get.return_value = job
+
+    result = await start_job(session, job.id, phase="research")
+
+    assert result is job
+    assert job.status == "running"
+    assert job.phase == "research"
+    assert job.attempt == 3
+    assert job.last_error is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["succeeded", "cancelled"])
+async def test_start_job_is_terminal_idempotent(status: str) -> None:
+    job = JobRun(id=uuid.uuid4(), job_type="memo", status=status, attempt=4)
+    session = AsyncMock()
+    session.get.return_value = job
+
+    result = await start_job(session, job.id, phase="memo")
+
+    assert result is job
+    assert job.status == status
+    assert job.attempt == 4

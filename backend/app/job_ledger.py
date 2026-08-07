@@ -59,3 +59,31 @@ async def update_job(
         if status == "succeeded":
             job.progress = 1.0
     return job
+
+
+async def start_job(
+    session: AsyncSession,
+    job_id: str | uuid.UUID,
+    *,
+    phase: str,
+) -> JobRun | None:
+    """Mark a queued job running and advance its durable retry attempt."""
+    try:
+        parsed_id = job_id if isinstance(job_id, uuid.UUID) else uuid.UUID(job_id)
+    except (ValueError, AttributeError):
+        return None
+    job = await session.get(JobRun, parsed_id)
+    if job is None:
+        return None
+    if job.status in {"succeeded", "cancelled"}:
+        # Duplicate delivery after a terminal result must be a no-op. Failed
+        # jobs remain retryable and are intentionally reopened below.
+        return job
+    return await update_job(
+        session,
+        job.id,
+        status="running",
+        phase=phase,
+        attempt=max(1, job.attempt + 1),
+        clear_error=True,
+    )
