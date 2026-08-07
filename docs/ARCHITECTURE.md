@@ -104,7 +104,12 @@ skip a failed page. Page-10 wraparound is reserved atomically for concurrent
 workers. Credential-free contract fixtures cover page-bounded
 discovery, provenance/completeness, and classification of a partial rate-limit
 failure without claiming that every provider shares the same pagination
-behavior. Provider cursor/continuation state, cross-page
+behavior. Collection health preserves the existing registration-status map and
+also exposes typed static readiness metadata for every registered connector.
+Its `maturity`, `contract_version`, and `limitations` fields are contract
+metadata only; `last_success_at` remains `null` until runtime collection
+telemetry is persisted, so this surface does not claim that a provider is
+currently healthy or reachable. Provider cursor/continuation state, cross-page
 deduplication, coordinate and licensing fixtures, provider-specific retry
 matrices, durable last-success telemetry, and credentialed end-to-end checks
 remain connector-by-connector follow-up work.

@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.client_lifecycle import redis_connection
+from app.collectors.base import CONNECTOR_READINESS, ConnectorMaturity
 from app.collectors.queue import queue_depth
 from app.collectors.registry import all_connectors
 from app.db import get_session
@@ -65,9 +66,26 @@ class JobStatusResponse(BaseModel):
     finished_at: str | None = None
 
 
+class ConnectorReadinessResponse(BaseModel):
+    """Stable, provider-neutral readiness metadata for one connector.
+
+    ``last_success_at`` deliberately remains nullable until collection runtime
+    telemetry is persisted.  Static maturity metadata must not be presented as
+    evidence that a provider is currently healthy or recently reachable.
+    """
+
+    maturity: ConnectorMaturity
+    contract_version: str
+    limitations: list[str]
+    last_success_at: str | None = None
+
+
 class HealthResponse(BaseModel):
     queue_depth: dict[str, int]
     connectors: dict[str, str]
+    # Optional at construction time for compatibility with callers that still
+    # build the legacy response shape; the endpoint always populates it.
+    connector_readiness: dict[str, ConnectorReadinessResponse] = Field(default_factory=dict)
 
 
 class IdentityResolveResponse(BaseModel):
@@ -232,10 +250,32 @@ async def get_job_status(
 async def collection_health(
     redis: Annotated[Any, Depends(get_redis)],
 ) -> HealthResponse:
-    """Return collection system health: queue depth and connector status."""
+    """Return queue depth, registration status, and static connector readiness.
+
+    Registration and readiness metadata are intentionally separate.  The
+    existing ``connectors`` map remains a backwards-compatible registration
+    status surface, while ``connector_readiness`` exposes the typed contract
+    metadata without implying provider health.  Runtime success telemetry is
+    not available yet, so each ``last_success_at`` value is null.
+    """
     depths = await queue_depth(redis)
     connectors = {name: "registered" for name in all_connectors()}
-    return HealthResponse(queue_depth=depths, connectors=connectors)
+    readiness = {
+        name: ConnectorReadinessResponse(
+            maturity=metadata.maturity,
+            contract_version=metadata.contract_version,
+            limitations=list(metadata.limitations),
+            # Runtime collection telemetry is not persisted yet.  Keep this
+            # null even if static metadata is later extended with other fields.
+            last_success_at=None,
+        )
+        for name, metadata in CONNECTOR_READINESS.items()
+    }
+    return HealthResponse(
+        queue_depth=depths,
+        connectors=connectors,
+        connector_readiness=readiness,
+    )
 
 
 # ---------------------------------------------------------------------------
