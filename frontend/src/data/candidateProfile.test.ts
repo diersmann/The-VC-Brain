@@ -33,8 +33,38 @@ describe("buildFounderProfile", () => {
 
     expect(profile.assessments.map((assessment) => assessment.score)).toEqual([null, null, null]);
     expect(profile.assessments.every((assessment) => assessment.rating === "Pending")).toBe(true);
+    expect(profile.assessments.every((assessment) => assessment.trend === "Pending" && assessment.confidence === null)).toBe(true);
     expect(profile.sourceConfidence).toBeNull();
     expect(profile.coverageScore).toBeNull();
+  });
+
+  it("keeps measured zero scores distinct from missing values", () => {
+    const candidate: CandidateDetail = {
+      id: "candidate-zero",
+      stable_id: "founder-zero",
+      display_name: "Zero Founder",
+      email: null,
+      handles: null,
+      consent_state: "pending",
+      origin: "outbound",
+      scores: { novelty: null, momentum: 0, thesis_fit: 0, evidence_confidence: 0, founder: 0, market: null, idea_market: null },
+      latest_score_at: null,
+      created_at: null,
+      opportunity: null,
+      observations: [],
+      claims: [],
+      assessments: [],
+      score_history: [],
+      relationships: [],
+    };
+
+    const profile = buildFounderProfile(candidate);
+
+    expect(profile.founderScore).toBe(0);
+    expect(profile.thesisFit).toBe(0);
+    expect(profile.momentum).toBe(0);
+    expect(profile.evidence).toBeNull();
+    expect(profile.gaps).not.toContain("Thesis fit has not been scored");
   });
 
   it("keeps source confidence separate from breadth of evidence coverage", () => {

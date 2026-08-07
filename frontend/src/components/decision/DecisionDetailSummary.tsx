@@ -1,19 +1,15 @@
 import { ShieldCheck, Sparkles, Target, Users } from "lucide-react";
 import { KeyMetricCard } from "../common/KeyMetricCard";
 import type { DecisionMeta } from "../../data/decisionMeta";
+import { claimStatusViewModel, recommendationViewModel } from "../../data/displayMetrics";
 import type { FounderProfile } from "../../types/profile";
 
 export function AiSummary({ profile, meta }: { profile: FounderProfile; meta: DecisionMeta }) {
-  const styles = {
-    Proceed: { color: "#347c67", soft: "#e4f2ed", label: "Move forward" },
-    Hold: { color: "#a96e2d", soft: "#fff1df", label: "Pause & verify" },
-    Investigate: { color: "#5074a8", soft: "#e7eef9", label: "Diligence needed" },
-  };
-  const recommendation = styles[meta.recommendation];
+  const recommendation = recommendationViewModel(meta.recommendation);
 
   return (
     <section className="panel rounded-lg p-5 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="eyebrow mb-2 flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" /> AI investment summary</div><h2 className="text-xl font-bold tracking-tight">{profile.company} at a glance</h2></div><div role="status" aria-label={`AI recommendation: ${meta.recommendation}`} className="inline-flex items-center gap-2 rounded-md px-2.5 py-2" style={{ backgroundColor: recommendation.soft }}><span className="h-2 w-2 rounded-full" style={{ backgroundColor: recommendation.color }} /><span className="text-[10px] font-bold" style={{ color: recommendation.color }}>{meta.recommendation} · {recommendation.label}</span></div></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="eyebrow mb-2 flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" /> AI investment summary</div><h2 className="text-xl font-bold tracking-tight">{profile.company} at a glance</h2></div><div role="status" aria-label={`AI recommendation: ${meta.recommendation}`} title={recommendation.explanation} className="inline-flex items-center gap-2 rounded-md px-2.5 py-2" style={{ backgroundColor: recommendation.soft }}><span className="h-2 w-2 rounded-full" style={{ backgroundColor: recommendation.color }} /><span className="text-[10px] font-bold" style={{ color: recommendation.color }}>{meta.recommendation} · {recommendation.label}</span></div></div>
       <p className="mt-4 max-w-[900px] text-sm leading-7 text-ink-2">{meta.aiSummary}</p>
       {meta.conviction || meta.readinessBlockers.length > 0 ? <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-2">Proposal · {meta.conviction ?? "conviction not set"} conviction · {meta.readinessBlockers.length ? `${meta.readinessBlockers.length} readiness blocker${meta.readinessBlockers.length === 1 ? "" : "s"}` : "ready for review"}</p> : null}
       <div className="mt-4 flex items-center gap-2 text-[10px] font-semibold leading-4 text-muted-2"><ShieldCheck className="h-3.5 w-3.5 text-accent" /> Generated from available evidence; key claims still require human verification.</div>
@@ -32,5 +28,5 @@ export function ListCard({ title, eyebrow, icon: Icon, items, tone }: { title: s
 }
 
 export function EvidenceCard({ profile }: { profile: FounderProfile }) {
-  return <section className="panel rounded-lg p-5 sm:p-6"><div className="flex items-center justify-between gap-3"><div><div className="eyebrow mb-2">Evidence quality</div><h2 className="text-lg font-bold">Critical claims</h2></div><span className="numeric text-[11px] font-bold text-muted">{profile.claims.length} claims reviewed</span></div><div className="mt-4 space-y-2">{profile.claims.map((claim) => { const supported = claim.status === "Supported"; return <div key={claim.claim} className="grid gap-3 rounded-md bg-surface-2/75 px-4 py-3 sm:grid-cols-[1fr_100px_120px] sm:items-center"><div className="text-xs font-semibold leading-5 text-ink-2">{claim.claim}</div><div className="text-[11px] text-muted">Trust <span className="numeric font-bold text-ink">{claim.trust}%</span></div><span className={`status-pill w-fit ${supported ? "bg-[#e4f2ed] text-[#347c67]" : "bg-[#fff1df] text-[#a96e2d]"}`}>{claim.status}</span></div>; })}</div></section>;
+  return <section className="panel rounded-lg p-5 sm:p-6"><div className="flex items-center justify-between gap-3"><div><div className="eyebrow mb-2">Evidence quality</div><h2 className="text-lg font-bold">Critical claims</h2></div><span className="numeric text-[11px] font-bold text-muted">{profile.claims.length} claims reviewed</span></div><div className="mt-4 space-y-2">{profile.claims.map((claim) => { const status = claimStatusViewModel(claim.status); return <div key={claim.claim} className="grid gap-3 rounded-md bg-surface-2/75 px-4 py-3 sm:grid-cols-[1fr_100px_120px] sm:items-center"><div className="text-xs font-semibold leading-5 text-ink-2">{claim.claim}</div><div className="text-[11px] text-muted">Trust <span className="numeric font-bold text-ink">{claim.trust}%</span></div><span title={status.explanation} className="status-pill w-fit" style={{ backgroundColor: status.soft, color: status.color }}>{status.label}</span></div>; })}</div></section>;
 }

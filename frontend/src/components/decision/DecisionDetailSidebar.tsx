@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { CandidateAvatar } from "../common/CandidateAvatar";
 import { SafeLink } from "../common/SafeLink";
 import { safeExternalUrl } from "../../data/candidateLinks";
+import { displayScore, statusLabel } from "../../data/displayMetrics";
 import type { CandidateDetail } from "../../types/candidate";
 import type { FounderProfile } from "../../types/profile";
 import type { DecisionMeta } from "../../data/decisionMeta";
@@ -25,8 +26,8 @@ export function DecisionDetailSidebar({ profile, candidate, meta }: { profile: F
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <SmallMetric label="Thesis fit" value={`${profile.thesisFit}%`} />
-          <SmallMetric label="Coverage" value={`${profile.coverageScore == null ? "Not scored" : `${profile.coverageScore}%`}`} />
+          <SmallMetric label="Thesis fit" value={displayScore(profile.thesisFit)} />
+          <SmallMetric label="Coverage" value={displayScore(profile.coverageScore)} />
         </div>
 
         <div className={`mt-4 rounded-md p-3 ${meta.slaAlert ? "bg-[#fff1df]" : "bg-surface-2"}`} role="status" aria-label={`Decision SLA status: ${meta.slaStatus}`}>
@@ -69,5 +70,5 @@ function SmallMetric({ label, value }: { label: string; value: string }) {
 }
 
 function formatSlaStatus(status: DecisionMeta["slaStatus"]): string {
-  return status.replaceAll("_", " ");
+  return statusLabel(status);
 }

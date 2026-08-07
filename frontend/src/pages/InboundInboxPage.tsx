@@ -5,8 +5,9 @@ import { useInfiniteCandidateList } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { SafeLink } from "../components/common/SafeLink";
-import { formatDate, formatPredicate, percentage } from "../data/candidateProfile";
+import { formatDate, formatPredicate } from "../data/candidateProfile";
 import { safeExternalUrl } from "../data/candidateLinks";
+import { scoreViewModel } from "../data/displayMetrics";
 import { hasDecisionScore, isThesisAligned, ratioPercent } from "../data/portfolioMetrics";
 import type { Candidate } from "../types/candidate";
 import { DECISION_RUBRIC } from "../data/rubric";
@@ -132,6 +133,6 @@ function searchableCandidateText(candidate: Candidate): string {
 
 function Cell({ label, value }: { label: string; value: string }) { return <div><div className="data-label">{label}</div><div className="data-value numeric">{value}</div></div>; }
 function ThesisScore({ value }: { value: number | null | undefined }) {
-  const score = value == null ? null : percentage(value);
-  return <div><div className="data-label">Thesis match</div><div className="mt-1 flex items-center gap-1 text-sm font-bold text-success"><ShieldCheck className="h-3.5 w-3.5" /><span className="numeric">{score == null ? "Pending" : `${score}%`}</span></div><div className="mt-2 h-1.5 w-full max-w-24 overflow-hidden rounded-full bg-surface-3"><div className="h-full rounded-full bg-success" style={{ width: `${score ?? 0}%` }} /></div></div>;
+  const visual = scoreViewModel(value);
+  return <div><div className="data-label">Thesis match</div><div className="mt-1 flex items-center gap-1 text-sm font-bold text-success"><ShieldCheck className="h-3.5 w-3.5" /><span className="numeric">{visual.percent == null ? "Pending" : visual.label}</span></div><div className="mt-2 h-1.5 w-full max-w-24 overflow-hidden rounded-full bg-surface-3" role="progressbar" aria-label="Thesis match" aria-valuemin={0} aria-valuemax={100} aria-valuenow={visual.percent ?? undefined} aria-valuetext={visual.explanation} title={visual.explanation}><div className="h-full rounded-full bg-success" style={{ width: `${visual.percent ?? 0}%` }} /></div></div>;
 }

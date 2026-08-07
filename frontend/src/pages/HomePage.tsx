@@ -8,6 +8,7 @@ import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { InvestmentWorkflowTree } from "../components/overview/InvestmentWorkflowTree";
 import { formatDate, formatPredicate, percentage } from "../data/candidateProfile";
+import { displayScore } from "../data/displayMetrics";
 import { candidateThesisPercent, decisionReadiness, hasDecisionScore, median, ratioPercent } from "../data/portfolioMetrics";
 import { DECISION_RUBRIC } from "../data/rubric";
 
@@ -80,7 +81,7 @@ export function HomePage() {
             return (
               <button key={candidate.id} onClick={() => navigate(`/founders/${candidate.id}`)} className="grid w-full items-center gap-3 rounded-md px-3 py-3.5 text-left transition-colors hover:bg-white/65 sm:grid-cols-[1.2fr_.8fr_1.2fr_auto]">
                 <div className="flex items-center gap-3"><CandidateAvatar name={candidate.display_name} avatarUrl={candidate.avatar_url} className={`h-9 w-9 rounded-md text-xs font-bold ${tone(["amber", "blue", "purple", "green"][index % 4])}`} /><div><div className="text-[13px] font-bold leading-tight">{candidate.display_name ?? candidate.stable_id}</div><div className="mt-1 text-[11px] text-muted">{formatPredicate(source)} · {candidate.origin ?? "unclassified"}</div></div></div>
-                <Cell label="Thesis match" value={candidate.scores?.thesis_fit == null ? "Not scored" : `${percentage(candidate.scores.thesis_fit)}%`} />
+                <Cell label="Thesis match" value={displayScore(candidate.scores?.thesis_fit)} />
                 <div><div className="data-label">Next action</div><div className="mt-1 flex items-center gap-1 text-xs font-semibold text-ink-2"><AlertTriangle className="h-3.5 w-3.5 text-warn" />{candidate.scores ? "Review evidence" : "Complete scoring"}</div></div>
                 <span className="numeric text-[10px] text-muted">{formatDate(candidate.created_at)}</span>
               </button>

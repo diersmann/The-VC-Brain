@@ -1,5 +1,5 @@
 import type { DecisionReadiness } from "../../data/portfolioMetrics";
-import { scoreVisual } from "../../data/displayMetrics";
+import { scoreViewModel } from "../../data/displayMetrics";
 import { readinessVisual } from "./decisionVisualConfig";
 
 export function DecisionStatusBadge({ state, showDetail = true }: { state: DecisionReadiness; showDetail?: boolean }) {
@@ -8,7 +8,7 @@ export function DecisionStatusBadge({ state, showDetail = true }: { state: Decis
   return (
     <div
       role="status"
-      aria-label={`${visual.label}: ${visual.detail}`}
+      aria-label={`${visual.label}: ${visual.detail}. ${visual.explanation}`}
       className="inline-flex items-center gap-2 rounded-md px-2.5 py-2"
       style={{ backgroundColor: visual.soft }}
     >
@@ -22,7 +22,7 @@ export function DecisionStatusBadge({ state, showDetail = true }: { state: Decis
 }
 
 export function DecisionScoreIndicator({ label, value, detail }: { label: string; value: number | null; detail: string }) {
-  const visual = scoreVisual(value, "decision");
+  const visual = scoreViewModel(value, "decision");
   const progress = visual.percent ?? 0;
 
   return (
@@ -34,6 +34,7 @@ export function DecisionScoreIndicator({ label, value, detail }: { label: string
       <div
         className="mt-2 h-1.5 overflow-hidden rounded-full"
         aria-label={`${label}: ${visual.percent == null ? "pending" : `${visual.percent}%`}`}
+        aria-valuetext={visual.explanation}
         role="meter"
         aria-valuemin={0}
         aria-valuemax={100}

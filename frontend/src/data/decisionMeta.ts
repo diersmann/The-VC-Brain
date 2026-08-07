@@ -1,4 +1,5 @@
 import { formatPredicate } from "./candidateProfile";
+import { displayScore } from "./displayMetrics";
 import type { CandidateDetail, CandidateSLA, DecisionProposal } from "../types/candidate";
 import type { FounderProfile } from "../types/profile";
 
@@ -62,9 +63,9 @@ export function createDecisionMeta(profile: FounderProfile, candidate: Candidate
     round: profile.stage,
     valuation: "Not disclosed",
     lead: "Not recorded",
-    aiSummary: `${candidate.display_name ?? candidate.stable_id} has ${candidate.observations.length} observations from ${sourceCount} public source${sourceCount === 1 ? "" : "s"}. ${profile.summary} ${profile.thesisFit ? `Recorded thesis fit is ${profile.thesisFit}%.` : "Thesis fit has not been scored."} ${sla?.status === "breached" ? "The persisted decision SLA is breached." : ""} Recommendation: ${recommendation.toLowerCase()} pending review of the listed evidence gaps.`,
-    thesis: profile.thesisFit
-      ? `The recorded thesis-fit score is ${profile.thesisFit}%. ${profile.summary}`
+    aiSummary: `${candidate.display_name ?? candidate.stable_id} has ${candidate.observations.length} observations from ${sourceCount} public source${sourceCount === 1 ? "" : "s"}. ${profile.summary} ${profile.thesisFit != null ? `Recorded thesis fit is ${displayScore(profile.thesisFit)}.` : "Thesis fit has not been scored."} ${sla?.status === "breached" ? "The persisted decision SLA is breached." : ""} Recommendation: ${recommendation.toLowerCase()} pending review of the listed evidence gaps.`,
+    thesis: profile.thesisFit != null
+      ? `The recorded thesis-fit score is ${displayScore(profile.thesisFit)}. ${profile.summary}`
       : "No thesis-fit assessment has been stored for this candidate. The investment team should score the opportunity against the active thesis.",
     product: profile.summary,
     traction,

@@ -93,4 +93,15 @@ describe("createDecisionMeta SLA display", () => {
     expect(meta.conditions).toEqual(["Resolve: Market size needs primary validation"]);
     expect(meta.conviction).toBe("medium");
   });
+
+  it("describes a measured zero thesis score instead of calling it unscored", () => {
+    const detail = candidate();
+    detail.scores = { novelty: null, momentum: null, thesis_fit: 0, evidence_confidence: null, founder: 0, market: null, idea_market: null };
+
+    const meta = createDecisionMeta(buildFounderProfile(detail), detail);
+
+    expect(meta.aiSummary).toContain("Recorded thesis fit is 0%.");
+    expect(meta.aiSummary).not.toContain("Thesis fit has not been scored.");
+    expect(meta.thesis).toContain("recorded thesis-fit score is 0%");
+  });
 });

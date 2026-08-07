@@ -16,8 +16,8 @@ export interface FounderClaim {
 export interface FounderAssessment {
   title: "Founder" | "Market" | "Idea × Market";
   rating: "Bullish" | "Neutral" | "Bearish" | "Pending";
-  trend: "Improving" | "Stable" | "Declining";
-  confidence: number;
+  trend: "Improving" | "Stable" | "Declining" | "Pending";
+  confidence: number | null;
   score: number | null;
   body: string;
 }
@@ -33,10 +33,10 @@ export interface FounderProfile {
   summary: string;
   signal: string;
   tags: string[];
-  founderScore: number;
-  momentum: number;
-  thesisFit: number;
-  evidence: number;
+  founderScore: number | null;
+  momentum: number | null;
+  thesisFit: number | null;
+  evidence: number | null;
   sourceConfidence: number | null;
   coverageScore: number | null;
   scoreHint: string;

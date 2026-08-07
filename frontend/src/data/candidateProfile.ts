@@ -1,6 +1,6 @@
 import type { CandidateDetail, CandidateObservation } from "../types/candidate";
 import type { FounderAssessment, FounderClaim, FounderProfile } from "../types/profile";
-import { scorePercent } from "./displayMetrics";
+import { claimStatusViewModel, confidenceViewModel, scorePercent, trendViewModel } from "./displayMetrics";
 
 const axisNames: FounderAssessment["title"][] = ["Founder", "Market", "Idea × Market"];
 
@@ -13,11 +13,11 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
   const about = observationValue(observations, ["research_founder_summary", "bio", "about", "hn_about", "github_bio", "page_summary", "page_content"]);
   const sourceLabel = sources.length ? sources.map(formatPredicate).join(", ") : "No source evidence";
   const composite = scoreValue(candidate, "composite");
-  const founderScore = percentage(scoreValue(candidate, "founder") ?? composite);
-  const momentum = percentage(scoreValue(candidate, "momentum") ?? composite);
-  const thesisFit = percentage(scoreValue(candidate, "thesis_fit"));
+  const founderScore = scorePercent(scoreValue(candidate, "founder") ?? composite);
+  const momentum = scorePercent(scoreValue(candidate, "momentum") ?? composite);
+  const thesisFit = scorePercent(scoreValue(candidate, "thesis_fit"));
   const sourceConfidence = observations.length
-    ? Math.round(observations.reduce((sum, item) => sum + item.confidence, 0) / observations.length * 100)
+    ? confidenceViewModel(observations.reduce((sum, item) => sum + item.confidence, 0) / observations.length).percent
     : null;
   const coverage = buildCoverage(observations);
   const coverageScore = observations.length
@@ -40,8 +40,8 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
       return {
         title,
         rating: "Pending" as const,
-        trend: "Stable" as const,
-        confidence: 0,
+        trend: trendViewModel(null).state,
+        confidence: null,
         score: null,
         body: `No recorded ${title} assessment yet. Review the collected evidence before assigning a rating.`,
       };
@@ -49,11 +49,11 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
     return {
       title,
       rating: normalizeRating(actual.rating),
-      trend: normalizeTrend(actual.trend),
-      confidence: percentage(actual.confidence),
+      trend: trendViewModel(actual.trend).state,
+      confidence: confidenceViewModel(actual.confidence).percent,
       score: scoreValue(candidate, axisKey) == null
         ? null
-        : percentage(scoreValue(candidate, axisKey)),
+        : scorePercent(scoreValue(candidate, axisKey)),
       body: actual.unknowns.length ? `Open questions: ${actual.unknowns.join("; ")}` : "Assessment recorded from the investment workflow.",
     };
   });
@@ -62,7 +62,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
         claim: `${formatPredicate(claim.predicate)}: ${claim.object_value}`,
         source: "Reconciled claim",
         trust: percentage(claim.trust_score ?? claim.confidence),
-        status: formatClaimStatus(claim.status),
+        status: claimStatusViewModel(claim.status).label as FounderClaim["status"],
       }));
   const sourceEvidence = observations
     .filter((item) => /^research_.*_evidence$/.test(item.predicate))
@@ -85,7 +85,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
     ...candidate.assessments.flatMap((item) => item.unknowns),
     ...(candidate.email ? [] : ["Verified contact information is missing"]),
     ...(candidate.opportunity ? [] : ["No investment opportunity is linked to this person"]),
-    ...(thesisFit > 0 ? [] : ["Thesis fit has not been scored"]),
+    ...(thesisFit != null ? [] : ["Thesis fit has not been scored"]),
   ]).slice(0, 6);
 
   return {
@@ -102,7 +102,7 @@ export function buildFounderProfile(candidate: CandidateDetail): FounderProfile 
     founderScore,
     momentum,
     thesisFit,
-    evidence: sourceConfidence ?? 0,
+    evidence: sourceConfidence,
     sourceConfidence,
     coverageScore,
     scoreHint: `${observations.length} observations across ${sources.length} source${sources.length === 1 ? "" : "s"}`,
@@ -189,20 +189,6 @@ function normalizeRating(rating: string): FounderAssessment["rating"] {
   if (value === "bullish") return "Bullish";
   if (value === "bearish") return "Bearish";
   return "Neutral";
-}
-
-function normalizeTrend(trend: string): FounderAssessment["trend"] {
-  const value = trend.toLowerCase();
-  if (value === "improving") return "Improving";
-  if (value === "declining") return "Declining";
-  return "Stable";
-}
-
-function formatClaimStatus(status: CandidateDetail["claims"][number]["status"]): FounderClaim["status"] {
-  if (status === "supported") return "Supported";
-  if (status === "contradicted") return "Contradicted";
-  if (status === "tavily_synthesized") return "Synthesized";
-  return "Unverified";
 }
 
 function signalText(observations: CandidateObservation[], composite: number | null, sourceLabel: string): string {
