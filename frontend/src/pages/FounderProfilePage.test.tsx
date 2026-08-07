@@ -83,3 +83,115 @@ describe("FounderProfilePage mutation lock", () => {
     await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate", "candidate-1"] }));
   });
 });
+
+describe("FounderProfilePage external evidence links", () => {
+  function renderFounder(candidateOverride: CandidateDetail) {
+    vi.mocked(useCandidate).mockReturnValue({ data: candidateOverride, isLoading: false, error: null, refetch: vi.fn() } as never);
+    const queryClient = createTestQueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[`/founders/${candidateOverride.id}`]}>
+          <Routes><Route path="/founders/:founderId" element={<FounderProfilePage />} /></Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  test("renders external profile links with a safe HTTP target", () => {
+    renderFounder({
+      ...candidate,
+      profile: {
+        company: "Example Co",
+        role: "Founder",
+        location: "Berlin",
+        summary: null,
+        website: "https://example.com/founder",
+        deck_url: "https://example.com/pitch-deck.pdf",
+        deck_title: null,
+        deck_stage: null,
+        inbound_label: null,
+        source_types: [],
+        observation_count: 0,
+        completeness: 0,
+      },
+    });
+
+    const link = screen.getByRole("link", { name: "Website" });
+    expect(link).toHaveAttribute("href", "https://example.com/founder");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noreferrer");
+
+    const deckLink = screen.getByRole("link", { name: "Pitch deck" });
+    expect(deckLink).toHaveAttribute("href", "https://example.com/pitch-deck.pdf");
+    expect(deckLink).toHaveAttribute("target", "_blank");
+    expect(deckLink).toHaveAttribute("rel", "noreferrer");
+
+    const githubLink = screen.getByRole("link", { name: "GitHub" });
+    expect(githubLink).toHaveAttribute("href", "https://github.com/test-founder");
+    expect(githubLink).toHaveAttribute("target", "_blank");
+    expect(githubLink).toHaveAttribute("rel", "noreferrer");
+  });
+
+  test("does not render unsafe or missing profile destinations as links", () => {
+    renderFounder({
+      ...candidate,
+      handles: { github: "https://evil.example/founder" },
+      profile: {
+        company: "Example Co",
+        role: "Founder",
+        location: "Berlin",
+        summary: null,
+        website: "javascript:alert(1)",
+        deck_url: "",
+        deck_title: null,
+        deck_stage: null,
+        inbound_label: null,
+        source_types: [],
+        observation_count: 0,
+        completeness: 0,
+      },
+    });
+
+    expect(screen.queryByRole("link", { name: "Website" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Pitch deck" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "GitHub" })).not.toBeInTheDocument();
+  });
+
+  test("renders claim evidence sources with a safe HTTP target", () => {
+    renderFounder({
+      ...candidate,
+      observations: [{
+        id: "research-source",
+        predicate: "research_founder_evidence",
+        object_value: "Founder has relevant experience",
+        confidence: 0.8,
+        observed_at: "2026-08-01T00:00:00Z",
+        source_type: "web",
+        source_uri: "https://example.com/evidence",
+      }],
+    });
+
+    const link = screen.getByRole("link", { name: "Open source" });
+    expect(link).toHaveAttribute("href", "https://example.com/evidence");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noreferrer");
+  });
+
+  test.each(["javascript:alert(1)", ""]) ("does not render unsafe or missing claim sources as links (%s)", (sourceUri) => {
+    renderFounder({
+      ...candidate,
+      observations: [{
+        id: "research-source",
+        predicate: "research_founder_evidence",
+        object_value: "Founder has relevant experience",
+        confidence: 0.8,
+        observed_at: "2026-08-01T00:00:00Z",
+        source_type: "web",
+        source_uri: sourceUri,
+      }],
+    });
+
+    expect(screen.queryByRole("link", { name: "Open source" })).not.toBeInTheDocument();
+  });
+});
