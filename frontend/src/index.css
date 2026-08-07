@@ -8,7 +8,7 @@
   --color-ink: #1b2638;
   --color-ink-2: #344258;
   --color-muted: #5f7087;
-  --color-muted-2: #718198;
+  --color-muted-2: #53657e;
   --color-line: #e3eaf3;
   --color-line-2: #cfd9e7;
   --color-accent: #415a7d;
@@ -51,9 +51,9 @@ button { cursor: pointer; }
 .soft-card { background: rgba(244,247,251,.82); border: 0; box-shadow: inset 0 1px 0 rgba(255,255,255,.7); }
 .eyebrow { color: #65758a; font-size: 10px; line-height: 1.4; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
 .page-title { font-size: clamp(1.75rem, 2.4vw, 2.25rem); line-height: 1.12; font-weight: 700; letter-spacing: -.035em; }
-.page-description { margin-top: .5rem; max-width: 46rem; color: #718097; font-size: .875rem; line-height: 1.65; }
+.page-description { margin-top: .5rem; max-width: 46rem; color: var(--color-muted-2); font-size: .875rem; line-height: 1.65; }
 .section-title { color: #1b2638; font-size: 1rem; line-height: 1.35; font-weight: 700; letter-spacing: -.015em; }
-.supporting-text { color: #718097; font-size: .75rem; line-height: 1.6; }
+.supporting-text { color: var(--color-muted-2); font-size: .75rem; line-height: 1.6; }
 .data-label { color: #65758a; font-size: .625rem; line-height: 1.35; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
 .data-value { margin-top: .3rem; color: #344258; font-size: .8125rem; line-height: 1.35; font-weight: 600; }
 .metric-value { color: #1b2638; font-size: 1.5rem; line-height: 1; font-weight: 700; letter-spacing: -.025em; }
@@ -71,5 +71,10 @@ button { cursor: pointer; }
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: .01ms !important;
+  }
+
+  [class~="group-hover:translate-x-1"],
+  [class~="group-hover:scale-125"] {
+    transform: none !important;
   }
 }
