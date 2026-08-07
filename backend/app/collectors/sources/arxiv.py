@@ -9,6 +9,7 @@ retained as a confidence and momentum signal, not an eligibility gate.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
@@ -35,6 +36,26 @@ _SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1"
 _DEFAULT_MAX_RESULTS = 50
 _MAX_EVIDENCE_PAGES = 20
 _MAX_PAGE_CHARS = 2000
+_MAX_PDF_BYTES = 25 * 1024 * 1024
+_ATOM_NAMESPACE = "http://www.w3.org/2005/Atom"
+_ATOM_FEED_TAG = f"{{{_ATOM_NAMESPACE}}}feed"
+_ATOM_ENTRY_TAG = f"{{{_ATOM_NAMESPACE}}}entry"
+_ATOM_FIELDS = {
+    "author",
+    "category",
+    "contributor",
+    "generator",
+    "icon",
+    "id",
+    "link",
+    "logo",
+    "name",
+    "published",
+    "rights",
+    "summary",
+    "title",
+    "updated",
+}
 
 # arXiv categories relevant to typical VC theses (configurable).
 _DEFAULT_CATEGORIES = [
@@ -63,6 +84,75 @@ class ArxivConnector(Connector):
     # ------------------------------------------------------------------
     # Discovery
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_atom_feed(payload: str | bytes, *, context: str) -> ET.Element:
+        """Parse an arXiv response only when it is an exact Atom feed.
+
+        ElementTree accepts unqualified tags and silently ignores entries in a
+        different namespace when queried with an Atom namespace.  That can turn
+        an HTML/error payload into a successful empty page, so the connector
+        validates the root and every entry tag before extracting any fields.
+        """
+        try:
+            root = ET.fromstring(payload)
+        except (ET.ParseError, ValueError) as exc:
+            raise ConnectorError(
+                f"{context}: invalid provider response: malformed Atom XML"
+            ) from exc
+
+        if root.tag != _ATOM_FEED_TAG:
+            raise ConnectorError(f"{context}: invalid provider response: expected Atom feed")
+
+        # Reject an unqualified or foreign-namespace entry instead of silently
+        # treating it as an empty result.  Atom extensions remain allowed.
+        for element in root.iter():
+            if element is root:
+                continue
+            if not isinstance(element.tag, str):
+                continue
+            local_name = element.tag.rsplit("}", 1)[-1]
+            if local_name in _ATOM_FIELDS or local_name == "entry":
+                expected_tag = f"{{{_ATOM_NAMESPACE}}}{local_name}"
+                if element.tag != expected_tag:
+                    field = "entry" if local_name == "entry" else local_name
+                    raise ConnectorError(
+                        f"{context}: invalid provider response: Atom {field} "
+                        "is not in the Atom namespace"
+                    )
+        return root
+
+    @staticmethod
+    def _atom_required_text(
+        element: ET.Element,
+        field: str,
+        *,
+        context: str,
+    ) -> str:
+        value = element.findtext(f"{{{_ATOM_NAMESPACE}}}{field}", "").strip()
+        if not value:
+            raise ConnectorError(
+                f"{context}: invalid provider response: Atom entry is missing {field}"
+            )
+        return value
+
+    @staticmethod
+    def _api_source_locator(
+        source_uri: str,
+        *,
+        field: str,
+        query: str,
+        arxiv_id: str | None = None,
+    ) -> dict[str, object]:
+        locator: dict[str, object] = {
+            "kind": "api_field",
+            "source_uri": source_uri,
+            "field": field,
+            "query": query,
+        }
+        if arxiv_id:
+            locator["arxiv_id"] = arxiv_id
+        return locator
 
     async def discover(self, query: str, page: int = 1) -> list[Seed]:
         """Search arXiv by topic and return author seeds.
@@ -101,24 +191,27 @@ class ArxivConnector(Connector):
         seeds: list[Seed] = []
         seen_authors: set[str] = set()
 
-        try:
-            root = ET.fromstring(resp.text)
-        except Exception as exc:
-            raise normalize_connector_error(
-                exc, context="arxiv_search_failed: invalid provider response"
-            ) from exc
-        if not root.tag.endswith("feed"):
-            raise ConnectorError("arxiv_search_failed: invalid provider response: missing feed")
-        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        root = self._parse_atom_feed(resp.content, context="arxiv_search_failed")
+        ns = {"atom": _ATOM_NAMESPACE}
+        source_uri = str(resp.url)
 
         for entry in root.findall("atom:entry", ns):
-            arxiv_id = entry.findtext("atom:id", "", ns).split("/")[-1]
+            entry_id = self._atom_required_text(
+                entry,
+                "id",
+                context="arxiv_search_failed",
+            )
+            arxiv_id = entry_id.rstrip("/").split("/")[-1]
+            if not arxiv_id:
+                raise ConnectorError(
+                    "arxiv_search_failed: invalid provider response: Atom entry has an empty id"
+                )
 
             # Get citation count from Semantic Scholar
             citations = await self._fetch_citations(arxiv_id)
             authors = entry.findall("atom:author", ns)
             for author in authors:
-                name = author.findtext("atom:name", "", ns)
+                name = author.findtext(f"{{{_ATOM_NAMESPACE}}}name", "").strip()
                 if name and name.lower() not in seen_authors:
                     seen_authors.add(name.lower())
                     seeds.append(
@@ -131,6 +224,12 @@ class ArxivConnector(Connector):
                                 "citations": citations,
                                 "citation_signal": "context_only",
                                 "query": query,
+                                "source_locator": self._api_source_locator(
+                                    source_uri,
+                                    field="author",
+                                    query=query,
+                                    arxiv_id=arxiv_id,
+                                ),
                             },
                         )
                     )
@@ -148,8 +247,10 @@ class ArxivConnector(Connector):
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    citations: int = data.get("citationCount", 0)
-                    return citations
+                    raw_citations = data.get("citationCount", 0)
+                    if isinstance(raw_citations, int) and not isinstance(raw_citations, bool):
+                        return max(raw_citations, 0)
+                    logger.warning("semantic_scholar_invalid_citations", arxiv_id=arxiv_id)
             except Exception:
                 logger.warning("semantic_scholar_failed", arxiv_id=arxiv_id)
         return 0
@@ -161,10 +262,11 @@ class ArxivConnector(Connector):
         pdf_url: str,
         author_name: str,
         observed_at: datetime,
+        author_identity_confidence: float = 0.8,
     ) -> list[dict[str, object]]:
         """Extract bounded, page-addressable evidence from a deep PDF."""
         try:
-            reader = PdfReader(io.BytesIO(pdf_bytes))
+            reader = PdfReader(io.BytesIO(pdf_bytes), strict=True)
         except Exception as exc:
             logger.warning("arxiv_pdf_parse_failed", error=str(exc))
             return []
@@ -173,32 +275,120 @@ class ArxivConnector(Connector):
         for page_number, page in enumerate(reader.pages, start=1):
             if page_number > _MAX_EVIDENCE_PAGES:
                 break
+            text: str
+            reason: str | None
             try:
-                text = (page.extract_text() or "").strip()
+                extracted_text = page.extract_text() or ""
+                text = extracted_text.strip()
             except Exception as exc:
                 logger.warning("arxiv_pdf_page_extract_failed", page=page_number, error=str(exc))
-                continue
-            if not text:
-                continue
-            bounded_text = text[:_MAX_PAGE_CHARS]
+                text = ""
+                reason = "text_extraction_failed"
+            else:
+                reason = "no_extractable_text" if not text else None
+            bounded_text = text[:_MAX_PAGE_CHARS] or "[No extractable text on page]"
+            locator: dict[str, object] = {
+                "kind": "pdf_page",
+                "source_uri": pdf_url,
+                "page": page_number,
+                "char_start": 0,
+                "char_end": len(text[:_MAX_PAGE_CHARS]),
+                "author": author_name,
+                "author_identity_confidence": author_identity_confidence,
+            }
+            if reason is not None:
+                locator["reason"] = reason
             observations.append(
                 {
                     "predicate": "arxiv_pdf_page_text",
                     "object_value": bounded_text,
                     "observed_at": observed_at.isoformat(),
                     "confidence": 0.9,
-                    "source_locator": {
-                        "kind": "pdf_page",
-                        "source_uri": pdf_url,
-                        "page": page_number,
-                        "char_start": 0,
-                        "char_end": len(bounded_text),
-                        "author": author_name,
-                        "author_identity_confidence": 0.8,
-                    },
+                    "source_locator": locator,
                 }
             )
         return observations
+
+    @staticmethod
+    def _count_pdf_pages(pdf_bytes: bytes, *, max_pages: int) -> int:
+        """Parse a bounded PDF in a worker thread and return its page count."""
+        try:
+            reader = PdfReader(io.BytesIO(pdf_bytes), strict=True)
+            if reader.is_encrypted:
+                raise ConnectorError("arxiv_pdf_rejected: encrypted PDF")
+            page_count = len(reader.pages)
+        except ConnectorError:
+            raise
+        except Exception as exc:
+            raise ConnectorError("arxiv_pdf_rejected: PDF could not be parsed safely") from exc
+        if page_count < 1:
+            raise ConnectorError("arxiv_pdf_rejected: PDF has no pages")
+        if page_count > max_pages:
+            raise ConnectorError(f"arxiv_pdf_rejected: PDF exceeds {max_pages}-page limit")
+        return page_count
+
+    @staticmethod
+    def _validate_pdf_headers(
+        response: httpx.Response,
+        *,
+        max_bytes: int,
+    ) -> None:
+        if response.status_code != 200:
+            raise ConnectorError(f"arxiv_pdf_rejected: HTTP {response.status_code}")
+
+        content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/pdf":
+            raise ConnectorError("arxiv_pdf_rejected: response is not application/pdf")
+
+        declared_length = response.headers.get("content-length", "").strip()
+        if declared_length.isdigit() and int(declared_length) > max_bytes:
+            raise ConnectorError(f"arxiv_pdf_rejected: response exceeds {max_bytes}-byte limit")
+
+    @classmethod
+    async def _read_bounded_pdf_response(
+        cls,
+        client: httpx.AsyncClient,
+        pdf_url: str,
+        *,
+        max_bytes: int = _MAX_PDF_BYTES,
+    ) -> httpx.Response:
+        """Stream a PDF response without buffering more than its byte cap."""
+        async with client.stream("GET", pdf_url, timeout=60.0) as response:
+            cls._validate_pdf_headers(response, max_bytes=max_bytes)
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in response.aiter_bytes(chunk_size=64 * 1024):
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ConnectorError(
+                        f"arxiv_pdf_rejected: response exceeds {max_bytes}-byte limit"
+                    )
+                chunks.append(chunk)
+            return httpx.Response(
+                response.status_code,
+                headers=response.headers,
+                content=b"".join(chunks),
+                request=response.request,
+            )
+
+    @classmethod
+    async def _validate_pdf_response(
+        cls,
+        response: httpx.Response,
+        *,
+        max_bytes: int = _MAX_PDF_BYTES,
+        max_pages: int = _MAX_EVIDENCE_PAGES,
+    ) -> bytes:
+        """Validate response metadata and parse a bounded PDF off the event loop."""
+        cls._validate_pdf_headers(response, max_bytes=max_bytes)
+        pdf_bytes = response.content
+        if len(pdf_bytes) > max_bytes:
+            raise ConnectorError(f"arxiv_pdf_rejected: response exceeds {max_bytes}-byte limit")
+        if not pdf_bytes.startswith(b"%PDF-"):
+            raise ConnectorError("arxiv_pdf_rejected: response does not have PDF magic bytes")
+
+        await asyncio.to_thread(cls._count_pdf_pages, pdf_bytes, max_pages=max_pages)
+        return pdf_bytes
 
     # ------------------------------------------------------------------
     # Collect
@@ -224,8 +414,9 @@ class ArxivConnector(Connector):
         if resp.status_code != 200:
             raise ConnectorError(f"arxiv_author_fetch_failed: {resp.status_code}")
 
-        root = ET.fromstring(resp.text)
+        root = self._parse_atom_feed(resp.content, context="arxiv_author_fetch_failed")
         ns = {"atom": "http://www.w3.org/2005/Atom"}
+        source_uri = str(resp.url)
 
         papers: list[dict[str, Any]] = []
         coauthors: set[str] = set()
@@ -233,10 +424,20 @@ class ArxivConnector(Connector):
         paper_count = 0
 
         for entry in root.findall("atom:entry", ns):
-            arxiv_id = entry.findtext("atom:id", "", ns).split("/")[-1]
+            entry_id = self._atom_required_text(
+                entry,
+                "id",
+                context="arxiv_author_fetch_failed",
+            )
+            arxiv_id = entry_id.rstrip("/").split("/")[-1]
+            if not arxiv_id:
+                raise ConnectorError(
+                    "arxiv_author_fetch_failed: invalid provider response: "
+                    "Atom entry has an empty id"
+                )
             title = entry.findtext("atom:title", "", ns).strip()
             summary = entry.findtext("atom:summary", "", ns).strip()
-            published = entry.findtext("atom:published", "", ns)
+            published = entry.findtext("atom:published", "", ns) or ""
 
             # Categories
             categories = []
@@ -277,6 +478,11 @@ class ArxivConnector(Connector):
                 "object_value": str(paper_count),
                 "observed_at": now.isoformat(),
                 "confidence": 1.0,
+                "source_locator": self._api_source_locator(
+                    source_uri,
+                    field="paper_count",
+                    query=author_name,
+                ),
             }
         )
         observations.append(
@@ -285,14 +491,24 @@ class ArxivConnector(Connector):
                 "object_value": str(total_citations),
                 "observed_at": now.isoformat(),
                 "confidence": 0.8,
+                "source_locator": self._api_source_locator(
+                    source_uri,
+                    field="total_citations",
+                    query=author_name,
+                ),
             }
         )
         observations.append(
             {
                 "predicate": "arxiv_coauthors",
-                "object_value": ",".join(sorted(coauthors)),
+                "object_value": ",".join(sorted(coauthors)) or "[No coauthors found]",
                 "observed_at": now.isoformat(),
                 "confidence": 0.7,
+                "source_locator": self._api_source_locator(
+                    source_uri,
+                    field="coauthors",
+                    query=author_name,
+                ),
             }
         )
 
@@ -304,32 +520,46 @@ class ArxivConnector(Connector):
             pdf_url = f"https://arxiv.org/pdf/{top_paper['arxiv_id']}.pdf"
             try:
                 async with await self._client() as pdf_client:
-                    pdf_resp = await pdf_client.get(pdf_url, timeout=60.0)
-                if pdf_resp.status_code == 200:
-                    pdf_bytes = pdf_resp.content
+                    pdf_resp = await self._read_bounded_pdf_response(pdf_client, pdf_url)
+                pdf_bytes = await self._validate_pdf_response(pdf_resp)
+                if pdf_bytes:
                     observations.extend(
-                        self._extract_pdf_page_observations(
+                        await asyncio.to_thread(
+                            self._extract_pdf_page_observations,
                             pdf_bytes,
                             pdf_url=pdf_url,
                             author_name=author_name,
                             observed_at=now,
+                            author_identity_confidence=(
+                                0.8
+                                if any(
+                                    name.lower() == author_name.lower()
+                                    for name in top_paper.get("authors", [])
+                                )
+                                else 0.0
+                            ),
                         )
                     )
-                    if pdf_bytes:
-                        return Collected(
-                            content=pdf_bytes,
-                            content_type="application/pdf",
-                            observations=observations,
-                            source_type="arxiv",
-                            uri=pdf_url,
-                            license_hint={
-                                "source": "arXiv PDF",
-                                "terms": "https://info.arxiv.org/help/api/tou.html",
-                                "evidence_depth": "page_coordinates",
-                            },
-                        )
-            except Exception:
-                logger.warning("arxiv_pdf_download_failed", arxiv_id=top_paper["arxiv_id"])
+                    return Collected(
+                        content=pdf_bytes,
+                        content_type="application/pdf",
+                        observations=observations,
+                        source_type="arxiv",
+                        uri=pdf_url,
+                        license_hint={
+                            "source": "arXiv PDF",
+                            "terms": "https://info.arxiv.org/help/api/tou.html",
+                            "evidence_depth": "page_coordinates",
+                        },
+                    )
+            except ConnectorError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "arxiv_pdf_download_failed",
+                    arxiv_id=top_paper["arxiv_id"],
+                    error_type=type(exc).__name__,
+                )
 
         raw_bytes = canonical_json_bytes(papers)
         return Collected(
@@ -337,6 +567,6 @@ class ArxivConnector(Connector):
             content_type="application/json",
             observations=observations,
             source_type="arxiv",
-            uri=f"https://arxiv.org/search/?query={author_name}&searchtype=author",
+            uri=source_uri,
             license_hint={"source": "arXiv API", "terms": "https://info.arxiv.org/help/api/tou.html"},
         )

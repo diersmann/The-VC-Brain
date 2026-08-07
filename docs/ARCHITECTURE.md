@@ -588,7 +588,7 @@ The current persistence slice stores append-only opportunity channel touches wit
 
 Funded and declined outcomes update channel estimates without becoming direct founder-merit features. A Bayesian exploration policy can suggest underexplored channels with promising quality signals while reserving capacity for discovery outside historically successful networks. Reports show quality and uncertainty, not only lead volume.
 
-Evidence-aware source depth is connector-specific. Deep arXiv collection retains a primary PDF and emits bounded page-coordinate observations with author-identity confidence. Podcast and YouTube transcript/timestamp extraction, source-owner licensing, and durable provider cursor contracts are prerequisites before those sources can contribute equivalent evidence depth.
+Evidence-aware source depth is connector-specific. Deep arXiv collection validates the exact Atom feed namespace, retains only a successful `application/pdf` response with PDF magic bytes, and bounds accepted documents to 25 MiB and 20 pages before off-thread parsing. It retains the primary PDF and emits one bounded page-coordinate observation per page, including `[No extractable text on page]` with a reason locator when text is unavailable; API aggregate observations retain field-level source locators. Podcast and YouTube transcript/timestamp extraction, source-owner licensing, and durable provider cursor contracts are prerequisites before those sources can contribute equivalent evidence depth.
 
 ### Outcome Feedback
 
