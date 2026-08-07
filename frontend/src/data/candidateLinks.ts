@@ -84,6 +84,42 @@ export function safeHttpUrl(value: string | null | undefined): string | null {
   return parsed?.toString() ?? null;
 }
 
+const mailtoRecipientPattern = /^[A-Za-z0-9!$'*+/^_`{|}~-]+(?:\.[A-Za-z0-9!$'*+/^_`{|}~-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+
+/**
+ * Build the manual email-client handoff without allowing recipient header
+ * injection. Subject and body are URI components; HTTP URL policy is kept
+ * separate in safeExternalUrl/safeHttpUrl.
+ */
+export function safeMailto(
+  recipient: string | null | undefined,
+  subject: string,
+  body: string,
+): string | null {
+  if (!recipient || hasControlCharacter(recipient)) return null;
+  const normalizedRecipient = recipient.trim();
+  if (!mailtoRecipientPattern.test(normalizedRecipient)) return null;
+
+  try {
+    const atIndex = normalizedRecipient.lastIndexOf("@");
+    const localPart = normalizedRecipient.slice(0, atIndex);
+    if (localPart.length > 64 || normalizedRecipient.length > 254) return null;
+    const encodedLocalPart = encodeURIComponent(normalizedRecipient.slice(0, atIndex));
+    const domain = normalizedRecipient.slice(atIndex + 1);
+    return `mailto:${encodedLocalPart}@${domain}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  } catch {
+    return null;
+  }
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
 function parsedUrl(value: string): URL | null {
   try {
     const url = new URL(value);

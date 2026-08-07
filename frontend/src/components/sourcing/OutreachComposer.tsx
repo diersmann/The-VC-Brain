@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Copy, ExternalLink, FileQuestion, Mail, MessageSquareText, Send, Sparkles, X } from "lucide-react";
 
 import { draftCandidateOutreach, type OutreachDraft, type OutreachEmailType } from "../../api/candidates";
+import { safeMailto } from "../../data/candidateLinks";
 import type { Candidate } from "../../types/candidate";
 import { CandidateAvatar } from "../common/CandidateAvatar";
 
@@ -57,6 +58,10 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
     };
   }, [onClose]);
 
+  useEffect(() => {
+    setApproved(false);
+  }, [candidate.email, candidate.consent_state]);
+
   const generateDraft = async () => {
     setStatus("drafting");
     try {
@@ -64,6 +69,7 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
       setDraft(nextDraft);
       setSubject(nextDraft.subject);
       setBody(nextDraft.body);
+      setApproved(false);
       setStatus("idle");
     } catch {
       setStatus("error");
@@ -76,13 +82,13 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
     window.setTimeout(() => setStatus("idle"), 1800);
   };
 
-  const mailto = candidate.email
-    ? `mailto:${candidate.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-    : null;
+  const mailto = safeMailto(candidate.email, subject, body);
   const suppressionReason = candidate.email
     ? ["opted_out", "suppressed", "do_not_contact"].includes(candidate.consent_state)
       ? `Suppressed by consent state: ${candidate.consent_state}`
-      : null
+      : mailto
+        ? null
+        : "No verified recipient email"
     : "No verified recipient email";
 
   return (
@@ -166,8 +172,8 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
                 </span>
               </div>
               {draft.warning && <div className="rounded-md bg-[#fff1df] px-3 py-2 text-[11px] leading-5 text-[#946225]">{draft.warning}</div>}
-              <label className="block"><span className="data-label mb-1.5 block">Subject</span><input value={subject} onChange={(event) => setSubject(event.target.value)} className="w-full rounded-md bg-surface-2 px-3 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-accent/20" /></label>
-              <label className="block"><span className="data-label mb-1.5 block">Body</span><textarea value={body} onChange={(event) => setBody(event.target.value)} rows={10} className="w-full resize-y rounded-md bg-surface-2 px-3 py-3 text-sm leading-6 outline-none focus:ring-2 focus:ring-accent/20" /></label>
+              <label className="block"><span className="data-label mb-1.5 block">Subject</span><input value={subject} onChange={(event) => { setSubject(event.target.value); setApproved(false); }} className="w-full rounded-md bg-surface-2 px-3 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-accent/20" /></label>
+              <label className="block"><span className="data-label mb-1.5 block">Body</span><textarea value={body} onChange={(event) => { setBody(event.target.value); setApproved(false); }} rows={10} className="w-full resize-y rounded-md bg-surface-2 px-3 py-3 text-sm leading-6 outline-none focus:ring-2 focus:ring-accent/20" /></label>
               <label className={`flex items-start gap-2 rounded-md p-3 ${suppressionReason ? "bg-[#fff1df]" : "bg-[#e4f2ed]"}`}>
                 <input type="checkbox" checked={approved} onChange={(event) => setApproved(event.target.checked)} disabled={Boolean(suppressionReason)} className="mt-0.5 h-4 w-4 accent-accent" />
                 <span className="text-[11px] leading-5"><span className="font-bold">I approve this edited draft for manual handoff.</span><br />This does not claim provider delivery or a reply.</span>
@@ -179,7 +185,7 @@ export function OutreachComposer({ candidate, onClose }: { candidate: Candidate;
         {draft && (
           <footer className="flex flex-wrap items-center gap-2 bg-white/75 px-5 py-4 shadow-[0_-8px_24px_rgba(70,91,120,.06)]">
             <button type="button" onClick={() => void copyDraft()} className="inline-flex items-center gap-2 rounded-md bg-surface-2 px-4 py-2.5 text-xs font-bold text-ink-2"><Copy className="h-3.5 w-3.5" />{status === "copied" ? "Copied" : "Copy draft"}</button>
-            {mailto && !suppressionReason ? <a href={mailto} aria-disabled={!approved} onClick={(event) => { if (!approved) event.preventDefault(); }} className={`ml-auto inline-flex items-center gap-2 rounded-md px-4 py-2.5 text-xs font-bold text-white ${approved ? "bg-accent" : "cursor-not-allowed bg-accent/40"}`}><Send className="h-3.5 w-3.5" />{approved ? "Open in email" : "Approve to hand off"}<ExternalLink className="h-3 w-3" /></a> : <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted"><FileQuestion className="h-3.5 w-3.5" />No verified email; copy the draft manually.</span>}
+            {mailto && !suppressionReason ? <a role="link" href={approved ? mailto : undefined} aria-disabled={!approved} onClick={(event) => { if (!approved) event.preventDefault(); }} className={`ml-auto inline-flex items-center gap-2 rounded-md px-4 py-2.5 text-xs font-bold text-white ${approved ? "bg-accent" : "cursor-not-allowed bg-accent/40"}`}><Send className="h-3.5 w-3.5" />{approved ? "Open in email" : "Approve to hand off"}<ExternalLink className="h-3 w-3" /></a> : <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted"><FileQuestion className="h-3.5 w-3.5" />No verified email; copy the draft manually.</span>}
           </footer>
         )}
       </section>

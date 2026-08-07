@@ -75,7 +75,50 @@ describe("OutreachComposer", () => {
     expect(await screen.findByDisplayValue("Hello")).toBeInTheDocument();
     const handoff = screen.getByRole("link", { name: /Approve to hand off/ });
     expect(handoff).toHaveAttribute("aria-disabled", "true");
+    expect(handoff).not.toHaveAttribute("href");
     fireEvent.click(screen.getByRole("checkbox", { name: /I approve this edited draft/ }));
     expect(screen.getByRole("link", { name: /Open in email/ })).toHaveAttribute("href", expect.stringContaining("mailto:"));
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Body" }), { target: { value: "Edited body" } });
+    expect(screen.getByRole("link", { name: /Approve to hand off/ })).toHaveAttribute("aria-disabled", "true");
+  });
+
+  test("keeps manual handoff disabled for suppressed consent", async () => {
+    vi.mocked(draftCandidateOutreach).mockResolvedValue({
+      subject: "Hello",
+      body: "Body",
+      recipient_email: candidate.email,
+      generation_mode: "template",
+      model: null,
+      warning: null,
+    });
+    render(<OutreachComposer candidate={{ ...candidate, consent_state: "suppressed" }} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Draft with email agent" }));
+    await screen.findByDisplayValue("Hello");
+
+    expect(screen.getByText("Suppressed by consent state: suppressed. Manual email handoff is disabled.")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /I approve this edited draft/ })).toBeDisabled();
+    expect(screen.queryByRole("link", { name: /Open in email/ })).not.toBeInTheDocument();
+  });
+
+  test("invalidates approval when the recipient changes", async () => {
+    vi.mocked(draftCandidateOutreach).mockResolvedValue({
+      subject: "Hello",
+      body: "Body",
+      recipient_email: candidate.email,
+      generation_mode: "template",
+      model: null,
+      warning: null,
+    });
+    const { rerender } = render(<OutreachComposer candidate={candidate} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Draft with email agent" }));
+    await screen.findByDisplayValue("Hello");
+    fireEvent.click(screen.getByRole("checkbox", { name: /I approve this edited draft/ }));
+    expect(screen.getByRole("link", { name: /Open in email/ })).toHaveAttribute("href", expect.stringContaining("ada@example.com"));
+
+    rerender(<OutreachComposer candidate={{ ...candidate, email: "new@example.com" }} onClose={vi.fn()} />);
+    expect(screen.getByRole("link", { name: /Approve to hand off/ })).not.toHaveAttribute("href");
   });
 });

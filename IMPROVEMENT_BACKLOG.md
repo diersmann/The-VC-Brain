@@ -189,7 +189,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-078 - Make the public submission form trustworthy and accessible.** Observed: public copy said next cohort, form lacked persistent labels/privacy/support, silent failure relied on alert, and Submit Another retained the previous file. **Partial completion:** `/submit` now uses honest review copy, visible labels and autocomplete, announced submission/file errors, explicit storage/correction guidance, accessible busy state, preserved retry values, and clears the native file input on reset/removal. **Blocked:** durable upload progress/retry status and a real privacy/support destination require a persisted public-submission/job-status contract and approved contact/privacy content; the current endpoint returns only an immediate opportunity ID.
 
-- [blocked] **VCB-079 - Sanitize every external link through one utility.** Observed: several components anchored raw backend URLs despite candidateLinks.ts having a safe URL helper. **Partial completion:** `candidateLinks.ts` now exports strict HTTP(S) validators, rejects unsafe schemes, and CandidateCard, FounderProfile claims, DecisionDetail decks, and the inbound deck link use the shared policy with focused tests. **Blocked:** the remaining `mailto:` outreach action is a deliberate email client action rather than an HTTP external link, while a complete audit still needs a shared non-HTTP action policy and rendered tests for every route-level link.
+- [blocked] **VCB-079 - Sanitize every external link through one utility.** Observed: several components anchored raw backend URLs despite candidateLinks.ts having a safe URL helper. **Partial completion:** `candidateLinks.ts` now exports strict HTTP(S) validators, rejects unsafe schemes, and CandidateCard, FounderProfile claims, DecisionDetail decks, and the inbound deck link use the shared policy with focused tests. The reviewed outreach composer now uses a shared `safeMailto` builder that rejects blank, control/newline, and malformed recipients while encoding subject/body; HTTP sanitizer semantics remain unchanged. **Blocked:** a complete audit still needs a shared non-HTTP action policy and rendered tests for every route-level link.
 
 - [blocked] **VCB-080 - Add route-level error boundaries and a real 404.** Observed: malformed dates could produce invalid localized output; catch-all rendered Coming soon for Not Found. **Partial completion:** date formatting now returns `Unknown date` for malformed timestamps, and the catch-all route has a useful 404 recovery page with a workspace link and tests. **Blocked:** root/route error boundaries and redacted diagnostics still require an agreed client-side error-reporting contract; no telemetry or redaction sink exists yet.
 
@@ -259,8 +259,8 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - Frontend ESLint: passed.
 - Frontend TypeScript: passed.
-- Frontend Vitest: 83 tests passed.
-- Frontend production build: passed; current bundle is 407.76 kB JavaScript raw / 137.57 kB gzip and 69.73 kB CSS raw (entry JavaScript 218.56 kB raw / 71.43 kB gzip).
+- Frontend Vitest: 94 tests passed.
+- Frontend production build: passed; current bundle is 408.21 kB JavaScript raw / 137.70 kB gzip and 69.73 kB CSS raw (entry JavaScript 218.51 kB raw / 71.41 kB gzip).
 - Frontend bundle budget: passed.
 - Backend pytest: 298 tests passed with one Starlette/httpx deprecation warning.
 - Backend Ruff and configured mypy: passed.
