@@ -50,3 +50,20 @@ async def test_update_job_ignores_malformed_ids() -> None:
         is None
     )
     session.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_job_clears_previous_error_on_success() -> None:
+    job = JobRun(id=uuid.uuid4(), job_type="score_candidate", last_error="stale")
+    session = AsyncMock()
+    session.get.return_value = job
+
+    await update_job(
+        session,
+        job.id,
+        status="succeeded",
+        phase="complete",
+        clear_error=True,
+    )
+
+    assert job.last_error is None

@@ -109,6 +109,7 @@ The backend coordinates the application:
 - Optional cold-start inputs include bounded work samples, learning milestones, interview/work-sample context, and reference context; missing public history remains an explicit unknown rather than a negative feature.
 - Sourcing-to-decision workflow state
 - Collection, correlation, and analysis jobs
+- Durable `job_runs` IDs/status/result/error metadata now track discovery, research, scoring, and memo queue entry points; status reads expose `updated_at` for bounded polling. Identity/process/avatar jobs, lease-based crash recovery, and cancel/retry orchestration remain follow-up work.
 - Profile, score, graph, and memo delivery
 - Versioned thesis, rubric, memo, and decision contracts
 - Opportunity-scoped jobs carry and validate the exact opportunity ID; person-only fallback selection is not permitted for research, memo, or decisions.

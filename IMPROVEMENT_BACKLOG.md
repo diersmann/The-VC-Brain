@@ -340,6 +340,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-03: VCB-102 outcome-contract slice added Migration 029 and append-only domain-separated outcome records with provenance, horizon, censoring, and confidence; authoritative longitudinal collection and label governance remain blocked.
 - 2026-08-03: VCB-103–VCB-110 audit marked calibration, source-value measurement, ranking experiments, channel learning, saved plans/alerts, IC collaboration/export, founder rights, and graph intelligence blocked where the required evaluation data, auth, legal, or domain contracts do not exist; no unsupported metrics or product claims were added.
 - 2026-08-03: VCB-006 and VCB-030 audit marked activation-token identity binding and rights-management workflows blocked on the missing authenticated principal, tenant, and lawful-erasure contracts; no unsafe email-only matching or destructive deletion was introduced.
+- 2026-08-07: VCB-051/052/063 bounded async-lifecycle slice integrated durable JobRun IDs, running/failed/succeeded terminal status, result/error metadata, and updated-at polling data into research, scoring, memo, and discovery queue entry points; batch queue failures now mark jobs failed. Identity/process/avatar jobs, crash-safe leases, cancellation/retry orchestration, and cross-workflow cache coordination remain blocked scope.
 
 ## First practical milestone
 

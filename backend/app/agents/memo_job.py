@@ -28,6 +28,7 @@ from app.db.models import (
     ScoreSnapshot,
 )
 from app.decision_proposal import build_decision_proposal
+from app.job_ledger import update_job
 from app.privacy import external_ai_use_decision, redact_direct_identifiers
 
 logger = structlog.get_logger(__name__)
@@ -73,7 +74,7 @@ def _contradiction_context(claims: list[Claim]) -> str:
 
 
 async def generate_memo_job(
-    ctx: dict[str, Any], person_id: str, opportunity_id: str
+    ctx: dict[str, Any], person_id: str, opportunity_id: str, job_id: str | None = None
 ) -> dict[str, Any]:
     """Generate an investment memo for a candidate.
 
@@ -88,15 +89,33 @@ async def generate_memo_job(
     logger.info("generate_memo_job_started", person_id=person_id, opportunity_id=opportunity_id)
 
     async with _session_ctx(ctx) as session:
+        if job_id:
+            await update_job(session, job_id, status="running", phase="memo", attempt=1)
+            await session.commit()
+
+        async def finish_error(error: str) -> dict[str, Any]:
+            if job_id:
+                await update_job(
+                    session,
+                    job_id,
+                    status="failed",
+                    phase="memo",
+                    attempt=1,
+                    last_error=error,
+                    result={"error": error, "person_id": person_id},
+                )
+                await session.commit()
+            return {"error": error, "person_id": person_id}
+
         person = await session.get(Person, uuid.UUID(person_id))
         if person is None:
             logger.error("memo_person_not_found", person_id=person_id)
-            return {"error": "person_not_found"}
+            return await finish_error("person_not_found")
 
         try:
             requested_opportunity_id = uuid.UUID(opportunity_id)
         except ValueError:
-            return {"error": "opportunity_id_required", "person_id": person_id}
+            return await finish_error("opportunity_id_required")
 
         opportunity_result = await session.execute(
             select(Opportunity)
@@ -108,7 +127,7 @@ async def generate_memo_job(
         )
         opportunity = opportunity_result.scalar_one_or_none()
         if opportunity is None:
-            return {"error": "opportunity_not_found", "person_id": person_id}
+            return await finish_error("opportunity_not_found")
 
         # Only claims accepted by reconciliation may enter a memo. Their
         # observation references must also resolve to this exact opportunity.
@@ -130,7 +149,7 @@ async def generate_memo_job(
         }
         if not claim_observation_ids:
             logger.warning("memo_no_accepted_claims", person_id=person_id)
-            return {"error": "no_accepted_claims", "person_id": person_id}
+            return await finish_error("no_accepted_claims")
 
         obs_result = await session.execute(
             select(Observation)
@@ -150,7 +169,7 @@ async def generate_memo_job(
 
         if not claims:
             logger.warning("memo_no_scoped_claim_evidence", person_id=person_id)
-            return {"error": "no_accepted_claim_evidence", "person_id": person_id}
+            return await finish_error("no_accepted_claim_evidence")
 
         claim_ids = [str(claim.id) for claim in claims]
         observations = [
@@ -231,7 +250,7 @@ async def generate_memo_job(
                 person_id=person_id,
                 opportunity_id=opportunity_id,
             )
-            return {"error": "no_pinned_thesis", "person_id": person_id}
+            return await finish_error("no_pinned_thesis")
         if opportunity.thesis_version is None:
             opportunity.thesis_version = thesis.version
         thesis_summary = (
@@ -359,6 +378,16 @@ async def generate_memo_job(
                 "artifact_type": "decision_proposal",
                 "code_version": "decision-proposal-v1",
             }
+            if job_id:
+                await update_job(
+                    session,
+                    job_id,
+                    status="failed",
+                    phase="memo",
+                    attempt=1,
+                    last_error="memo generation failed",
+                    result={"person_id": person_id, "status": "failed"},
+                )
             await session.commit()
             logger.exception("memo_generation_failed", person_id=person_id, error=str(exc))
             return {"person_id": person_id, "status": "failed"}
@@ -404,6 +433,31 @@ async def generate_memo_job(
             "artifact_type": "decision_proposal",
             "code_version": "decision-proposal-v1",
         }
+        result = {
+            "person_id": person_id,
+            "sections": len(memo.sections),
+            "generation_mode": memo.generation_mode,
+            "status": memo.status,
+        }
+        if job_id:
+            job_status = "succeeded" if memo.status == "succeeded" else "failed"
+            job_error = (
+                "memo degraded; validated generation did not complete"
+                if memo.status == "degraded"
+                else "memo validation failed"
+                if memo.validation_errors
+                else None
+            )
+            await update_job(
+                session,
+                job_id,
+                status=job_status,
+                phase="complete",
+                attempt=1,
+                clear_error=job_error is None,
+                last_error=job_error,
+                result=result,
+            )
         await session.commit()
 
     logger.info(
@@ -413,9 +467,4 @@ async def generate_memo_job(
         mode=memo.generation_mode,
     )
 
-    return {
-        "person_id": person_id,
-        "sections": len(memo.sections),
-        "generation_mode": memo.generation_mode,
-        "status": memo.status,
-    }
+    return result

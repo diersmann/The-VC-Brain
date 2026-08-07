@@ -28,6 +28,7 @@ async def update_job(
     attempt: int | None = None,
     progress: float | None = None,
     last_error: str | None = None,
+    clear_error: bool = False,
     result: dict[str, Any] | None = None,
 ) -> JobRun | None:
     """Apply a bounded, durable status update to a known job."""
@@ -45,7 +46,9 @@ async def update_job(
         job.attempt = max(0, attempt)
     if progress is not None:
         job.progress = max(0.0, min(1.0, progress))
-    if last_error is not None:
+    if clear_error:
+        job.last_error = None
+    elif last_error is not None:
         job.last_error = last_error
     if result is not None:
         job.result = result

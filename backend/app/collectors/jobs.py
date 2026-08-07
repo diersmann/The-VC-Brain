@@ -1096,34 +1096,66 @@ def _axis_unknowns(axis: str, result_count: int, confidence: float) -> list[str]
 
 
 async def research_candidate_job(
-    ctx: dict[str, Any], person_id: str, opportunity_id: str
+    ctx: dict[str, Any], person_id: str, opportunity_id: str, job_id: str | None = None
 ) -> dict[str, Any]:
     """Research one candidate with three Tavily searches and persist scored evidence."""
     from tavily import TavilyClient  # type: ignore[import-untyped]
 
     settings = ctx["settings"]
-    if not settings.tavily_api_key:
-        raise RuntimeError("TAVILY_API_KEY is not configured")
     run_id = uuid.uuid4()
     research_started = time.perf_counter()
 
     async with _session_ctx(ctx) as session:
+        if job_id:
+            await update_job(session, job_id, status="running", phase="research", attempt=1)
+            await session.commit()
+
+        async def finish_error(error: str, **details: Any) -> dict[str, Any]:
+            payload: dict[str, Any] = {"error": error, "person_id": person_id, **details}
+            if job_id:
+                await update_job(
+                    session,
+                    job_id,
+                    status="failed",
+                    phase="research",
+                    attempt=1,
+                    last_error=str(details.get("reason", error)),
+                    result=payload,
+                )
+                await session.commit()
+            return payload
+
+        async def finish_exception(exc: Exception) -> None:
+            if job_id:
+                await update_job(
+                    session,
+                    job_id,
+                    status="failed",
+                    phase="research",
+                    attempt=1,
+                    last_error=str(exc),
+                    result={"error": "research_failed", "person_id": person_id},
+                )
+                await session.commit()
+
+        if not settings.tavily_api_key:
+            return await finish_error("tavily_not_configured")
+
         person = await session.get(Person, uuid.UUID(person_id))
         if person is None or not person.canonical:
-            return {"error": "person_not_found", "person_id": person_id}
+            return await finish_error("person_not_found")
         ai_policy = external_ai_use_decision(person, "research")
         if not ai_policy.allowed:
-            return {
-                "error": "external_ai_blocked",
-                "purpose": ai_policy.purpose,
-                "reason": ai_policy.reason,
-                "person_id": person_id,
-            }
+            return await finish_error(
+                "external_ai_blocked",
+                purpose=ai_policy.purpose,
+                reason=ai_policy.reason,
+            )
 
         try:
             requested_opportunity_id = uuid.UUID(opportunity_id)
         except ValueError:
-            return {"error": "opportunity_id_required", "person_id": person_id}
+            return await finish_error("opportunity_id_required")
 
         opportunity_result = await session.execute(
             select(Opportunity)
@@ -1135,7 +1167,7 @@ async def research_candidate_job(
         )
         opportunity = opportunity_result.scalar_one_or_none()
         if opportunity is None:
-            return {"error": "opportunity_not_found", "person_id": person_id}
+            return await finish_error("opportunity_not_found")
 
         existing_observations_result = await session.execute(
             select(Observation).where(Observation.subject_id == person.id)
@@ -1164,14 +1196,18 @@ async def research_candidate_job(
 
         for axis, query in queries.items():
             logger.info("candidate_research_axis_started", person_id=person_id, axis=axis)
-            response = await asyncio.to_thread(
-                client.search,
-                query=query,
-                search_depth="advanced",
-                max_results=5,
-                include_answer="advanced",
-                include_raw_content=False,
-            )
+            try:
+                response = await asyncio.to_thread(
+                    client.search,
+                    query=query,
+                    search_depth="advanced",
+                    max_results=5,
+                    include_answer="advanced",
+                    include_raw_content=False,
+                )
+            except Exception as exc:
+                await finish_exception(exc)
+                raise
             subject_terms = [person.display_name or "", company, *(person.handles or {}).values()]
             scored = score_research_axis(axis, response, subject_terms)
             axis_scores[axis] = scored
@@ -1330,10 +1366,21 @@ async def research_candidate_job(
                 ),
             )
         )
+        result = {"person_id": person_id, "scores": score_components, "answers": axis_answers}
+        if job_id:
+            await update_job(
+                session,
+                job_id,
+                status="succeeded",
+                phase="complete",
+                attempt=1,
+                clear_error=True,
+                result=result,
+            )
         await session.commit()
 
     logger.info("candidate_research_completed", person_id=person_id, scores=score_components)
-    return {"person_id": person_id, "scores": score_components, "answers": axis_answers}
+    return result
 
 
 async def dispatcher_job(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -1411,6 +1458,7 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
             "research_candidate_job",
             task.get("person_id", ""),
             task.get("opportunity_id", ""),
+            task.get("job_id"),
         )
     elif job_type == "fetch_candidate_avatar":
         await pool.enqueue_job(
@@ -1421,12 +1469,14 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
         await pool.enqueue_job(
             "score_candidate_job",
             task.get("person_id", ""),
+            task.get("job_id"),
         )
     elif job_type == "generate_memo":
         await pool.enqueue_job(
             "generate_memo_job",
             task.get("person_id", ""),
             task.get("opportunity_id", ""),
+            task.get("job_id"),
         )
     elif job_type == "process_candidate":
         await pool.enqueue_job(

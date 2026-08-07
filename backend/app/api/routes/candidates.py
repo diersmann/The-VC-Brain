@@ -52,6 +52,7 @@ from app.domain_status import (
     normalize_claim_status,
     normalize_lifecycle_stage,
 )
+from app.job_ledger import create_job, update_job
 from app.lifecycle import is_valid_transition
 from app.privacy import external_ai_use_decision, redact_direct_identifiers
 from app.sla import evaluate_sla, finalize_sla
@@ -1609,17 +1610,32 @@ async def generate_candidate_memo(
 
     settings = get_settings()
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
+    job = await create_job(session, "generate_memo")
+    await session.commit()
     try:
-        await queue_enqueue(
-            redis,
-            {
-                "job_type": "generate_memo",
-                "person_id": str(person.id),
-                "opportunity_id": str(payload.opportunity_id),
-            },
-            priority=10.0,
-        )
+        try:
+            await queue_enqueue(
+                redis,
+                {
+                    "job_type": "generate_memo",
+                    "person_id": str(person.id),
+                    "opportunity_id": str(payload.opportunity_id),
+                    "job_id": str(job.id),
+                },
+                priority=10.0,
+            )
+        except Exception as exc:
+            await update_job(
+                session,
+                job.id,
+                status="failed",
+                phase="queue",
+                last_error=str(exc),
+                result={"error": "queue_failed"},
+            )
+            await session.commit()
+            raise HTTPException(status_code=503, detail="Unable to queue memo job") from exc
     finally:
         await redis.aclose()
 
-    return {"message": f"Memo generation queued for {candidate_id}"}
+    return {"job_id": str(job.id), "message": f"Memo generation queued for {candidate_id}"}

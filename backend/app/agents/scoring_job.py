@@ -18,11 +18,14 @@ from app.db.models import (
     ScoreSnapshot,
     SourceSnapshot,
 )
+from app.job_ledger import update_job
 from app.privacy import external_ai_use_decision
 
 logger = structlog.get_logger(__name__)
 
-async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, Any]:
+async def score_candidate_job(
+    ctx: dict[str, Any], person_id: str, job_id: str | None = None
+) -> dict[str, Any]:
     """Run the multi-agent scoring committee for one candidate.
 
     Builds the evidence package from all observations, runs the 3 specialist
@@ -34,17 +37,35 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
     logger.info("score_candidate_job_started", person_id=person_id)
 
     async with _session_ctx(ctx) as session:
+        if job_id:
+            await update_job(session, job_id, status="running", phase="scoring", attempt=1)
+            await session.commit()
+
+        async def finish_error(error: str) -> dict[str, Any]:
+            if job_id:
+                await update_job(
+                    session,
+                    job_id,
+                    status="failed",
+                    phase="scoring",
+                    attempt=1,
+                    last_error=error,
+                    result={"error": error},
+                )
+                await session.commit()
+            return {"error": error}
+
         person = await session.get(Person, uuid.UUID(person_id))
         if person is None:
             logger.error("score_candidate_person_not_found", person_id=person_id)
-            return {"error": "person_not_found"}
+            return await finish_error("person_not_found")
 
         if not person.canonical:
             logger.warning("score_candidate_not_canonical", person_id=person_id)
-            return {"error": "person_not_canonical"}
+            return await finish_error("person_not_canonical")
 
         # Fetch all observations for the person
-        result = await session.execute(
+        observations_result = await session.execute(
             select(Observation)
             .join(SourceSnapshot, SourceSnapshot.id == Observation.snapshot_id)
             .where(Observation.subject_id == person.id)
@@ -52,11 +73,11 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
             .order_by(Observation.observed_at.desc())
             .limit(500)
         )
-        observations: list[Observation] = list(result.scalars().all())
+        observations: list[Observation] = list(observations_result.scalars().all())
 
         if not observations:
             logger.warning("score_candidate_no_observations", person_id=person_id)
-            return {"error": "no_observations"}
+            return await finish_error("no_observations")
 
         ai_policy = external_ai_use_decision(person, "scoring")
         if settings.llm_api_key and not ai_policy.allowed:
@@ -65,11 +86,23 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
                 person_id=person_id,
                 reason=ai_policy.reason,
             )
-            return {
+            error_result = {
                 "error": "external_ai_blocked",
                 "purpose": ai_policy.purpose,
                 "reason": ai_policy.reason,
             }
+            if job_id:
+                await update_job(
+                    session,
+                    job_id,
+                    status="failed",
+                    phase="scoring",
+                    attempt=1,
+                    last_error=ai_policy.reason,
+                    result=error_result,
+                )
+                await session.commit()
+            return error_result
 
         # Build evidence package
         evidence_text, obs_ids = build_evidence_text(observations, person)
@@ -80,12 +113,26 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
         scoring_started = time.perf_counter()
 
         # Run the scoring committee
-        scorecard, _metadata = await score_candidate(
-            evidence_text=evidence_text,
-            api_key=settings.llm_api_key,
-            model=settings.agent_model,
-            concurrency=settings.agent_concurrency,
-        )
+        try:
+            scorecard, _metadata = await score_candidate(
+                evidence_text=evidence_text,
+                api_key=settings.llm_api_key,
+                model=settings.agent_model,
+                concurrency=settings.agent_concurrency,
+            )
+        except Exception as exc:
+            if job_id:
+                await update_job(
+                    session,
+                    job_id,
+                    status="failed",
+                    phase="scoring",
+                    attempt=1,
+                    last_error=str(exc),
+                    result={"error": "scoring_failed"},
+                )
+                await session.commit()
+            raise
 
         # Specialist dimensions remain inputs to the persistent person-scoped
         # Founder Score. Opportunity assessments are written only by the
@@ -138,6 +185,23 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
             )
         )
 
+        result_payload = {
+            "person_id": person_id,
+            "composite": scorecard.composite,
+            "confidence": scorecard.confidence,
+            "hard_eligible": scorecard.hard_eligible,
+            "model": settings.agent_model,
+        }
+        if job_id:
+            await update_job(
+                session,
+                job_id,
+                status="succeeded",
+                phase="complete",
+                attempt=1,
+                clear_error=True,
+                result=result_payload,
+            )
         await session.commit()
 
     logger.info(
@@ -148,10 +212,4 @@ async def score_candidate_job(ctx: dict[str, Any], person_id: str) -> dict[str, 
         model=settings.agent_model,
     )
 
-    return {
-        "person_id": person_id,
-        "composite": scorecard.composite,
-        "confidence": scorecard.confidence,
-        "hard_eligible": scorecard.hard_eligible,
-        "model": settings.agent_model,
-    }
+    return result_payload

@@ -11,7 +11,7 @@ from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +26,7 @@ from app.db.models import (
     Person,
     ScoreSnapshot,
 )
-from app.job_ledger import create_job
+from app.job_ledger import create_job, update_job
 
 logger = structlog.get_logger(__name__)
 
@@ -58,6 +58,7 @@ class JobStatusResponse(BaseModel):
     last_error: str | None = None
     result: dict[str, object] | None = None
     cancel_requested: bool
+    updated_at: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
 
@@ -97,6 +98,7 @@ class ResearchBatchRequest(BaseModel):
 class ResearchQueueResponse(BaseModel):
     queued: int
     candidate_ids: list[str]
+    job_ids: list[str] = Field(default_factory=list)
     message: str
 
 
@@ -186,7 +188,19 @@ async def trigger_discover(
         "source": body.source,
         "job_id": str(job.id),
     }
-    await queue_enqueue(redis, task, priority=10.0)
+    try:
+        await queue_enqueue(redis, task, priority=10.0)
+    except Exception as exc:
+        await update_job(
+            session,
+            job.id,
+            status="failed",
+            phase="queue",
+            last_error=str(exc),
+            result={"error": "queue_failed"},
+        )
+        await session.commit()
+        raise HTTPException(status_code=503, detail="Unable to queue discovery job") from exc
 
     logger.info("discover_triggered", query=body.query, source=body.source)
     msg = f"Discovery enqueued for source={body.source} query={body.query}"
@@ -212,6 +226,7 @@ async def get_job_status(
         last_error=job.last_error,
         result=job.result,
         cancel_requested=job.cancel_requested,
+        updated_at=job.updated_at.isoformat() if job.updated_at else None,
         started_at=job.started_at.isoformat() if job.started_at else None,
         finished_at=job.finished_at.isoformat() if job.finished_at else None,
     )
@@ -317,25 +332,49 @@ async def research_candidates(
     from app.collectors.queue import enqueue as queue_enqueue
 
     queued_ids: list[str] = []
+    queued_jobs: list[tuple[str, dict[str, Any], Any]] = []
     for person in people:
         opportunity = await _current_opportunity(session, person.id)
         if opportunity is None:
             continue
-        await queue_enqueue(
-            redis,
-            {
-                "job_type": "research_candidate",
-                "person_id": str(person.id),
-                "opportunity_id": str(opportunity.id),
-                "source": "tavily_search",
-            },
-            priority=10.0,
+        job = await create_job(session, "research_candidate")
+        queued_jobs.append(
+            (
+                str(person.id),
+                {
+                    "job_type": "research_candidate",
+                    "person_id": str(person.id),
+                    "opportunity_id": str(opportunity.id),
+                    "source": "tavily_search",
+                    "job_id": str(job.id),
+                },
+                job,
+            )
         )
-        queued_ids.append(str(person.id))
+    await session.commit()
+
+    queued_jobs_ok: list[Any] = []
+    for person_id, task, job in queued_jobs:
+        try:
+            await queue_enqueue(redis, task, priority=10.0)
+        except Exception as exc:
+            await update_job(
+                session,
+                job.id,
+                status="failed",
+                phase="queue",
+                last_error=str(exc),
+                result={"error": "queue_failed"},
+            )
+            continue
+        queued_ids.append(person_id)
+        queued_jobs_ok.append(job)
+    await session.commit()
 
     return ResearchQueueResponse(
         queued=len(queued_ids),
         candidate_ids=queued_ids,
+        job_ids=[str(job.id) for job in queued_jobs_ok],
         message=f"Queued Tavily multi-axis research for {len(queued_ids)} candidates",
     )
 
@@ -355,19 +394,35 @@ async def research_candidate(
 
     from app.collectors.queue import enqueue as queue_enqueue
 
-    await queue_enqueue(
-        redis,
-        {
-            "job_type": "research_candidate",
-            "person_id": str(person.id),
-            "opportunity_id": str(opportunity.id),
-            "source": "tavily_search",
-        },
-        priority=10.0,
-    )
+    job = await create_job(session, "research_candidate")
+    await session.commit()
+    try:
+        await queue_enqueue(
+            redis,
+            {
+                "job_type": "research_candidate",
+                "person_id": str(person.id),
+                "opportunity_id": str(opportunity.id),
+                "source": "tavily_search",
+                "job_id": str(job.id),
+            },
+            priority=10.0,
+        )
+    except Exception as exc:
+        await update_job(
+            session,
+            job.id,
+            status="failed",
+            phase="queue",
+            last_error=str(exc),
+            result={"error": "queue_failed"},
+        )
+        await session.commit()
+        raise HTTPException(status_code=503, detail="Unable to queue research job") from exc
     return ResearchQueueResponse(
         queued=1,
         candidate_ids=[str(person.id)],
+        job_ids=[str(job.id)],
         message="Queued Tavily multi-axis research",
     )
 
@@ -565,15 +620,32 @@ async def score_candidate_route(
 
     from app.collectors.queue import enqueue as queue_enqueue
 
-    await queue_enqueue(
-        redis,
-        {
-            "job_type": "score_candidate",
-            "person_id": str(person.id),
-        },
-        priority=10.0,
+    job = await create_job(session, "score_candidate")
+    await session.commit()
+    try:
+        await queue_enqueue(
+            redis,
+            {
+                "job_type": "score_candidate",
+                "person_id": str(person.id),
+                "job_id": str(job.id),
+            },
+            priority=10.0,
+        )
+    except Exception as exc:
+        await update_job(
+            session,
+            job.id,
+            status="failed",
+            phase="queue",
+            last_error=str(exc),
+            result={"error": "queue_failed"},
+        )
+        await session.commit()
+        raise HTTPException(status_code=503, detail="Unable to queue scoring job") from exc
+    return DiscoverResponse(
+        job_id=str(job.id), message=f"Queued multi-agent scoring for {candidate_id}"
     )
-    return DiscoverResponse(message=f"Queued multi-agent scoring for {candidate_id}")
 
 
 @router.post("/research/score/batch", response_model=ResearchQueueResponse)
@@ -590,17 +662,37 @@ async def score_candidates_batch(
     )
     person_ids = [str(row[0]) for row in result.all()]
 
-    for pid in person_ids:
-        await queue_enqueue(
-            redis,
-            {"job_type": "score_candidate", "person_id": pid},
-            priority=5.0,
-        )
+    jobs = [await create_job(session, "score_candidate") for _pid in person_ids]
+    await session.commit()
+
+    queued_ids: list[str] = []
+    queued_jobs: list[Any] = []
+    for pid, job in zip(person_ids, jobs, strict=True):
+        try:
+            await queue_enqueue(
+                redis,
+                {"job_type": "score_candidate", "person_id": pid, "job_id": str(job.id)},
+                priority=5.0,
+            )
+        except Exception as exc:
+            await update_job(
+                session,
+                job.id,
+                status="failed",
+                phase="queue",
+                last_error=str(exc),
+                result={"error": "queue_failed"},
+            )
+            continue
+        queued_ids.append(pid)
+        queued_jobs.append(job)
+    await session.commit()
 
     return ResearchQueueResponse(
-        queued=len(person_ids),
-        candidate_ids=person_ids,
-        message=f"Queued multi-agent scoring for {len(person_ids)} candidates",
+        queued=len(queued_ids),
+        candidate_ids=queued_ids,
+        job_ids=[str(job.id) for job in queued_jobs],
+        message=f"Queued multi-agent scoring for {len(queued_ids)} candidates",
     )
 
 
