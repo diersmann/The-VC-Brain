@@ -69,6 +69,7 @@ class HealthResponse(BaseModel):
 
 
 class IdentityResolveResponse(BaseModel):
+    job_id: str | None = None
     message: str
 
 
@@ -119,6 +120,7 @@ class AvatarBatchRequest(BaseModel):
 class AvatarQueueResponse(BaseModel):
     queued: int
     candidate_ids: list[str]
+    job_ids: list[str] = Field(default_factory=list)
     message: str
 
 
@@ -278,25 +280,51 @@ async def fetch_candidate_avatars(
 
     from app.collectors.queue import enqueue as queue_enqueue
 
-    queued_ids: list[str] = []
+    queued_jobs: list[tuple[str, dict[str, Any], Any]] = []
     for person in people:
         opportunity = await _current_opportunity(session, person.id)
         if opportunity is None:
             continue
-        await queue_enqueue(
-            redis,
-            {
-                "job_type": "fetch_candidate_avatar",
-                "person_id": str(person.id),
-                "source": "avatar",
-            },
-            priority=10.0,
+        job = await create_job(session, "fetch_candidate_avatar")
+        queued_jobs.append(
+            (
+                str(person.id),
+                {
+                    "job_type": "fetch_candidate_avatar",
+                    "person_id": str(person.id),
+                    "source": "avatar",
+                    "job_id": str(job.id),
+                },
+                job,
+            )
         )
-        queued_ids.append(str(person.id))
+
+    # Keep the durable queued rows visible before handing work to Redis.
+    await session.commit()
+
+    queued_ids: list[str] = []
+    queued_jobs_ok: list[Any] = []
+    for person_id, task, job in queued_jobs:
+        try:
+            await queue_enqueue(redis, task, priority=10.0)
+        except Exception as exc:
+            await update_job(
+                session,
+                job.id,
+                status="failed",
+                phase="queue",
+                last_error=str(exc),
+                result={"error": "queue_failed"},
+            )
+            continue
+        queued_ids.append(person_id)
+        queued_jobs_ok.append(job)
+    await session.commit()
 
     return AvatarQueueResponse(
         queued=len(queued_ids),
         candidate_ids=queued_ids,
+        job_ids=[str(job.id) for job in queued_jobs_ok],
         message=f"Queued avatar caching for {len(queued_ids)} candidates",
     )
 
@@ -475,6 +503,7 @@ async def candidate_research_status(
 @router.post("/identity/resolve", response_model=IdentityResolveResponse)
 async def trigger_identity_resolve(
     redis: Annotated[Any, Depends(get_redis)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> IdentityResolveResponse:
     """Manually trigger identity resolution.
 
@@ -482,13 +511,25 @@ async def trigger_identity_resolve(
     """
     from app.collectors.queue import enqueue as queue_enqueue
 
-    task = {
-        "job_type": "resolve_identities",
-    }
-    await queue_enqueue(redis, task, priority=10.0)
+    job = await create_job(session, "resolve_identities")
+    await session.commit()
+    task = {"job_type": "resolve_identities", "job_id": str(job.id)}
+    try:
+        await queue_enqueue(redis, task, priority=10.0)
+    except Exception as exc:
+        await update_job(
+            session,
+            job.id,
+            status="failed",
+            phase="queue",
+            last_error=str(exc),
+            result={"error": "queue_failed"},
+        )
+        await session.commit()
+        raise HTTPException(status_code=503, detail="Unable to queue identity resolution") from exc
 
     logger.info("identity_resolve_triggered")
-    return IdentityResolveResponse(message="Identity resolution enqueued")
+    return IdentityResolveResponse(job_id=str(job.id), message="Identity resolution enqueued")
 
 
 @router.get("/identity/matches", response_model=PersonMatchListResponse)
@@ -714,9 +755,29 @@ async def process_candidate_route(
 
     from app.collectors.queue import enqueue as queue_enqueue
 
-    await queue_enqueue(
-        redis,
-        {"job_type": "process_candidate", "person_id": str(person.id)},
-        priority=5.0,
+    job = await create_job(session, "process_candidate")
+    await session.commit()
+    try:
+        await queue_enqueue(
+            redis,
+            {
+                "job_type": "process_candidate",
+                "person_id": str(person.id),
+                "job_id": str(job.id),
+            },
+            priority=5.0,
+        )
+    except Exception as exc:
+        await update_job(
+            session,
+            job.id,
+            status="failed",
+            phase="queue",
+            last_error=str(exc),
+            result={"error": "queue_failed"},
+        )
+        await session.commit()
+        raise HTTPException(status_code=503, detail="Unable to queue processing job") from exc
+    return DiscoverResponse(
+        job_id=str(job.id), message=f"Queued processing pipeline for {candidate_id}"
     )
-    return DiscoverResponse(message=f"Queued processing pipeline for {candidate_id}")
