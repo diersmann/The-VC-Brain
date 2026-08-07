@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ApiError } from "./errors";
+import { throwIfNotOk } from "./errors";
 
 export type LifecycleStageContract = {
   key: string;
@@ -19,9 +19,7 @@ export type LifecycleContract = {
 
 export async function fetchLifecycleContract(signal?: AbortSignal): Promise<LifecycleContract> {
   const response = await fetch("/api/v1/lifecycle", { signal });
-  if (!response.ok) {
-    throw new ApiError(`Lifecycle contract request failed with status ${response.status}`, response.status);
-  }
+  throwIfNotOk(response, "Lifecycle contract request");
   return (await response.json()) as LifecycleContract;
 }
 

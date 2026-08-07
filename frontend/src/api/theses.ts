@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ApiError } from "./errors";
+import { throwIfNotOk } from "./errors";
 
 export interface InvestmentThesis {
   version: string;
@@ -43,7 +43,7 @@ export interface ThesisSaveResult {
 export async function fetchActiveThesis(signal?: AbortSignal): Promise<InvestmentThesis | null> {
   const response = await fetch("/api/v1/theses/active", { signal });
   if (response.status === 404) return null;
-  if (!response.ok) throw new ApiError(`Thesis request failed with status ${response.status}`, response.status);
+  throwIfNotOk(response, "Thesis request");
   return (await response.json()) as InvestmentThesis;
 }
 
@@ -61,6 +61,6 @@ export async function saveActiveThesis(payload: ThesisPayload): Promise<ThesisSa
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(`Saving thesis failed with status ${response.status}`);
+  throwIfNotOk(response, "Saving thesis");
   return (await response.json()) as ThesisSaveResult;
 }

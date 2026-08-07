@@ -1,3 +1,5 @@
+import { throwIfNotOk } from "./errors";
+
 export interface PitchSubmissionResponse {
   status: string;
   person_id: string;
@@ -16,9 +18,7 @@ export async function submitPitch(
     headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
   });
 
-  if (!response.ok) {
-    throw new Error(`Submit pitch failed with status ${response.status}`);
-  }
+  throwIfNotOk(response, "Submit pitch");
 
   return await response.json() as PitchSubmissionResponse;
 }

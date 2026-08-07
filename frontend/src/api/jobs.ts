@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ApiError } from "./errors";
+import { throwIfNotOk } from "./errors";
 
 /** Durable job states written by the worker ledger. Unknown values are kept
  * representable so the UI does not claim a state the API did not return. */
@@ -26,7 +26,7 @@ export function isTerminalJobStatus(status: JobRunStatus | undefined): boolean {
 
 export async function fetchJobStatus(jobId: string, signal?: AbortSignal): Promise<JobRun> {
   const response = await fetch(`/api/v1/collection/jobs/${encodeURIComponent(jobId)}`, { signal });
-  if (!response.ok) throw new ApiError(`Job status request failed with status ${response.status}`, response.status);
+  throwIfNotOk(response, "Job status request");
   return (await response.json()) as JobRun;
 }
 

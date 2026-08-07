@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ApiError } from "./errors";
+import { throwIfNotOk } from "./errors";
 import type { Candidate, CandidateDetail } from "../types/candidate";
 
 export type OutreachEmailType = "founder_intro" | "request_deck" | "diligence" | "follow_up";
@@ -70,9 +70,7 @@ export async function fetchCandidateListPage({
     headers: { Accept: "application/vnd.the-vc-brain.candidates.v1+json" },
   });
 
-  if (!response.ok) {
-    throw new ApiError(`Candidates request failed with status ${response.status}`, response.status);
-  }
+  throwIfNotOk(response, "Candidates request");
 
   const payload = (await response.json()) as Candidate[] | CandidateListResponse;
   if (Array.isArray(payload)) {
@@ -112,7 +110,7 @@ export function useCandidateList(stage?: string, origin?: CandidateOrigin, searc
 
 export async function contactCandidate(candidateId: string): Promise<void> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/contact`, { method: "POST" });
-  if (!response.ok) throw new ApiError(`Contact request failed with status ${response.status}`, response.status);
+  throwIfNotOk(response, "Contact request");
 }
 
 export type CandidateFeedbackAction = "dismiss" | "save" | "defer" | "assign";
@@ -127,15 +125,13 @@ export async function recordCandidateFeedback(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, reason }),
   });
-  if (!response.ok) throw new Error(`Feedback request failed with status ${response.status}`);
+  throwIfNotOk(response, "Feedback request");
 }
 
 export async function fetchCandidate(candidateId: string, signal?: AbortSignal): Promise<CandidateDetail> {
   const response = await fetch(`/api/v1/candidates/${candidateId}`, { signal });
 
-  if (!response.ok) {
-    throw new ApiError(`Candidate request failed with status ${response.status}`, response.status);
-  }
+  throwIfNotOk(response, "Candidate request");
 
   return (await response.json()) as CandidateDetail;
 }
@@ -173,17 +169,13 @@ export async function triggerDiscovery(query: string, source = "hackernews"): Pr
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, source }),
   });
-  if (!response.ok) {
-    throw new Error(`Discovery request failed with status ${response.status}`);
-  }
+  throwIfNotOk(response, "Discovery request");
   return (await response.json()) as QueueJobResponse;
 }
 
 export async function researchCandidate(candidateId: string): Promise<ResearchQueueResponse> {
   const response = await fetch(`/api/v1/collection/research/${candidateId}`, { method: "POST" });
-  if (!response.ok) {
-    throw new Error(`Research request failed with status ${response.status}`);
-  }
+  throwIfNotOk(response, "Research request");
   return (await response.json()) as ResearchQueueResponse;
 }
 
@@ -200,7 +192,7 @@ export async function fetchResearchStatus(
   signal?: AbortSignal,
 ): Promise<ResearchStatus> {
   const response = await fetch(`/api/v1/collection/research/${candidateId}/status`, { signal });
-  if (!response.ok) throw new Error(`Research status failed with status ${response.status}`);
+  throwIfNotOk(response, "Research status");
   return (await response.json()) as ResearchStatus;
 }
 
@@ -214,9 +206,7 @@ export async function draftCandidateOutreach(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email_type: emailType, brief }),
   });
-  if (!response.ok) {
-    throw new Error(`Outreach draft request failed with status ${response.status}`);
-  }
+  throwIfNotOk(response, "Outreach draft request");
   return (await response.json()) as OutreachDraft;
 }
 
@@ -234,9 +224,7 @@ export async function recordCandidateDecision(
     },
     body: JSON.stringify({ opportunity_id: opportunityId, action, reason }),
   });
-  if (!response.ok) {
-    throw new Error(`Decision request failed with status ${response.status}`);
-  }
+  throwIfNotOk(response, "Decision request");
   return (await response.json()) as DecisionResult;
 }
 
@@ -258,7 +246,7 @@ export type CandidateMemo = {
 export async function fetchCandidateMemo(candidateId: string, opportunityId: string, signal?: AbortSignal): Promise<CandidateMemo> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/memo?opportunity_id=${encodeURIComponent(opportunityId)}`, { signal });
   if (response.status === 404) return { sections: [], status: "missing", generation_mode: null, model_version: null, created_at: null };
-  if (!response.ok) throw new ApiError(`Memo request failed with status ${response.status}`, response.status);
+  throwIfNotOk(response, "Memo request");
   return (await response.json()) as CandidateMemo;
 }
 
@@ -268,6 +256,6 @@ export async function generateCandidateMemo(candidateId: string, opportunityId: 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ opportunity_id: opportunityId }),
   });
-  if (!response.ok) throw new Error(`Memo generation failed with status ${response.status}`);
+  throwIfNotOk(response, "Memo generation");
   return (await response.json()) as QueueJobResponse;
 }

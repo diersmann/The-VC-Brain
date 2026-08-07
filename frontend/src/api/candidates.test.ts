@@ -1,12 +1,14 @@
 import { afterEach, expect, test, vi } from "vitest";
 
 import {
+  contactCandidate,
   draftCandidateOutreach,
   fetchCandidateMemo,
   fetchCandidateListPage,
   fetchCandidates,
   generateCandidateMemo,
   researchCandidate,
+  recordCandidateFeedback,
   recordCandidateDecision,
   triggerDiscovery,
 } from "./candidates";
@@ -153,4 +155,25 @@ test("returns durable ids from queued collection actions", async () => {
   await expect(triggerDiscovery("Berlin founders", "github")).resolves.toEqual({ job_id: "discover-job", message: "queued" });
   await expect(researchCandidate("candidate-1")).resolves.toMatchObject({ job_ids: ["research-job"] });
   await expect(generateCandidateMemo("candidate-1", "opportunity-1")).resolves.toEqual({ job_id: "memo-job", message: "queued" });
+});
+
+test("normalizes candidate mutation failures while retaining the HTTP status", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 403 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  const attempts = [
+    contactCandidate("candidate-1"),
+    recordCandidateFeedback("candidate-1", "save", "Review later"),
+    draftCandidateOutreach("candidate-1", "request_deck", "Ask for the deck"),
+    recordCandidateDecision("candidate-1", "opportunity-1", "hold", "Need more evidence"),
+    generateCandidateMemo("candidate-1", "opportunity-1"),
+  ];
+
+  for (const attempt of attempts) {
+    await expect(attempt).rejects.toMatchObject({
+      name: "ApiError",
+      status: 403,
+    });
+  }
+  expect(fetchMock).toHaveBeenCalledTimes(attempts.length);
 });

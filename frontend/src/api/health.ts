@@ -1,4 +1,4 @@
-import { ApiError } from "./errors";
+import { throwIfNotOk } from "./errors";
 
 export interface Health {
   status: "ok";
@@ -8,9 +8,7 @@ export interface Health {
 export async function fetchHealth(signal?: AbortSignal): Promise<Health> {
   const response = await fetch("/api/v1/health", { signal });
 
-  if (!response.ok) {
-    throw new ApiError(`Health request failed with status ${response.status}`, response.status);
-  }
+  throwIfNotOk(response, "Health request");
 
   return (await response.json()) as Health;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiError, apiFailureCopy, apiFailureKind } from "./errors";
+import { ApiError, apiFailureCopy, apiFailureKind, throwIfNotOk } from "./errors";
 
 describe("API failure states", () => {
   it("distinguishes permission and server failures", () => {
@@ -14,5 +14,19 @@ describe("API failure states", () => {
   it("classifies a network TypeError as offline", () => {
     expect(apiFailureKind(new TypeError("Failed to fetch"))).toBe("offline");
     expect(apiFailureCopy(new TypeError("Failed to fetch")).title).toBe("Connection unavailable");
+  });
+
+  it("preserves the response status when normalizing API failures", () => {
+    expect(() => throwIfNotOk(new Response(null, { status: 409 }), "Saving thesis")).toThrow(
+      "Saving thesis failed with status 409",
+    );
+
+    try {
+      throwIfNotOk(new Response(null, { status: 403 }), "Feedback request");
+      throw new Error("expected throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).status).toBe(403);
+    }
   });
 });

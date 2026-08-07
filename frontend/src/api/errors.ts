@@ -8,6 +8,18 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Convert a non-successful fetch response into the typed error consumed by
+ * query/mutation UI states. The response itself is intentionally not read or
+ * transformed, so callers retain their existing response-body contracts and
+ * AbortErrors still propagate unchanged from fetch.
+ */
+export function throwIfNotOk(response: Response, operation: string): void {
+  if (!response.ok) {
+    throw new ApiError(`${operation} failed with status ${response.status}`, response.status);
+  }
+}
+
 export type ApiFailureKind = "not-found" | "permission" | "offline" | "server" | "request";
 
 export function apiFailureKind(error: unknown): ApiFailureKind {
