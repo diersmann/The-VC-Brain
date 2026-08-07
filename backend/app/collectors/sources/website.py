@@ -23,6 +23,7 @@ from app.collectors.base import Collected, Connector, ConnectorError, Depth, See
 logger = structlog.get_logger(__name__)
 
 _MAX_REDIRECTS = 5
+_LOCAL_HOST_SUFFIXES = (".localhost", ".local", ".internal", ".lan", ".home.arpa")
 
 
 def _validate_http_url(raw_url: str) -> str:
@@ -37,7 +38,9 @@ def _validate_http_url(raw_url: str) -> str:
     except ValueError as exc:
         raise ConnectorError("website_url_rejected: invalid port") from exc
     hostname = parsed.hostname.rstrip(".").lower()
-    if hostname in {"localhost", "localhost.localdomain"}:
+    if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(
+        _LOCAL_HOST_SUFFIXES
+    ):
         raise ConnectorError("website_url_rejected: local hostname is not allowed")
     try:
         address = ipaddress.ip_address(hostname)
@@ -76,7 +79,12 @@ async def _validate_resolved_host(url: str) -> None:
 async def _fetch_bounded_http(url: str, max_bytes: int) -> tuple[str, bytes, str, int]:
     """Fetch with validated redirects and a streamed response-size bound."""
     current_url = _validate_http_url(url)
-    async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+    async with httpx.AsyncClient(
+        timeout=15.0,
+        follow_redirects=False,
+        # Do not let process-wide HTTP(S)_PROXY variables redirect connector traffic.
+        trust_env=False,
+    ) as client:
         for _ in range(_MAX_REDIRECTS + 1):
             await _validate_resolved_host(current_url)
             async with client.stream(
@@ -144,8 +152,14 @@ class WebsiteConnector(Connector):
 
     async def collect(self, seed: Seed, depth: Depth = "light") -> Collected:
         url = _validate_http_url(seed.handle)
+        # Apply the same DNS-level private/reserved-target check before handing the
+        # URL to Tavily as before issuing our own raw HTTP request.
+        await _validate_resolved_host(url)
         observations: list[dict[str, object]] = []
         now = datetime.now(UTC)
+        from app.config import get_settings
+
+        max_bytes = get_settings().website_max_bytes
 
         content: bytes
         content_type: str
@@ -154,14 +168,19 @@ class WebsiteConnector(Connector):
         tavily = self._get_tavily()
         if tavily:
             try:
-                result = await asyncio.to_thread(
-                    tavily.extract, url=url, extract_depth="basic"
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(tavily.extract, url=url, extract_depth="basic"),
+                    timeout=15.0,
                 )
                 if result and result.get("results"):
                     page = result["results"][0]
                     raw_text = page.get("raw_content", "")
                     if raw_text:
                         content = raw_text.encode("utf-8")
+                        if len(content) > max_bytes:
+                            raise ConnectorError(
+                                "website_fetch_failed: response exceeds byte limit"
+                            )
                         content_type = "text/markdown"
 
                         observations.append(
@@ -205,11 +224,9 @@ class WebsiteConnector(Connector):
                 logger.warning("tavily_extract_failed", url=url, error=str(exc))
 
         # Fallback: bounded raw HTTP GET with redirect validation.
-        from app.config import get_settings
-
         try:
             final_url, content, content_type, status_code = await _fetch_bounded_http(
-                url, get_settings().website_max_bytes
+                url, max_bytes
             )
         except httpx.HTTPError as exc:
             raise ConnectorError(f"website_fetch_failed: {exc}") from exc
