@@ -26,7 +26,7 @@ export function isTerminalJobStatus(status: JobRunStatus | undefined): boolean {
 
 export async function fetchJobStatus(jobId: string, signal?: AbortSignal): Promise<JobRun> {
   const response = await fetch(`/api/v1/collection/jobs/${encodeURIComponent(jobId)}`, { signal });
-  throwIfNotOk(response, "Job status request");
+  await throwIfNotOk(response, "Job status request");
   return (await response.json()) as JobRun;
 }
 

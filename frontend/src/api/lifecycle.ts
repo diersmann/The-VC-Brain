@@ -19,7 +19,7 @@ export type LifecycleContract = {
 
 export async function fetchLifecycleContract(signal?: AbortSignal): Promise<LifecycleContract> {
   const response = await fetch("/api/v1/lifecycle", { signal });
-  throwIfNotOk(response, "Lifecycle contract request");
+  await throwIfNotOk(response, "Lifecycle contract request");
   return (await response.json()) as LifecycleContract;
 }
 

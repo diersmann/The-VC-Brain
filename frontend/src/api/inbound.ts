@@ -18,7 +18,7 @@ export async function submitPitch(
     headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
   });
 
-  throwIfNotOk(response, "Submit pitch");
+  await throwIfNotOk(response, "Submit pitch");
 
   return await response.json() as PitchSubmissionResponse;
 }

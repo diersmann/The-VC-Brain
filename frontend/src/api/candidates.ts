@@ -90,7 +90,7 @@ export async function fetchCandidateListPage({
     headers: { Accept: "application/vnd.the-vc-brain.candidates.v1+json" },
   });
 
-  throwIfNotOk(response, "Candidates request");
+  await throwIfNotOk(response, "Candidates request");
 
   const payload = (await response.json()) as Candidate[] | CandidateListResponse;
   if (Array.isArray(payload)) {
@@ -146,7 +146,7 @@ export function useInfiniteCandidateList(stage?: string, origin?: CandidateOrigi
 
 export async function contactCandidate(candidateId: string): Promise<void> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/contact`, { method: "POST" });
-  throwIfNotOk(response, "Contact request");
+  await throwIfNotOk(response, "Contact request");
 }
 
 export type CandidateFeedbackAction = "dismiss" | "save" | "defer" | "assign";
@@ -161,13 +161,13 @@ export async function recordCandidateFeedback(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, reason }),
   });
-  throwIfNotOk(response, "Feedback request");
+  await throwIfNotOk(response, "Feedback request");
 }
 
 export async function fetchCandidate(candidateId: string, signal?: AbortSignal): Promise<CandidateDetail> {
   const response = await fetch(`/api/v1/candidates/${candidateId}`, { signal });
 
-  throwIfNotOk(response, "Candidate request");
+  await throwIfNotOk(response, "Candidate request");
 
   return (await response.json()) as CandidateDetail;
 }
@@ -205,13 +205,13 @@ export async function triggerDiscovery(query: string, source = "hackernews"): Pr
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, source }),
   });
-  throwIfNotOk(response, "Discovery request");
+  await throwIfNotOk(response, "Discovery request");
   return (await response.json()) as QueueJobResponse;
 }
 
 export async function researchCandidate(candidateId: string): Promise<ResearchQueueResponse> {
   const response = await fetch(`/api/v1/collection/research/${candidateId}`, { method: "POST" });
-  throwIfNotOk(response, "Research request");
+  await throwIfNotOk(response, "Research request");
   return (await response.json()) as ResearchQueueResponse;
 }
 
@@ -228,7 +228,7 @@ export async function fetchResearchStatus(
   signal?: AbortSignal,
 ): Promise<ResearchStatus> {
   const response = await fetch(`/api/v1/collection/research/${candidateId}/status`, { signal });
-  throwIfNotOk(response, "Research status");
+  await throwIfNotOk(response, "Research status");
   return (await response.json()) as ResearchStatus;
 }
 
@@ -242,7 +242,7 @@ export async function draftCandidateOutreach(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email_type: emailType, brief }),
   });
-  throwIfNotOk(response, "Outreach draft request");
+  await throwIfNotOk(response, "Outreach draft request");
   return (await response.json()) as OutreachDraft;
 }
 
@@ -260,7 +260,7 @@ export async function recordCandidateDecision(
     },
     body: JSON.stringify({ opportunity_id: opportunityId, action, reason }),
   });
-  throwIfNotOk(response, "Decision request");
+  await throwIfNotOk(response, "Decision request");
   return (await response.json()) as DecisionResult;
 }
 
@@ -282,7 +282,7 @@ export type CandidateMemo = {
 export async function fetchCandidateMemo(candidateId: string, opportunityId: string, signal?: AbortSignal): Promise<CandidateMemo> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/memo?opportunity_id=${encodeURIComponent(opportunityId)}`, { signal });
   if (response.status === 404) return { sections: [], status: "missing", generation_mode: null, model_version: null, created_at: null };
-  throwIfNotOk(response, "Memo request");
+  await throwIfNotOk(response, "Memo request");
   return (await response.json()) as CandidateMemo;
 }
 
@@ -292,6 +292,6 @@ export async function generateCandidateMemo(candidateId: string, opportunityId: 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ opportunity_id: opportunityId }),
   });
-  throwIfNotOk(response, "Memo generation");
+  await throwIfNotOk(response, "Memo generation");
   return (await response.json()) as QueueJobResponse;
 }

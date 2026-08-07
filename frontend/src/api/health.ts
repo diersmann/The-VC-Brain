@@ -8,7 +8,7 @@ export interface Health {
 export async function fetchHealth(signal?: AbortSignal): Promise<Health> {
   const response = await fetch("/api/v1/health", { signal });
 
-  throwIfNotOk(response, "Health request");
+  await throwIfNotOk(response, "Health request");
 
   return (await response.json()) as Health;
 }

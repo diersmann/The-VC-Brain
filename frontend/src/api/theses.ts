@@ -43,7 +43,7 @@ export interface ThesisSaveResult {
 export async function fetchActiveThesis(signal?: AbortSignal): Promise<InvestmentThesis | null> {
   const response = await fetch("/api/v1/theses/active", { signal });
   if (response.status === 404) return null;
-  throwIfNotOk(response, "Thesis request");
+  await throwIfNotOk(response, "Thesis request");
   return (await response.json()) as InvestmentThesis;
 }
 
@@ -61,6 +61,6 @@ export async function saveActiveThesis(payload: ThesisPayload): Promise<ThesisSa
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  throwIfNotOk(response, "Saving thesis");
+  await throwIfNotOk(response, "Saving thesis");
   return (await response.json()) as ThesisSaveResult;
 }

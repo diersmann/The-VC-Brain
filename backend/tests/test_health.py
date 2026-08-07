@@ -28,7 +28,10 @@ def test_unhandled_errors_keep_generic_body_and_request_id() -> None:
         second = client.get("/api/v1/_test-error")
 
     assert first.status_code == 500
-    assert first.json() == {"detail": "Internal server error"}
+    assert first.json()["version"] == "v1"
+    assert first.json()["detail"] == "Internal server error"
+    assert first.json()["error"]["code"] == "internal_server_error"
+    assert first.json()["error"]["retryable"] is True
     first_id = first.headers.get("x-request-id")
     second_id = second.headers.get("x-request-id")
     assert first_id is not None and first_id != "caller-supplied"

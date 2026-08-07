@@ -1,22 +1,96 @@
 export class ApiError extends Error {
   readonly status: number;
+  readonly code?: string;
+  readonly retryable?: boolean;
+  readonly requestId?: string;
+  readonly detail?: unknown;
+  readonly errorVersion?: string;
 
-  constructor(message: string, status: number) {
+  constructor(
+    message: string,
+    status: number,
+    metadata?: {
+      code?: string;
+      retryable?: boolean;
+      requestId?: string;
+      detail?: unknown;
+      version?: string;
+    },
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = metadata?.code;
+    this.retryable = metadata?.retryable;
+    this.requestId = metadata?.requestId;
+    this.detail = metadata?.detail;
+    this.errorVersion = metadata?.version;
   }
+}
+
+type ErrorEnvelope = {
+  detail?: unknown;
+  error?: {
+    version?: unknown;
+    code?: unknown;
+    message?: unknown;
+    retryable?: unknown;
+    request_id?: unknown;
+  };
+};
+
+function parseErrorEnvelope(payload: unknown): {
+  message?: string;
+  code?: string;
+  retryable?: boolean;
+  requestId?: string;
+  detail?: unknown;
+  version?: string;
+} | null {
+  if (payload === null || typeof payload !== "object") return null;
+  const envelope = payload as ErrorEnvelope;
+  const metadata = envelope.error;
+  if (metadata === null || typeof metadata !== "object") {
+    return "detail" in envelope ? { detail: envelope.detail } : null;
+  }
+  const message = typeof metadata.message === "string" ? metadata.message : undefined;
+  const code = typeof metadata.code === "string" ? metadata.code : undefined;
+  const retryable = typeof metadata.retryable === "boolean" ? metadata.retryable : undefined;
+  const requestId = typeof metadata.request_id === "string" ? metadata.request_id : undefined;
+  const version = typeof metadata.version === "string" ? metadata.version : undefined;
+  if (!message && !code && retryable === undefined && !requestId && !version) {
+    return "detail" in envelope ? { detail: envelope.detail } : null;
+  }
+  return { message, code, retryable, requestId, version, detail: envelope.detail };
 }
 
 /**
  * Convert a non-successful fetch response into the typed error consumed by
- * query/mutation UI states. The response itself is intentionally not read or
- * transformed, so callers retain their existing response-body contracts and
+ * query/mutation UI states. A cloned response is read so the API's optional
+ * v1 error metadata can be exposed without consuming the caller's body.
  * AbortErrors still propagate unchanged from fetch.
  */
-export function throwIfNotOk(response: Response, operation: string): void {
+export async function throwIfNotOk(response: Response, operation: string): Promise<void> {
   if (!response.ok) {
-    throw new ApiError(`${operation} failed with status ${response.status}`, response.status);
+    let metadata: ReturnType<typeof parseErrorEnvelope> = null;
+    try {
+      metadata = parseErrorEnvelope(await response.clone().json());
+    } catch {
+      // Empty, malformed, and non-JSON legacy bodies retain the old message.
+    }
+    throw new ApiError(
+      metadata?.message ?? `${operation} failed with status ${response.status}`,
+      response.status,
+      metadata
+        ? {
+            code: metadata.code,
+            retryable: metadata.retryable,
+            requestId: metadata.requestId,
+            detail: metadata.detail,
+            version: metadata.version,
+          }
+        : undefined,
+    );
   }
 }
 
