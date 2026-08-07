@@ -12,6 +12,7 @@ Collect: delegates to the 'web' connector for the project URL.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 
 import structlog
@@ -64,7 +65,8 @@ class HackathonsConnector(Connector):
         for domain in _HACKATHON_DOMAINS:
             search_query = f"site:{domain} {query}"
             try:
-                response = tavily.search(
+                response = await asyncio.to_thread(
+                    tavily.search,
                     query=search_query,
                     search_depth="basic",
                     max_results=10,

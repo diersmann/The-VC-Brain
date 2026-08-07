@@ -12,6 +12,7 @@ Collect: delegates to the 'web' connector for the episode URL.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 
 import structlog
@@ -71,7 +72,8 @@ class PodcastsConnector(Connector):
         for keyword in _PODCAST_KEYWORDS:
             search_query = f"{keyword} {query} founder"
             try:
-                response = tavily.search(
+                response = await asyncio.to_thread(
+                    tavily.search,
                     query=search_query,
                     search_depth="basic",
                     max_results=5,

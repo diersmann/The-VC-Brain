@@ -8,6 +8,8 @@ for LinkedIn, hackathons, YouTube, podcasts, etc.).
 
 from __future__ import annotations
 
+import asyncio
+
 import structlog
 from tavily import TavilyClient  # type: ignore[import-untyped]
 
@@ -48,7 +50,8 @@ class TavilySearchConnector(Connector):
         """
         client = self._get_client()
         try:
-            response = client.search(
+            response = await asyncio.to_thread(
+                client.search,
                 query=query,
                 search_depth="basic",
                 max_results=10,

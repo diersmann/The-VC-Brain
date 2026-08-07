@@ -11,6 +11,7 @@ Collect: delegates to the 'web' connector for the profile URL.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 
 import structlog
@@ -60,7 +61,8 @@ class LinkedInConnector(Connector):
         seeds: list[Seed] = []
 
         try:
-            response = tavily.search(
+            response = await asyncio.to_thread(
+                tavily.search,
                 query=search_query,
                 search_depth="basic",
                 max_results=10,
