@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +19,8 @@ from app.api.routes.candidates import (
     CandidateClaimResponse,
     CandidateObservationResponse,
     CandidateResponse,
+    _decode_candidate_cursor,
+    _encode_candidate_cursor,
     map_person_to_candidate,
 )
 from app.db.models import Person, ScoreSnapshot
@@ -238,6 +241,23 @@ def test_evidence_dtos_retain_stable_entity_ids() -> None:
 
     assert observation.id == observation_id
     assert claim.id == claim_id
+
+
+def test_candidate_cursor_round_trip_is_bound_to_filters() -> None:
+    person = _make_person()
+    cursor = _encode_candidate_cursor(person, origin="inbound", stage=None, search="aperture")
+
+    created_at, person_id = _decode_candidate_cursor(
+        cursor,
+        origin="inbound",
+        stage=None,
+        search="aperture",
+    )
+    assert created_at == person.created_at
+    assert person_id == person.id
+
+    with pytest.raises(HTTPException, match="does not match filters"):
+        _decode_candidate_cursor(cursor, origin="outbound", stage=None, search="aperture")
 
 
 # ---------------------------------------------------------------------------

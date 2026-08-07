@@ -104,6 +104,7 @@ The backend coordinates the application:
 
 - Authentication and authorization
 - Founder, company, evidence, and search APIs
+- `GET /api/v1/candidates` keeps the legacy array response for existing callers. New callers request `Accept: application/vnd.the-vc-brain.candidates.v1+json` (or `?version=v1`) for the versioned envelope: `{version, items, total_count, limit, next_cursor, search, filters}`. Cursors are opaque, deterministic `(created_at,id)` continuations bound to the origin/stage/search filter fingerprint. `search`/`q` is evaluated server-side across identity, current opportunity company, and provenance-backed observation fields.
 - Inbound applications and deck uploads, committed with an idempotent submission envelope and durable outbox before worker dispatch
 - Optional cold-start inputs include bounded work samples, learning milestones, interview/work-sample context, and reference context; missing public history remains an explicit unknown rather than a negative feature.
 - Sourcing-to-decision workflow state

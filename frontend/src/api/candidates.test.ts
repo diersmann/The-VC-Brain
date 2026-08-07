@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import {
   draftCandidateOutreach,
   fetchCandidateMemo,
+  fetchCandidateListPage,
   fetchCandidates,
   recordCandidateDecision,
 } from "./candidates";
@@ -50,9 +51,27 @@ test("sends stage and origin filters to the API", async () => {
   await fetchCandidates(undefined, "memo_ready", "inbound");
 
   expect(fetchMock).toHaveBeenCalledWith(
-    "/api/v1/candidates?limit=200&stage=memo_ready&origin=inbound",
-    { signal: undefined },
+    "/api/v1/candidates?limit=200&version=v1&stage=memo_ready&origin=inbound",
+    { signal: undefined, headers: { Accept: "application/vnd.the-vc-brain.candidates.v1+json" } },
   );
+});
+
+test("returns the v1 page envelope and preserves its cursor", async () => {
+  const first = {
+    version: "v1",
+    items: [{ id: "first" }],
+    next_cursor: "cursor-2",
+    total_count: 2,
+    limit: 1,
+    search: null,
+    filters: {},
+  };
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(first), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(fetchCandidateListPage({ cursor: "cursor-1" })).resolves.toEqual(first);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(String(fetchMock.mock.calls[0][0])).toContain("cursor=cursor-1");
 });
 
 test("throws on non-ok response", async () => {

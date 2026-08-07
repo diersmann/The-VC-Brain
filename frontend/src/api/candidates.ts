@@ -6,6 +6,16 @@ export type OutreachEmailType = "founder_intro" | "request_deck" | "diligence" |
 export type DecisionAction = "proceed" | "hold" | "decline";
 export type CandidateOrigin = "inbound" | "outbound";
 
+export type CandidateListResponse = {
+  version: "v1";
+  items: Candidate[];
+  next_cursor: string | null;
+  total_count: number;
+  limit: number;
+  search: string | null;
+  filters: Record<string, string>;
+};
+
 export type OutreachDraft = {
   subject: string;
   body: string;
@@ -28,23 +38,74 @@ export async function fetchCandidates(
   signal?: AbortSignal,
   stage?: string,
   origin?: CandidateOrigin,
+  search?: string,
 ): Promise<Candidate[]> {
-  const params = new URLSearchParams({ limit: "200" });
+  // Preserve the legacy array consumer contract while keeping requests
+  // bounded. Consumers that need more than the first page should use the
+  // versioned fetchCandidateListPage cursor contract explicitly.
+  const result = await fetchCandidateListPage({ signal, stage, origin, search });
+  return result.items;
+}
+
+export async function fetchCandidateListPage({
+  signal,
+  stage,
+  origin,
+  search,
+  cursor,
+}: {
+  signal?: AbortSignal;
+  stage?: string;
+  origin?: CandidateOrigin;
+  search?: string;
+  cursor?: string;
+}): Promise<CandidateListResponse> {
+  const params = new URLSearchParams({ limit: "200", version: "v1" });
   if (stage) params.set("stage", stage);
   if (origin) params.set("origin", origin);
-  const response = await fetch(`/api/v1/candidates?${params.toString()}`, { signal });
+  if (search?.trim()) params.set("search", search.trim());
+  if (cursor) params.set("cursor", cursor);
+  const response = await fetch(`/api/v1/candidates?${params.toString()}`, {
+    signal,
+    headers: { Accept: "application/vnd.the-vc-brain.candidates.v1+json" },
+  });
 
   if (!response.ok) {
     throw new ApiError(`Candidates request failed with status ${response.status}`, response.status);
   }
 
-  return (await response.json()) as Candidate[];
+  const payload = (await response.json()) as Candidate[] | CandidateListResponse;
+  if (Array.isArray(payload)) {
+    return {
+      version: "v1",
+      items: payload,
+      next_cursor: null,
+      total_count: payload.length,
+      limit: payload.length,
+      search: search?.trim() || null,
+      filters: { ...(stage ? { stage } : {}), ...(origin ? { origin } : {}) },
+    };
+  }
+  return payload;
 }
 
-export function useCandidates(stage?: string, origin?: CandidateOrigin) {
+export function useCandidates(stage?: string, origin?: CandidateOrigin, search?: string) {
   return useQuery({
-    queryKey: ["candidates", stage ?? "all", origin ?? "all"],
-    queryFn: ({ signal }) => fetchCandidates(signal, stage, origin),
+    queryKey: ["candidates", stage ?? "all", origin ?? "all", search?.trim() ?? ""],
+    queryFn: ({ signal }) => fetchCandidates(signal, stage, origin, search),
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Read one bounded v1 page when callers need authoritative totals/cursors.
+ * `useCandidates` intentionally preserves the legacy array shape for existing
+ * screens; new paginated screens should consume this hook directly.
+ */
+export function useCandidateList(stage?: string, origin?: CandidateOrigin, search?: string) {
+  return useQuery({
+    queryKey: ["candidate-list", stage ?? "all", origin ?? "all", search?.trim() ?? ""],
+    queryFn: ({ signal }) => fetchCandidateListPage({ signal, stage, origin, search }),
     staleTime: 60_000,
   });
 }

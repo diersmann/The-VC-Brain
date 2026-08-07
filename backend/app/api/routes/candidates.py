@@ -7,6 +7,10 @@ ScoreSnapshot exists for that person.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
+import json
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -14,7 +18,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func, or_, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.outreach import OutreachEmailType, draft_outreach_email
@@ -154,6 +158,24 @@ class CandidateResponse(BaseModel):
     @classmethod
     def canonical_lifecycle_stage(cls, value: str | None) -> LifecycleStage | None:
         return None if value is None else normalize_lifecycle_stage(value)
+
+
+class CandidateListResponse(BaseModel):
+    """Versioned, cursor-paginated candidate collection response.
+
+    The legacy array response remains available unless the caller requests
+    ``application/vnd.the-vc-brain.candidates.v1+json``. This lets existing
+    consumers migrate without a flag day while new consumers get authoritative
+    totals and a deterministic continuation cursor.
+    """
+
+    version: Literal["v1"] = "v1"
+    items: list[CandidateResponse]
+    next_cursor: str | None = None
+    total_count: int
+    limit: int
+    search: str | None = None
+    filters: dict[str, str] = Field(default_factory=dict)
 
 
 class CandidateObservationResponse(BaseModel):
@@ -590,6 +612,7 @@ def _latest_opportunity_rows(person_ids: list[uuid.UUID] | None = None) -> Any:
         select(
             OpportunityFounder.person_id.label("person_id"),
             Opportunity.source_kind.label("source_kind"),
+            Opportunity.company_name.label("company_name"),
             Opportunity.lifecycle_state.label("lifecycle_state"),
             Opportunity.received_at.label("received_at"),
             Opportunity.decision_due_at.label("decision_due_at"),
@@ -696,15 +719,154 @@ async def _fetch_sla_statuses(
     return statuses
 
 
+def _normalize_search(value: str | None) -> str | None:
+    """Normalize user search input once so cursors remain filter-stable."""
+    normalized = " ".join((value or "").split()).casefold()
+    return normalized or None
+
+
+def _cursor_fingerprint(
+    *, origin: str | None, stage: LifecycleStage | None, search: str | None
+) -> str:
+    payload = json.dumps(
+        {"origin": origin, "stage": str(stage) if stage else None, "search": search},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _encode_candidate_cursor(
+    person: Person,
+    *,
+    origin: str | None,
+    stage: LifecycleStage | None,
+    search: str | None,
+) -> str:
+    if person.created_at is None:
+        raise RuntimeError("Candidate cursor requires a creation timestamp")
+    payload = {
+        "created_at": person.created_at.isoformat(),
+        "id": str(person.id),
+        "fingerprint": _cursor_fingerprint(origin=origin, stage=stage, search=search),
+    }
+    encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode())
+    return encoded.decode().rstrip("=")
+
+
+def _decode_candidate_cursor(
+    cursor: str,
+    *,
+    origin: str | None,
+    stage: LifecycleStage | None,
+    search: str | None,
+) -> tuple[datetime, uuid.UUID]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded).decode())
+        created_at = datetime.fromisoformat(str(payload["created_at"]))
+        person_id = uuid.UUID(str(payload["id"]))
+        fingerprint = str(payload["fingerprint"])
+    except (
+        ValueError,
+        KeyError,
+        TypeError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        binascii.Error,
+    ):
+        raise HTTPException(status_code=400, detail="Invalid candidate cursor") from None
+
+    if fingerprint != _cursor_fingerprint(origin=origin, stage=stage, search=search):
+        raise HTTPException(status_code=400, detail="Candidate cursor does not match filters")
+    return created_at, person_id
+
+
+def _candidate_query(
+    *,
+    origin: str | None,
+    stage: LifecycleStage | None,
+    search: str | None,
+    cursor: tuple[datetime, uuid.UUID] | None,
+) -> Any:
+    """Build one canonical candidate query used for both rows and totals."""
+    query = select(Person).where(Person.canonical.is_(True))
+
+    latest_opp: Any | None = None
+    if origin or stage or search:
+        latest_opp = _latest_opportunity_rows().subquery()
+        join_method = query.join if (origin or stage) else query.outerjoin
+        query = join_method(
+            latest_opp,
+            (Person.id == latest_opp.c.person_id) & (latest_opp.c.row_number == 1),
+        )
+        if origin:
+            query = query.where(latest_opp.c.source_kind == origin)
+        if stage:
+            query = query.where(latest_opp.c.lifecycle_state == stage)
+
+    if search:
+        like = f"%{search}%"
+        assert latest_opp is not None
+        observation_match = (
+            select(Observation.id)
+            .join(SourceSnapshot, SourceSnapshot.id == Observation.snapshot_id)
+            .where(
+                Observation.subject_id == Person.id,
+                or_(
+                    func.lower(Observation.object_value).like(like),
+                    func.lower(Observation.predicate).like(like),
+                    func.lower(SourceSnapshot.source_type).like(like),
+                    func.lower(SourceSnapshot.uri).like(like),
+                ),
+            )
+            .exists()
+        )
+        query = query.where(
+            or_(
+                func.lower(Person.display_name).like(like),
+                func.lower(Person.stable_id).like(like),
+                func.lower(Person.email).like(like),
+                func.lower(cast(Person.handles, String)).like(like),
+                func.lower(latest_opp.c.company_name).like(like),
+                observation_match,
+            )
+        )
+
+    if cursor:
+        created_at, person_id = cursor
+        query = query.where(
+            or_(
+                Person.created_at < created_at,
+                (Person.created_at == created_at) & (Person.id < person_id),
+            )
+        )
+
+    return query.order_by(Person.created_at.desc(), Person.id.desc())
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 
-@router.get("", response_model=list[CandidateResponse])
+@router.get("", response_model=list[CandidateResponse] | CandidateListResponse)
 async def list_candidates(
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: int = Query(default=50, ge=1, le=200),
+    cursor: str | None = Query(
+        default=None, description="Opaque cursor from a previous v1 response"
+    ),
+    search: str | None = Query(
+        default=None,
+        max_length=200,
+        description="Case-insensitive search across identity and evidence fields",
+    ),
+    q: str | None = Query(default=None, max_length=200, description="Alias for search"),
+    version: Literal["1", "v1"] | None = Query(
+        default=None,
+        description="Request the versioned envelope (also available via Accept header)",
+    ),
     origin: str | None = Query(
         default=None,
         pattern=r"^(inbound|outbound)$",
@@ -714,35 +876,69 @@ async def list_candidates(
         LifecycleStage | None,
         Query(description="Filter by lifecycle stage (e.g. investigating, memo_ready, contacted)"),
     ] = None,
-) -> list[CandidateResponse]:
-    """List sourcing candidates (persons) with optional origin and stage filters.
+    accept: Annotated[str | None, Header()] = None,
+) -> list[CandidateResponse] | CandidateListResponse:
+    """List sourcing candidates with canonical filters and cursor pagination.
 
     Returns persons ordered by creation date and ID (newest first with a
     deterministic tie-break). Origin and stage filters use the same latest
-    opportunity row. Scores are
-    populated from the latest ScoreSnapshot with a founder-score rubric,
-    if one exists.
+    opportunity row; search is evaluated against identity, current company,
+    and provenance-backed observation fields. Scores are populated from the
+    latest ScoreSnapshot with a founder-score rubric, if one exists. Legacy
+    callers receive an array; v1 callers receive the envelope and total count.
     """
-    # Base query: all persons, newest first
-    query = select(Person).order_by(Person.created_at.desc(), Person.id.desc())
+    normalized_search = _normalize_search(search if search is not None else q)
+    decoded_cursor = _decode_candidate_cursor(
+        cursor,
+        origin=origin,
+        stage=stage,
+        search=normalized_search,
+    ) if cursor else None
+    query = _candidate_query(
+        origin=origin,
+        stage=stage,
+        search=normalized_search,
+        cursor=decoded_cursor,
+    )
+    envelope_requested = bool(
+        version in {"1", "v1"}
+        or (accept and "application/vnd.the-vc-brain.candidates.v1+json" in accept)
+    )
 
-    if origin or stage:
-        latest_opp = _latest_opportunity_rows().subquery()
-        query = query.join(
-            latest_opp,
-            (Person.id == latest_opp.c.person_id) & (latest_opp.c.row_number == 1),
-        )
-        if origin:
-            query = query.where(latest_opp.c.source_kind == origin)
-        if stage:
-            query = query.where(latest_opp.c.lifecycle_state == stage)
+    # Count against the same canonical filters, independent of the cursor.
+    total_query = _candidate_query(
+        origin=origin,
+        stage=stage,
+        search=normalized_search,
+        cursor=None,
+    ).order_by(None)
+    total_result = await session.execute(
+        select(func.count()).select_from(total_query.subquery())
+    )
+    total_count = int(total_result.scalar_one())
 
-    query = query.limit(limit)
+    # Fetch one extra row to determine whether a continuation exists.
+    query = query.limit(limit + 1)
 
     result = await session.execute(query)
     persons: list[Person] = list(result.scalars().all())
+    has_next = len(persons) > limit
+    persons = persons[:limit]
 
     if not persons:
+        if envelope_requested:
+            return CandidateListResponse(
+                items=[],
+                next_cursor=None,
+                total_count=total_count,
+                limit=limit,
+                search=normalized_search,
+                filters={
+                    key: value
+                    for key, value in {"origin": origin, "stage": stage}.items()
+                    if value
+                },
+            )
         return []
 
     person_ids = [p.id for p in persons]
@@ -755,7 +951,7 @@ async def list_candidates(
     opportunity_scores = await _fetch_opportunity_scores(session, person_ids)
     sla_statuses = await _fetch_sla_statuses(session, person_ids)
 
-    return [
+    items = [
         map_person_to_candidate(
             person=p,
             origin=origins.get(p.id) or ("outbound" if p.handles else None),
@@ -767,6 +963,27 @@ async def list_candidates(
         )
         for p in persons
     ]
+    if not envelope_requested:
+        return items
+
+    next_cursor = (
+        _encode_candidate_cursor(
+            persons[-1],
+            origin=origin,
+            stage=stage,
+            search=normalized_search,
+        )
+        if has_next
+        else None
+    )
+    return CandidateListResponse(
+        items=items,
+        next_cursor=next_cursor,
+        total_count=total_count,
+        limit=limit,
+        search=normalized_search,
+        filters={key: value for key, value in {"origin": origin, "stage": stage}.items() if value},
+    )
 
 
 @router.get("/{candidate_id}", response_model=CandidateDetailResponse)

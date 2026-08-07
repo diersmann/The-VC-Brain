@@ -39,8 +39,8 @@ const candidates = [
   },
 ];
 
-function renderInbox(initialEntry = "/inbound?q=aperture") {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(candidates), { status: 200 })));
+function renderInbox(initialEntry = "/inbound?q=aperture", body: unknown = candidates) {
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))));
   return render(<TestQueryProvider><MemoryRouter initialEntries={[initialEntry]}><InboundInboxPage /></MemoryRouter></TestQueryProvider>);
 }
 
@@ -62,5 +62,21 @@ describe("InboundInboxPage search states", () => {
 
     expect(await screen.findByText('No applications match “missing”')).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Clear search" })).toHaveLength(2);
+  });
+
+  it("uses the envelope total for database-wide application counts", async () => {
+    renderInbox("/inbound", {
+      version: "v1",
+      items: candidates,
+      next_cursor: "next-page",
+      total_count: 250,
+      limit: 200,
+      search: null,
+      filters: { origin: "inbound" },
+    });
+
+    expect(await screen.findByText("250")).toBeInTheDocument();
+    expect(screen.getByText("Showing 2 of 250 inbound applications")).toBeInTheDocument();
+    expect(screen.getByText("2 loaded in this page")).toBeInTheDocument();
   });
 });

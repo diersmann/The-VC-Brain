@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { AlertTriangle, ArrowRight, ExternalLink, FileText, Inbox, Search, ShieldCheck, Sparkles, Target } from "lucide-react";
-import { useCandidates } from "../api/candidates";
+import { useCandidateList } from "../api/candidates";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
 import { KeyMetricCard } from "../components/common/KeyMetricCard";
 import { formatDate, formatPredicate, percentage } from "../data/candidateProfile";
@@ -12,17 +12,25 @@ import { DECISION_RUBRIC } from "../data/rubric";
 
 export function InboundInboxPage() {
   const navigate = useNavigate();
-  // Filter at the API so inbound applications are not lost behind the
-  // candidates endpoint's 200-row limit as outbound discovery grows.
-  const { data = [], isLoading, error } = useCandidates(undefined, "inbound");
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get("q") ?? "";
-  const inboundRecords = useMemo(() => data.filter((candidate) => candidate.origin === "inbound"), [data]);
+  // Filter at the API so inbound applications are not lost behind the
+  // candidates endpoint's 200-row limit as outbound discovery grows.
+  const { data: allPage, isLoading: allLoading, error: allError } = useCandidateList(undefined, "inbound");
+  const { data: filteredPage, isLoading: filteredLoading, error: filteredError } = useCandidateList(undefined, "inbound", query);
+  const allData = useMemo(() => allPage?.items ?? [], [allPage]);
+  const filteredData = useMemo(() => filteredPage?.items ?? [], [filteredPage]);
+  const totalCount = allPage?.total_count ?? allData.length;
+  const filteredTotalCount = filteredPage?.total_count ?? filteredData.length;
+  const isLoading = allLoading || filteredLoading;
+  const error = allError || filteredError;
+  const inboundRecords = useMemo(() => allData.filter((candidate) => candidate.origin === "inbound"), [allData]);
+  const filteredInboundRecords = useMemo(() => filteredData.filter((candidate) => candidate.origin === "inbound"), [filteredData]);
   const inbound = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     if (!normalizedQuery) return inboundRecords;
-    return inboundRecords.filter((candidate) => searchableCandidateText(candidate).includes(normalizedQuery));
-  }, [inboundRecords, query]);
+    return filteredInboundRecords.filter((candidate) => searchableCandidateText(candidate).includes(normalizedQuery));
+  }, [filteredInboundRecords, inboundRecords, query]);
   const thesisAligned = inboundRecords.filter(isThesisAligned).length;
   const needsAttention = inboundRecords.filter((candidate) => !hasDecisionScore(candidate)).length;
   const setQuery = (value: string) => {
@@ -39,13 +47,13 @@ export function InboundInboxPage() {
       </div>
 
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
-        <KeyMetricCard icon={Inbox} label="Applications" value={inboundRecords.length} detail="Founder-submitted opportunities in the live inbox" progress={100} progressLabel="All inbound applications loaded" tone="purple" />
-        <KeyMetricCard icon={Target} label="Thesis aligned" value={thesisAligned} detail={`Applications clearing the ${DECISION_RUBRIC.thesisAlignment}% strategy-fit threshold`} progress={ratioPercent(thesisAligned, inboundRecords.length)} progressLabel={`${thesisAligned} of ${inboundRecords.length} applications`} tone="green" />
-        <KeyMetricCard icon={AlertTriangle} label="Needs assessment" value={needsAttention} detail="Applications without a usable decision score" progress={ratioPercent(needsAttention, inboundRecords.length)} progressLabel={`${needsAttention} of ${inboundRecords.length} applications`} tone="amber" />
+        <KeyMetricCard icon={Inbox} label="Applications" value={totalCount} detail="Founder-submitted opportunities in the live database" progress={100} progressLabel={`${allData.length} loaded in this page`} tone="purple" />
+        <KeyMetricCard icon={Target} label="Thesis aligned" value={thesisAligned} detail={`Loaded-page applications clearing the ${DECISION_RUBRIC.thesisAlignment}% strategy-fit threshold`} progress={ratioPercent(thesisAligned, allData.length)} progressLabel={`${thesisAligned} of ${allData.length} loaded`} tone="green" />
+        <KeyMetricCard icon={AlertTriangle} label="Needs assessment" value={needsAttention} detail="Loaded-page applications without a usable decision score" progress={ratioPercent(needsAttention, allData.length)} progressLabel={`${needsAttention} of ${allData.length} loaded`} tone="amber" />
       </div>
 
       <section className="panel space-y-1 rounded-lg p-2">
-        <div className="flex flex-col gap-3 rounded-md bg-gradient-to-r from-[#edf3fb] to-transparent px-3 py-3 sm:flex-row sm:items-center"><div className="relative max-w-sm flex-1"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-2" /><label htmlFor="inbound-search" className="sr-only">Search inbound applications</label><input id="inbound-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, company, email, source or deck..." className="w-full rounded-md bg-white/70 py-2.5 pl-9 pr-3 text-sm shadow-inner shadow-slate-200/60 outline-none focus:bg-white" /></div><div className="flex items-center justify-between gap-3 text-[11px] text-muted"><span aria-live="polite">Showing {inbound.length} of {inboundRecords.length} inbound applications</span>{query.trim() && <button type="button" onClick={() => setQuery("")} className="font-bold text-accent hover:underline">Clear search</button>}</div></div>
+          <div className="flex flex-col gap-3 rounded-md bg-gradient-to-r from-[#edf3fb] to-transparent px-3 py-3 sm:flex-row sm:items-center"><div className="relative max-w-sm flex-1"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-2" /><label htmlFor="inbound-search" className="sr-only">Search inbound applications</label><input id="inbound-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, company, email, source or deck..." className="w-full rounded-md bg-white/70 py-2.5 pl-9 pr-3 text-sm shadow-inner shadow-slate-200/60 outline-none focus:bg-white" /></div><div className="flex items-center justify-between gap-3 text-[11px] text-muted"><span aria-live="polite">Showing {inbound.length} of {filteredTotalCount} inbound applications</span>{query.trim() && <button type="button" onClick={() => setQuery("")} className="font-bold text-accent hover:underline">Clear search</button>}</div></div>
         <div className="flex flex-wrap items-center gap-2 px-3 pt-2 text-[10px] text-muted"><span className="rounded-full bg-[#eee8f8] px-2.5 py-1 font-bold text-[#7656a5]">Origin: inbound</span>{query.trim() && <span className="rounded-full bg-surface-2 px-2.5 py-1">Search: “{query.trim()}”</span>}</div>
         {isLoading && <div className="py-12 text-center text-xs text-muted">Loading inbound records…</div>}
         {error && <div className="py-12 text-center text-xs text-danger">Unable to load inbound records.</div>}
