@@ -10,6 +10,7 @@ import json
 from typing import Any
 
 import structlog
+from redis.exceptions import WatchError
 
 logger = structlog.get_logger(__name__)
 
@@ -25,6 +26,7 @@ _QUEUE_KEYS = {
 _TAVILY_BUDGET_KEY = "vcbrain:budget:tavily"
 # Page tracker for auto-advancing discovery queries
 _PAGE_PREFIX = "vcbrain:page:"
+_MAX_DISCOVERY_PAGE = 10
 
 
 def _lane(priority: float) -> str:
@@ -191,17 +193,65 @@ async def initialize_agent_budget(redis: Any, monthly_limit: int) -> None:
 
 
 async def get_discovery_page(redis: Any, source: str, query: str) -> int:
-    """Get the next page number for a discovery query, auto-incrementing.
+    """Reserve the next page number for a discovery query atomically.
 
-    Returns the current page and advances the counter so the next call
-    gets the next page.  Resets to 1 after page 10 to avoid going too deep.
+    Returns a unique page reservation among concurrent callers and wraps to 1
+    after page 10 to avoid going too deep.  WATCH/MULTI keeps the increment
+    and wraparound in one compare-and-set transaction, so concurrent workers
+    cannot both reserve page 1 at the boundary.
     """
     key = f"{_PAGE_PREFIX}{source}:{query}"
-    page = await redis.incr(key)
-    if page > 10:
-        await redis.set(key, 1)
-        page = 1
-    return page  # type: ignore[no-any-return]
+    for _attempt in range(3):
+        pipe = redis.pipeline()
+        try:
+            await pipe.watch(key)
+            current_raw = await pipe.get(key)
+            try:
+                current = int(current_raw) if current_raw is not None else 0
+            except (TypeError, ValueError):
+                current = 0
+            page = current + 1
+            if page > _MAX_DISCOVERY_PAGE:
+                page = 1
+            pipe.multi()
+            pipe.set(key, page)
+            await pipe.execute()
+            return page
+        except WatchError:
+            continue
+        finally:
+            await pipe.reset()
+    raise RuntimeError("discovery page reservation conflicted repeatedly")
+
+
+async def rollback_discovery_page(redis: Any, source: str, query: str, page: int) -> None:
+    """Return a failed discovery page to the tracker for a later retry.
+
+    The tracker is intentionally advanced before the provider call so
+    concurrent workers still reserve distinct pages.  A failed provider call
+    can safely roll back only when the tracker still points at the failed
+    reservation; a later successful reservation is never moved backwards.
+    """
+    key = f"{_PAGE_PREFIX}{source}:{query}"
+    for _attempt in range(3):
+        pipe = redis.pipeline()
+        try:
+            await pipe.watch(key)
+            current_raw = await pipe.get(key)
+            try:
+                current = int(current_raw) if current_raw is not None else 0
+            except (TypeError, ValueError):
+                return
+            if current != page:
+                return
+            pipe.multi()
+            pipe.set(key, max(0, page - 1))
+            await pipe.execute()
+            return
+        except WatchError:
+            continue
+        finally:
+            await pipe.reset()
 
 
 async def reset_discovery_page(redis: Any, source: str, query: str) -> None:

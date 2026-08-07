@@ -97,6 +97,8 @@ class ProductHuntConnector(Connector):
                     "variables": {"topic": query, "first": _DEFAULT_PER_PAGE, "after": after},
                 }
                 resp = await client.post(_API_BASE, json=payload)
+                if resp.status_code == 429:
+                    raise ConnectorError("producthunt_rate_limited: HTTP 429")
                 if resp.status_code != 200:
                     logger.error("producthunt_search_failed", status=resp.status_code)
                     return []

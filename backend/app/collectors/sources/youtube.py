@@ -90,6 +90,8 @@ class YouTubeConnector(Connector):
         async with await self._client() as client:
             resp = await client.get(f"{_API_BASE}/search", params=params)
 
+        if resp.status_code == 429:
+            raise ConnectorError("youtube_rate_limited: HTTP 429")
         if resp.status_code != 200:
             logger.error("youtube_search_failed", status=resp.status_code)
             return []
@@ -150,9 +152,9 @@ class YouTubeConnector(Connector):
 
             channel_title = snippet.get("title", "")
             channel_description = snippet.get("description", "")
-            subscriber_count = stats.get("subscriberCount", "0")
-            video_count = stats.get("videoCount", "0")
-            view_count = stats.get("viewCount", "0")
+            subscriber_count = str(stats.get("subscriberCount") or "0")
+            video_count = str(stats.get("videoCount") or "0")
+            view_count = str(stats.get("viewCount") or "0")
 
             observations.append(
                 {

@@ -18,7 +18,14 @@ from datetime import UTC, datetime
 import structlog
 from tavily import TavilyClient  # type: ignore[import-untyped]
 
-from app.collectors.base import Collected, Connector, ConnectorError, Depth, Seed
+from app.collectors.base import (
+    Collected,
+    Connector,
+    ConnectorError,
+    Depth,
+    Seed,
+    classify_connector_failure,
+)
 from app.collectors.registry import get_connector
 
 logger = structlog.get_logger(__name__)
@@ -75,6 +82,8 @@ class HackathonsConnector(Connector):
                 )
             except Exception as exc:
                 logger.warning("tavily_search_failed", query=search_query, error=str(exc))
+                if classify_connector_failure(exc)[0] == "rate_limited":
+                    raise ConnectorError(f"hackathons_search_rate_limited: {exc}") from exc
                 continue
 
             results = response.get("results", [])

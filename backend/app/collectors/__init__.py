@@ -13,10 +13,20 @@ Sources:
     linkedin        — Tavily search only — Phase 2 stub
 """
 
-from app.collectors.base import Collected, Connector, ConnectorError, Depth, Seed
+from app.collectors.base import (
+    MAX_DISCOVERY_PAGE_SIZE,
+    Collected,
+    Connector,
+    ConnectorError,
+    Depth,
+    Seed,
+    validate_collected,
+    validate_discovered,
+)
 from app.collectors.registry import all_connectors, get_connector
 
 __all__ = [
+    "MAX_DISCOVERY_PAGE_SIZE",
     "Collected",
     "Connector",
     "ConnectorError",
@@ -24,4 +34,6 @@ __all__ = [
     "Seed",
     "all_connectors",
     "get_connector",
+    "validate_collected",
+    "validate_discovered",
 ]

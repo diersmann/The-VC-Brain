@@ -13,7 +13,14 @@ import asyncio
 import structlog
 from tavily import TavilyClient  # type: ignore[import-untyped]
 
-from app.collectors.base import Collected, Connector, Depth, Seed
+from app.collectors.base import (
+    Collected,
+    Connector,
+    ConnectorError,
+    Depth,
+    Seed,
+    classify_connector_failure,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -60,6 +67,8 @@ class TavilySearchConnector(Connector):
             )
         except Exception as exc:
             logger.error("tavily_search_failed", query=query, error=str(exc))
+            if classify_connector_failure(exc)[0] == "rate_limited":
+                raise ConnectorError(f"tavily_search_rate_limited: {exc}") from exc
             return []
 
         seeds: list[Seed] = []

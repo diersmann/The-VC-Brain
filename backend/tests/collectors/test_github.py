@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 import respx
 
-from app.collectors.base import Seed
+from app.collectors.base import ConnectorError, Seed
 from app.collectors.sources.github import GitHubConnector
 
 
@@ -42,13 +42,15 @@ async def test_discover_returns_seeds(connector: GitHubConnector) -> None:
 
 
 @pytest.mark.asyncio
-async def test_discover_rate_limited_returns_empty(connector: GitHubConnector) -> None:
-    """Rate-limited responses should return an empty list gracefully."""
+async def test_discover_rate_limited_raises_retryable_connector_error(
+    connector: GitHubConnector,
+) -> None:
+    """Rate-limited responses must not look like a successful empty page."""
     with respx.mock:
         respx.get("https://api.github.com/search/users").respond(status_code=403)
 
-        seeds = await connector.discover("ml berlin")
-        assert seeds == []
+        with pytest.raises(ConnectorError, match="rate_limited"):
+            await connector.discover("ml berlin")
 
 
 @pytest.mark.asyncio

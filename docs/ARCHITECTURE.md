@@ -94,6 +94,21 @@ Collection is prioritized by expected decision value rather than volume:
 
 Each connector defines source authority, expected freshness, refresh cadence, legal basis, rate limits, and failure policy. The scheduler uses expected information gain, source staleness, opportunity deadline, and collection cost to decide what to fetch next. Low-value duplication is skipped; missing or inaccessible evidence becomes an explicit unknown.
 
+The provider-neutral `connector-contract-v1` boundary now validates discovery
+outputs as typed `Seed` lists and collection outputs as non-empty byte
+snapshots with source URI/type, parseable observation timestamps, predicates,
+and object-value fields before persistence. Discovery pages are bounded to
+100 seeds, and a provider/validation failure rolls back the reserved page
+when no later reservation has advanced the tracker, so retries do not silently
+skip a failed page. Page-10 wraparound is reserved atomically for concurrent
+workers. Credential-free contract fixtures cover page-bounded
+discovery, provenance/completeness, and classification of a partial rate-limit
+failure without claiming that every provider shares the same pagination
+behavior. Provider cursor/continuation state, cross-page
+deduplication, coordinate and licensing fixtures, provider-specific retry
+matrices, durable last-success telemetry, and credentialed end-to-end checks
+remain connector-by-connector follow-up work.
+
 ### 1. Frontend
 
 The investor-facing application provides:

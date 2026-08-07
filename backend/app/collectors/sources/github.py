@@ -76,7 +76,7 @@ class GitHubConnector(Connector):
 
         if resp.status_code == 403:
             logger.warning("github_rate_limited", reset=resp.headers.get("X-RateLimit-Reset"))
-            return []
+            raise ConnectorError("github_rate_limited: HTTP 403")
         if resp.status_code != 200:
             logger.error("github_search_failed", status=resp.status_code, body=resp.text[:500])
             return []

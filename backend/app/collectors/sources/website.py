@@ -183,14 +183,19 @@ class WebsiteConnector(Connector):
                             )
                         content_type = "text/markdown"
 
-                        observations.append(
-                            {
-                                "predicate": "page_title",
-                                "object_value": page.get("title", ""),
-                                "observed_at": now.isoformat(),
-                                "confidence": 0.9,
-                            }
+                        raw_page_title = page.get("title")
+                        page_title = (
+                            raw_page_title.strip() if isinstance(raw_page_title, str) else ""
                         )
+                        if page_title:
+                            observations.append(
+                                {
+                                    "predicate": "page_title",
+                                    "object_value": page_title,
+                                    "observed_at": now.isoformat(),
+                                    "confidence": 0.9,
+                                }
+                            )
                         observations.append(
                             {
                                 "predicate": "page_content",

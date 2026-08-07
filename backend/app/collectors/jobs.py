@@ -40,6 +40,7 @@ from app.collectors.base import (
     canonical_json_bytes,
     classify_connector_failure,
     validate_collected,
+    validate_discovered,
 )
 from app.collectors.persistence import (
     observation_persistence_fingerprint,
@@ -634,14 +635,39 @@ async def discover_job(
     connector = get_connector(source)
 
     # Auto-advance page to find new people each run
-    from app.collectors.queue import get_discovery_page
+    from app.collectors.queue import get_discovery_page, rollback_discovery_page
 
     page = await get_discovery_page(ctx["redis"], source, query)
     logger.info("discover_job_page", source=source, query=query, page=page)
 
     try:
-        seeds = await connector.discover(query, page=page)
+        seeds = validate_discovered(await connector.discover(query, page=page))
     except Exception as exc:
+        try:
+            await rollback_discovery_page(ctx["redis"], source, query, page)
+        except Exception as rollback_exc:
+            logger.warning(
+                "discover_page_rollback_failed",
+                source=source,
+                query=query,
+                page=page,
+                error_type=type(rollback_exc).__name__,
+            )
+        failure_kind, retryable = classify_connector_failure(exc)
+        failure_result = {
+            "status": "failed",
+            "error": str(exc),
+            "failure_kind": failure_kind,
+            "retryable": retryable,
+        }
+        logger.error(
+            "discover_job_failed",
+            query=query,
+            source=source,
+            failure_kind=failure_kind,
+            retryable=retryable,
+            error=str(exc),
+        )
         if job_id:
             async with _session_ctx(ctx) as status_session:
                 await update_job(
@@ -651,6 +677,7 @@ async def discover_job(
                     phase="discover",
                     attempt=1,
                     last_error=str(exc),
+                    result=failure_result,
                 )
                 await status_session.commit()
         raise
@@ -860,6 +887,7 @@ async def discover_job(
                 job_id,
                 status="succeeded",
                 phase="complete",
+                clear_error=True,
                 result=result,
             )
         await session.commit()

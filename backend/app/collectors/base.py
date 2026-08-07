@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Literal, Protocol, runtime_checkable
 
 Depth = Literal["light", "deep"]
 ConnectorMaturity = Literal["experimental", "beta", "production"]
+MAX_DISCOVERY_PAGE_SIZE = 100
 
 
 @dataclass(frozen=True)
@@ -139,25 +141,73 @@ class ConnectorError(Exception):
     """Base exception for connector failures."""
 
 
+def validate_discovered(seeds: object) -> list[Seed]:
+    """Validate the provider-neutral discovery output contract.
+
+    Connectors may use provider-specific pagination internally, but the
+    collector boundary deliberately exposes a bounded list of typed seeds.
+    Keeping this check at the boundary prevents malformed provider payloads
+    from becoming person rows while preserving provider-specific seed source
+    types (for example, Tavily's ``web`` and ``tavily_entity`` leads).
+    """
+    if not isinstance(seeds, list):
+        raise ConnectorError("connector discovery output must be a list")
+    if len(seeds) > MAX_DISCOVERY_PAGE_SIZE:
+        raise ConnectorError(
+            f"connector discovery page exceeds {MAX_DISCOVERY_PAGE_SIZE} seeds"
+        )
+    for index, seed in enumerate(seeds):
+        if not isinstance(seed, Seed):
+            raise ConnectorError(f"connector discovery seed {index} must be a Seed")
+        if not isinstance(seed.source_type, str) or not seed.source_type.strip():
+            raise ConnectorError(f"connector discovery seed {index} is missing source_type")
+        if not isinstance(seed.handle, str) or not seed.handle.strip():
+            raise ConnectorError(f"connector discovery seed {index} is missing handle")
+        if not isinstance(seed.metadata, dict):
+            raise ConnectorError(f"connector discovery seed {index} metadata must be an object")
+    return seeds
+
+
 def validate_collected(collected: Collected) -> None:
     """Validate the shared output contract before persistence or scoring."""
+    if not isinstance(collected.content, bytes):
+        raise ConnectorError("connector content must be bytes")
     if not collected.content:
         raise ConnectorError("connector returned empty content")
-    if not collected.content_type.strip():
+    if not isinstance(collected.content_type, str) or not collected.content_type.strip():
         raise ConnectorError("connector returned an empty content type")
-    if not collected.source_type.strip():
+    if not isinstance(collected.source_type, str) or not collected.source_type.strip():
         raise ConnectorError("connector returned an empty source type")
-    if not collected.uri.strip():
+    if not isinstance(collected.uri, str) or not collected.uri.strip():
         raise ConnectorError("connector returned an empty source URI")
+    if collected.license_hint is not None and not isinstance(collected.license_hint, dict):
+        raise ConnectorError("connector license hint must be an object")
     if not isinstance(collected.observations, list):
         raise ConnectorError("connector observations must be a list")
     for observation in collected.observations:
         if not isinstance(observation, dict):
             raise ConnectorError("connector observations must be objects")
-        if not str(observation.get("predicate", "")).strip():
+        predicate = observation.get("predicate")
+        if not isinstance(predicate, str) or not predicate.strip():
             raise ConnectorError("connector observation is missing predicate")
         if "object_value" not in observation:
             raise ConnectorError("connector observation is missing object_value")
+        object_value = observation["object_value"]
+        if not isinstance(object_value, str):
+            raise ConnectorError("connector observation object_value must be a string")
+        if not object_value.strip():
+            raise ConnectorError("connector observation has an empty object_value")
+        raw_observed_at = observation.get("observed_at")
+        if raw_observed_at is None or not str(raw_observed_at).strip():
+            raise ConnectorError("connector observation is missing observed_at")
+        if isinstance(raw_observed_at, datetime):
+            continue
+        if not isinstance(raw_observed_at, str):
+            raise ConnectorError("connector observation has an invalid observed_at")
+        try:
+            datetime.fromisoformat(raw_observed_at)
+        except ValueError as exc:
+            raise ConnectorError("connector observation has an invalid observed_at") from exc
 
 
 FailureKind = Literal["transient", "rate_limited", "permanent"]

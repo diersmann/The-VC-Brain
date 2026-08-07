@@ -88,6 +88,8 @@ class ArxivConnector(Connector):
         async with await self._client() as client:
             resp = await client.get(_ARXIV_API, params=params)
 
+        if resp.status_code == 429:
+            raise ConnectorError("arxiv_rate_limited: HTTP 429")
         if resp.status_code != 200:
             logger.error("arxiv_search_failed", status=resp.status_code)
             return []

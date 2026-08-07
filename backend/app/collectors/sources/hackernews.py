@@ -65,6 +65,8 @@ class HackerNewsConnector(Connector):
                 "page": page - 1,  # Algolia is 0-indexed
             }
             resp = await client.get(f"{_ALGOLIA_API}/search", params=params)
+            if resp.status_code == 429:
+                raise ConnectorError("hackernews_rate_limited: HTTP 429")
             if resp.status_code != 200:
                 logger.error("hn_search_failed", status=resp.status_code)
                 return []
@@ -90,6 +92,8 @@ class HackerNewsConnector(Connector):
             # 2. Search comments for the same query to find active commenters
             params["tags"] = "comment"
             resp = await client.get(f"{_ALGOLIA_API}/search", params=params)
+            if resp.status_code == 429:
+                raise ConnectorError("hackernews_rate_limited: HTTP 429")
             if resp.status_code == 200:
                 data = resp.json()
                 for hit in data.get("hits", []):
