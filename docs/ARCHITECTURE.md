@@ -98,6 +98,20 @@ The investor-facing application provides:
 
 The current `/inbox` view composes these persisted candidate and SLA fields into saved URL views and shows derived next actions only as workflow guidance. It must label missing ownership, ancestry, or blockers as unavailable until authenticated assignment and opportunity-level contracts exist.
 
+The inbound inbox consumes the v1 candidate envelope with an inbound origin
+filter and keeps search in the URL. It accumulates cursor pages only after an
+explicit **Load more** action, and distinguishes the server-authoritative total
+from the number of records loaded in the current view. Legacy array consumers
+remain supported during migration.
+
+Discovery, research, and memo actions retain the returned JobRun ID and poll
+the durable status endpoint while a run is queued or running. Polling stops for
+terminal states and successful research/discovery runs invalidate the relevant
+candidate projections; memo completion refreshes the memo projection. Queue
+and terminal failures remain visible and retryable. Processing, identity,
+avatar, lease recovery, and generic cancellation/retry flows are not yet
+covered by this UI contract.
+
 ### 2. Backend API
 
 The backend coordinates the application:
@@ -109,7 +123,8 @@ The backend coordinates the application:
 - Optional cold-start inputs include bounded work samples, learning milestones, interview/work-sample context, and reference context; missing public history remains an explicit unknown rather than a negative feature.
 - Sourcing-to-decision workflow state
 - Collection, correlation, and analysis jobs
-- Durable `job_runs` IDs/status/result/error metadata now track discovery, research, scoring, and memo queue entry points; status reads expose `updated_at` for bounded polling. Identity/process/avatar jobs, lease-based crash recovery, and cancel/retry orchestration remain follow-up work.
+- Durable `job_runs` IDs/status/result/error metadata now track discovery, research, scoring, and memo queue entry points; status reads expose `updated_at`, attempt counts, and terminal states for bounded polling. Research, scoring, and memo workers reopen failed runs with an incremented attempt but no-op duplicate delivery after succeeded runs (the client also recognizes model-supported cancellation); memo degradation is stored in `result.status` while the JobRun remains failed. API queue-entry failures are persisted as failed runs; dispatcher enqueue failures requeue/refund and leave their runs queued. Identity/process/avatar jobs, lease-based crash recovery, and generic cancel/retry orchestration remain follow-up work.
+- Candidate list mutations invalidate legacy, bounded, and cursor-paginated list projections plus affected detail projections; decision controls are locked while a save is in flight. This is a client cache-coordination slice, not a full optimistic-concurrency or all-domain mutation contract.
 - Profile, score, graph, and memo delivery
 - Versioned thesis, rubric, memo, and decision contracts
 - Opportunity-scoped jobs carry and validate the exact opportunity ID; person-only fallback selection is not permitted for research, memo, or decisions.
