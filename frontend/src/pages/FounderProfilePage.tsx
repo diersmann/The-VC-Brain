@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, AlertTriangle, AtSign, BrainCircuit, Building2, CheckCircle2, CircleHelp, ExternalLink, FileText, Github, Globe2, Linkedin, MapPin, RefreshCw, ShieldCheck, Sparkles, Target, UserRound } from "lucide-react";
-import { researchCandidate, useCandidate } from "../api/candidates";
+import { invalidateCandidateQueries, researchCandidate, useCandidate } from "../api/candidates";
 import { isTerminalJobStatus, useJobRun } from "../api/jobs";
 import { ApiStateNotice } from "../components/common/ApiStateNotice";
 import { CandidateAvatar } from "../components/common/CandidateAvatar";
@@ -18,6 +19,7 @@ const candidateLinkIcons: Record<CandidateLinkKind, React.ElementType> = { linke
 export function FounderProfilePage() {
   const { founderId } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: founder, isLoading, error, refetch } = useCandidate(founderId);
   const [researchJobId, setResearchJobId] = useState<string | null>(null);
   const [researchRequestError, setResearchRequestError] = useState(false);
@@ -26,8 +28,8 @@ export function FounderProfilePage() {
   const researchRefreshReady = researchStatus === "succeeded" || researchStatus === "degraded";
 
   useEffect(() => {
-    if (researchRefreshReady && isTerminalJobStatus(researchStatus)) void refetch();
-  }, [researchRefreshReady, researchStatus, refetch]);
+    if (researchRefreshReady && isTerminalJobStatus(researchStatus)) void invalidateCandidateQueries(queryClient, founderId);
+  }, [founderId, queryClient, researchRefreshReady, researchStatus]);
 
   if (isLoading && !founder) return <div className="py-20 text-center text-sm text-muted">Loading source evidence…</div>;
   if (error && !founder) return <div className="mx-auto max-w-[680px] py-20"><ApiStateNotice error={error} onRetry={() => void refetch()} label="founder evidence" /><button onClick={() => navigate("/sourcing")} className="mt-4 block text-xs font-bold text-accent">Back to discover</button></div>;

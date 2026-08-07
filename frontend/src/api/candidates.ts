@@ -1,10 +1,28 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { throwIfNotOk } from "./errors";
 import type { Candidate, CandidateDetail } from "../types/candidate";
 
 export type OutreachEmailType = "founder_intro" | "request_deck" | "diligence" | "follow_up";
 export type DecisionAction = "proceed" | "hold" | "decline";
 export type CandidateOrigin = "inbound" | "outbound";
+
+/**
+ * Mark every candidate projection stale after a mutation.
+ *
+ * Candidate lists have intentionally separate keys for legacy, bounded, and
+ * cursor-paginated consumers, while detail pages use an id-specific key.
+ * Invalidating (rather than editing cached data) keeps the UI authoritative
+ * and avoids fabricating a post-mutation candidate shape.
+ */
+export async function invalidateCandidateQueries(queryClient: QueryClient, candidateId?: string): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["candidates"] }),
+    queryClient.invalidateQueries({ queryKey: ["candidate-list"] }),
+    queryClient.invalidateQueries({ queryKey: ["candidate-list-pages"] }),
+    ...(candidateId ? [queryClient.invalidateQueries({ queryKey: ["candidate", candidateId] })] : []),
+  ]);
+}
 
 export type CandidateListResponse = {
   version: "v1";

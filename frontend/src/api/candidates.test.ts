@@ -7,6 +7,7 @@ import {
   fetchCandidateListPage,
   fetchCandidates,
   generateCandidateMemo,
+  invalidateCandidateQueries,
   researchCandidate,
   recordCandidateFeedback,
   recordCandidateDecision,
@@ -45,6 +46,17 @@ test("returns candidates from the API", async () => {
 
   const result = await fetchCandidates();
   expect(result).toEqual(mockData);
+});
+
+test("invalidates every candidate projection after a mutation", async () => {
+  const queryClient = { invalidateQueries: vi.fn().mockResolvedValue(undefined) } as unknown as Parameters<typeof invalidateCandidateQueries>[0];
+
+  await invalidateCandidateQueries(queryClient, "candidate-1");
+
+  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidates"] });
+  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate-list"] });
+  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate-list-pages"] });
+  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate", "candidate-1"] });
 });
 
 test("sends stage and origin filters to the API", async () => {

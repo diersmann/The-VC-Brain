@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, PauseCircle, Scale, X, XCircle } from "lucide-react";
 
-import { recordCandidateDecision, type DecisionAction } from "../../api/candidates";
+import { invalidateCandidateQueries, recordCandidateDecision, type DecisionAction } from "../../api/candidates";
 
 const actions: { value: DecisionAction; label: string; prompt: string; style: string; icon: React.ElementType }[] = [
   { value: "proceed", label: "Proceed", prompt: "Why should the fund move forward?", style: "bg-[#e4f2ed] text-[#347c67]", icon: CheckCircle2 },
@@ -20,6 +21,7 @@ export function DecisionActionDock({
   currentState: string;
   onSaved: () => void | Promise<void>;
 }) {
+  const queryClient = useQueryClient();
   const [selected, setSelected] = useState<DecisionAction | null>(null);
   const [reason, setReason] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "error">("idle");
@@ -27,7 +29,7 @@ export function DecisionActionDock({
   const activeAction = actions.find((item) => item.value === selected);
 
   const saveDecision = async () => {
-    if (!selected || !opportunityId || reason.trim().length < 3) return;
+    if (!selected || !opportunityId || status === "saving" || reason.trim().length < 3) return;
     setStatus("saving");
     try {
       const result = await recordCandidateDecision(candidateId, opportunityId, selected, reason.trim());
@@ -35,6 +37,7 @@ export function DecisionActionDock({
       setSelected(null);
       setReason("");
       setStatus("idle");
+      await invalidateCandidateQueries(queryClient, candidateId);
       await onSaved();
       window.setTimeout(() => setConfirmation(null), 2800);
     } catch {
@@ -54,7 +57,7 @@ export function DecisionActionDock({
             <section className="rounded-lg bg-white/95 p-4 shadow-[0_20px_60px_rgba(31,45,66,.22)] backdrop-blur-2xl" aria-label={`${activeAction.label} decision reason`}>
               <div className="flex items-start justify-between gap-3">
                 <div><div className="eyebrow mb-1">Human decision</div><h2 className="text-sm font-bold">{activeAction.label} this opportunity</h2></div>
-                <button type="button" onClick={() => { setSelected(null); setStatus("idle"); }} aria-label="Close decision reason" className="rounded-md bg-surface-2 p-1.5 text-muted"><X className="h-3.5 w-3.5" /></button>
+                <button type="button" disabled={status === "saving"} onClick={() => { setSelected(null); setStatus("idle"); }} aria-label="Close decision reason" className="rounded-md bg-surface-2 p-1.5 text-muted disabled:cursor-not-allowed disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>
               </div>
               <label className="mt-3 block"><span className="mb-2 block text-xs font-semibold text-muted">{activeAction.prompt}</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} autoFocus maxLength={2000} placeholder="Add a concise reason for the decision record…" className="w-full resize-none rounded-md bg-surface-2 px-3 py-2.5 text-sm leading-5 outline-none focus:ring-2 focus:ring-accent/20" /></label>
               {status === "error" && <div className="mt-2 text-xs font-semibold text-danger">Unable to save the decision. Please retry.</div>}
@@ -72,7 +75,7 @@ export function DecisionActionDock({
         <span className="hidden items-center gap-1.5 rounded-md bg-surface-2 px-2.5 py-2 text-[9px] font-bold uppercase tracking-wider text-muted lg:inline-flex"><span className="h-1.5 w-1.5 rounded-full bg-accent-muted" />{formatState(currentState)}</span>
         {actions.map((action) => {
           const Icon = action.icon;
-          return <button key={action.value} type="button" disabled={!opportunityId} title={!opportunityId ? "No opportunity is linked to this candidate" : undefined} aria-pressed={selected === action.value} onClick={() => { setSelected(action.value); setStatus("idle"); }} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2.5 text-xs font-bold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40 ${action.style} ${selected === action.value ? "ring-2 ring-current ring-offset-1" : ""}`}><Icon className="h-3.5 w-3.5" />{action.label}</button>;
+          return <button key={action.value} type="button" disabled={!opportunityId || status === "saving"} title={!opportunityId ? "No opportunity is linked to this candidate" : undefined} aria-pressed={selected === action.value} onClick={() => { setSelected(action.value); setStatus("idle"); }} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2.5 text-xs font-bold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40 ${action.style} ${selected === action.value ? "ring-2 ring-current ring-offset-1" : ""}`}><Icon className="h-3.5 w-3.5" />{action.label}</button>;
         })}
       </div>
     </>

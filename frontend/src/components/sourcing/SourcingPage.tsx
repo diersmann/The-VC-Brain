@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Radar, Search, ShieldCheck, Sparkles, Target } from "lucide-react";
-import { triggerDiscovery, useCandidates } from "../../api/candidates";
+import { invalidateCandidateQueries, triggerDiscovery, useCandidates } from "../../api/candidates";
 import { isTerminalJobStatus, useJobRun } from "../../api/jobs";
 import { KeyMetricCard } from "../common/KeyMetricCard";
 import { isEvidenceReady, isThesisAligned, ratioPercent } from "../../data/portfolioMetrics";
@@ -15,7 +16,7 @@ import { OutreachComposer } from "./OutreachComposer";
 
 
 export function SourcingPage() {
-  const navigate=useNavigate(); const {data,isLoading,error,refetch}=useCandidates();
+  const navigate=useNavigate(); const queryClient=useQueryClient(); const {data,isLoading,error}=useCandidates();
   const records=data??[];
   const candidates=rankCandidates(records.filter(hasPublicName));
   const unresolvedLeads=records.length-candidates.length;
@@ -31,7 +32,7 @@ export function SourcingPage() {
   const discoveryRefreshReady = discoveryStatus === "succeeded" || discoveryStatus === "degraded";
   const discoveryActive=discoveryStatus === "queued" || discoveryStatus === "running";
   const discoveryNotice=discoveryJob.error ? "Unable to read discovery job status. Retry status when the API is available." : discoveryJob.data && discoveryStatus && discoveryStatus !== "succeeded" ? discoveryStatus === "failed" || discoveryStatus === "cancelled" ? discoveryJob.data.last_error ?? "Discovery job failed. Retry when the service is available." : `Discovery job ${discoveryStatus} · ${Math.round(discoveryJob.data.progress * 100)}%` : discoveryStatus === "succeeded" ? "Discovery completed. Candidate results are refreshing." : null;
-  useEffect(() => { if (discoveryRefreshReady && isTerminalJobStatus(discoveryStatus)) void refetch(); }, [discoveryRefreshReady, discoveryStatus, refetch]);
+  useEffect(() => { if (discoveryRefreshReady && isTerminalJobStatus(discoveryStatus)) void invalidateCandidateQueries(queryClient); }, [discoveryRefreshReady, discoveryStatus, queryClient]);
   const highSignal=candidates.filter(hasHighMultiAxisSignal).length;
   const thesisAligned=candidates.filter(isThesisAligned).length;
   const evidenceReady=candidates.filter(isEvidenceReady).length;

@@ -1,10 +1,16 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import { createTestQueryClient } from "../../test/queryClient";
 import { CandidateCard } from "./CandidateCard";
 import type { Candidate } from "../../types/candidate";
 
 afterEach(cleanup);
+
+function renderCandidate(ui: React.ReactElement, client = createTestQueryClient()) {
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 const baseCandidate: Candidate = {
   id: "test-id",
@@ -37,7 +43,7 @@ const nullScoresCandidate: Candidate = {
 
 describe("CandidateCard", () => {
   test("renders candidate name and initials", () => {
-    render(
+    renderCandidate(
       <CandidateCard
         candidate={baseCandidate}
         onViewFounder={() => {}}
@@ -49,7 +55,7 @@ describe("CandidateCard", () => {
   });
 
   test("renders the cached avatar endpoint when available", () => {
-    render(
+    renderCandidate(
       <CandidateCard
         candidate={{ ...baseCandidate, avatar_url: "/api/v1/candidates/test-id/avatar" }}
         onViewFounder={() => {}}
@@ -61,7 +67,7 @@ describe("CandidateCard", () => {
   });
 
   test("renders inbound badge for inbound origin", () => {
-    render(
+    renderCandidate(
       <CandidateCard
         candidate={baseCandidate}
         onViewFounder={() => {}}
@@ -74,7 +80,7 @@ describe("CandidateCard", () => {
 
   test("renders outbound badge for outbound origin", () => {
     const outbound = { ...baseCandidate, origin: "outbound" };
-    render(
+    renderCandidate(
       <CandidateCard
         candidate={outbound}
         onViewFounder={() => {}}
@@ -86,7 +92,7 @@ describe("CandidateCard", () => {
   });
 
   test("renders null scores gracefully", () => {
-    render(
+    renderCandidate(
       <CandidateCard
         candidate={nullScoresCandidate}
         onViewFounder={() => {}}
@@ -98,7 +104,7 @@ describe("CandidateCard", () => {
   });
 
   test("renders score-driven rings and an evidence bar", () => {
-    const { container } = render(
+    const { container } = renderCandidate(
       <CandidateCard
         candidate={baseCandidate}
         onViewFounder={() => {}}
@@ -121,7 +127,7 @@ describe("CandidateCard", () => {
 
   test("renders fallback initial for null display_name", () => {
     const noName = { ...baseCandidate, display_name: null };
-    render(
+    renderCandidate(
       <CandidateCard
         candidate={noName}
         onViewFounder={() => {}}
@@ -132,7 +138,7 @@ describe("CandidateCard", () => {
   });
 
   test("renders only functional action buttons", () => {
-    render(
+    renderCandidate(
       <CandidateCard
         candidate={baseCandidate}
         onViewFounder={() => {}}
@@ -150,7 +156,7 @@ describe("CandidateCard", () => {
   test("opens the outreach workflow without opening the founder profile", () => {
     const onOutreach = vi.fn();
     const onViewFounder = vi.fn();
-    const { container } = render(
+    const { container } = renderCandidate(
       <CandidateCard candidate={baseCandidate} onViewFounder={onViewFounder} onOutreach={onOutreach} />,
     );
 
@@ -162,9 +168,26 @@ describe("CandidateCard", () => {
 
   test("uses the explicit founder action instead of a pointer-only card", () => {
     const onViewFounder = vi.fn();
-    render(<CandidateCard candidate={baseCandidate} onViewFounder={onViewFounder} />);
+    renderCandidate(<CandidateCard candidate={baseCandidate} onViewFounder={onViewFounder} />);
 
     fireEvent.click(screen.getByRole("button", { name: "View Founder" }));
     expect(onViewFounder).toHaveBeenCalledOnce();
+  });
+
+  test("invalidates candidate projections after a saved dismissal", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ action: "dismiss" }), { status: 200 })));
+    const queryClient = createTestQueryClient();
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+    renderCandidate(<CandidateCard candidate={baseCandidate} onViewFounder={() => {}} />, queryClient);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Dismiss" })[1]);
+    fireEvent.change(screen.getByRole("textbox", { name: "Why dismiss this candidate?" }), { target: { value: "Not in current thesis" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save dismissal" }));
+
+    await waitFor(() => expect(screen.queryByText("Alice Chen")).not.toBeInTheDocument());
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidates"] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate-list"] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate-list-pages"] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["candidate", "test-id"] });
   });
 });
