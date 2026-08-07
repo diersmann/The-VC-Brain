@@ -25,6 +25,7 @@ from app.collectors.base import (
     Depth,
     Seed,
     canonical_json_bytes,
+    normalize_connector_error,
 )
 
 logger = structlog.get_logger(__name__)
@@ -85,19 +86,29 @@ class ArxivConnector(Connector):
             "sortOrder": "descending",
         }
 
-        async with await self._client() as client:
-            resp = await client.get(_ARXIV_API, params=params)
+        try:
+            async with await self._client() as client:
+                resp = await client.get(_ARXIV_API, params=params)
+        except Exception as exc:
+            raise normalize_connector_error(exc, context="arxiv_search_failed") from exc
 
         if resp.status_code == 429:
             raise ConnectorError("arxiv_rate_limited: HTTP 429")
         if resp.status_code != 200:
             logger.error("arxiv_search_failed", status=resp.status_code)
-            return []
+            raise ConnectorError(f"arxiv_search_failed: HTTP {resp.status_code}")
 
         seeds: list[Seed] = []
         seen_authors: set[str] = set()
 
-        root = ET.fromstring(resp.text)
+        try:
+            root = ET.fromstring(resp.text)
+        except Exception as exc:
+            raise normalize_connector_error(
+                exc, context="arxiv_search_failed: invalid provider response"
+            ) from exc
+        if not root.tag.endswith("feed"):
+            raise ConnectorError("arxiv_search_failed: invalid provider response: missing feed")
         ns = {"atom": "http://www.w3.org/2005/Atom"}
 
         for entry in root.findall("atom:entry", ns):

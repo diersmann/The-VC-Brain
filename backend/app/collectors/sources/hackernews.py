@@ -21,6 +21,7 @@ from app.collectors.base import (
     Depth,
     Seed,
     canonical_json_bytes,
+    normalize_connector_error,
 )
 
 logger = structlog.get_logger(__name__)
@@ -56,46 +57,67 @@ class HackerNewsConnector(Connector):
         seeds: list[Seed] = []
         seen_authors: set[str] = set()
 
-        async with await self._client() as client:
-            # 1. Search stories
-            params: dict[str, str | int] = {
-                "query": query,
-                "tags": "story",
-                "hitsPerPage": _DEFAULT_HITS,
-                "page": page - 1,  # Algolia is 0-indexed
-            }
-            resp = await client.get(f"{_ALGOLIA_API}/search", params=params)
-            if resp.status_code == 429:
-                raise ConnectorError("hackernews_rate_limited: HTTP 429")
-            if resp.status_code != 200:
-                logger.error("hn_search_failed", status=resp.status_code)
-                return []
+        try:
+            async with await self._client() as client:
+                # 1. Search stories
+                params: dict[str, str | int] = {
+                    "query": query,
+                    "tags": "story",
+                    "hitsPerPage": _DEFAULT_HITS,
+                    "page": page - 1,  # Algolia is 0-indexed
+                }
+                resp = await client.get(f"{_ALGOLIA_API}/search", params=params)
+                if resp.status_code == 429:
+                    raise ConnectorError("hackernews_rate_limited: HTTP 429")
+                if resp.status_code != 200:
+                    logger.error("hn_search_failed", status=resp.status_code)
+                    raise ConnectorError(f"hackernews_search_failed: HTTP {resp.status_code}")
 
-            data = resp.json()
-            for hit in data.get("hits", []):
-                author = hit.get("author", "")
-                if author and author.lower() not in seen_authors:
-                    seen_authors.add(author.lower())
-                    seeds.append(
-                        Seed(
-                            source_type="hackernews",
-                            handle=author,
-                            display_hint=author,
-                            metadata={
-                                "query": query,
-                                "story_title": hit.get("title", ""),
-                                "points": hit.get("points", 0),
-                            },
-                        )
+                try:
+                    data = resp.json()
+                except Exception as exc:
+                    raise normalize_connector_error(
+                        exc, context="hackernews_search_failed: invalid provider response"
+                    ) from exc
+                if not isinstance(data, dict) or not isinstance(data.get("hits"), list):
+                    raise ConnectorError(
+                        "hackernews_search_failed: invalid provider response: missing hits"
                     )
+                for hit in data.get("hits", []):
+                    author = hit.get("author", "")
+                    if author and author.lower() not in seen_authors:
+                        seen_authors.add(author.lower())
+                        seeds.append(
+                            Seed(
+                                source_type="hackernews",
+                                handle=author,
+                                display_hint=author,
+                                metadata={
+                                    "query": query,
+                                    "story_title": hit.get("title", ""),
+                                    "points": hit.get("points", 0),
+                                },
+                            )
+                        )
 
-            # 2. Search comments for the same query to find active commenters
-            params["tags"] = "comment"
-            resp = await client.get(f"{_ALGOLIA_API}/search", params=params)
-            if resp.status_code == 429:
-                raise ConnectorError("hackernews_rate_limited: HTTP 429")
-            if resp.status_code == 200:
-                data = resp.json()
+                # 2. Search comments for the same query to find active commenters
+                params["tags"] = "comment"
+                resp = await client.get(f"{_ALGOLIA_API}/search", params=params)
+                if resp.status_code == 429:
+                    raise ConnectorError("hackernews_rate_limited: HTTP 429")
+                if resp.status_code != 200:
+                    logger.error("hn_search_failed", status=resp.status_code)
+                    raise ConnectorError(f"hackernews_search_failed: HTTP {resp.status_code}")
+                try:
+                    data = resp.json()
+                except Exception as exc:
+                    raise normalize_connector_error(
+                        exc, context="hackernews_search_failed: invalid provider response"
+                    ) from exc
+                if not isinstance(data, dict) or not isinstance(data.get("hits"), list):
+                    raise ConnectorError(
+                        "hackernews_search_failed: invalid provider response: missing hits"
+                    )
                 for hit in data.get("hits", []):
                     author = hit.get("author", "")
                     if author and author.lower() not in seen_authors:
@@ -111,6 +133,10 @@ class HackerNewsConnector(Connector):
                                 },
                             )
                         )
+        except ConnectorError:
+            raise
+        except Exception as exc:
+            raise normalize_connector_error(exc, context="hackernews_search_failed") from exc
 
         return seeds
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 import respx
 
-from app.collectors.base import Seed
+from app.collectors.base import ConnectorError, Seed
 from app.collectors.sources.hackernews import HackerNewsConnector
 
 
@@ -44,12 +44,12 @@ async def test_discover_returns_seeds(connector: HackerNewsConnector) -> None:
 
 @pytest.mark.asyncio
 async def test_discover_handles_api_error(connector: HackerNewsConnector) -> None:
-    """API errors should return an empty list gracefully."""
+    """API errors must not be recorded as a successful empty page."""
     with respx.mock:
         respx.get("https://hn.algolia.com/api/v1/search").respond(status_code=500)
 
-        seeds = await connector.discover("machine learning")
-        assert seeds == []
+        with pytest.raises(ConnectorError, match="HTTP 500"):
+            await connector.discover("machine learning")
 
 
 @pytest.mark.asyncio

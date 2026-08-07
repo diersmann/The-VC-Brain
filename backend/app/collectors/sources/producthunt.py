@@ -19,6 +19,7 @@ from app.collectors.base import (
     Depth,
     Seed,
     canonical_json_bytes,
+    normalize_connector_error,
 )
 
 logger = structlog.get_logger(__name__)
@@ -90,32 +91,55 @@ class ProductHuntConnector(Connector):
         """
         after: str | None = None
         data: Any = {}
-        async with await self._client() as client:
-            for requested_page in range(1, page + 1):
-                payload = {
-                    "query": graphql_query,
-                    "variables": {"topic": query, "first": _DEFAULT_PER_PAGE, "after": after},
-                }
-                resp = await client.post(_API_BASE, json=payload)
-                if resp.status_code == 429:
-                    raise ConnectorError("producthunt_rate_limited: HTTP 429")
-                if resp.status_code != 200:
-                    logger.error("producthunt_search_failed", status=resp.status_code)
-                    return []
-                data = resp.json()
-                if data.get("errors"):
-                    logger.error("producthunt_search_graphql_failed", errors=data["errors"])
-                    return []
-                if requested_page == page:
-                    break
-                page_info = data.get("data", {}).get("posts", {}).get("pageInfo", {})
-                if not page_info.get("hasNextPage") or not page_info.get("endCursor"):
-                    logger.info(
-                        "producthunt_search_page_unavailable",
-                        requested_page=requested_page + 1,
+        try:
+            async with await self._client() as client:
+                for requested_page in range(1, page + 1):
+                    payload = {
+                        "query": graphql_query,
+                        "variables": {"topic": query, "first": _DEFAULT_PER_PAGE, "after": after},
+                    }
+                    resp = await client.post(_API_BASE, json=payload)
+                    if resp.status_code == 429:
+                        raise ConnectorError("producthunt_rate_limited: HTTP 429")
+                    if resp.status_code != 200:
+                        logger.error("producthunt_search_failed", status=resp.status_code)
+                        raise ConnectorError(f"producthunt_search_failed: HTTP {resp.status_code}")
+                    try:
+                        data = resp.json()
+                    except Exception as exc:
+                        raise normalize_connector_error(
+                            exc, context="producthunt_search_failed: invalid provider response"
+                        ) from exc
+                    if data.get("errors"):
+                        logger.error("producthunt_search_graphql_failed", errors=data["errors"])
+                        raise ConnectorError(
+                            "producthunt_search_graphql_failed: provider returned errors"
+                        )
+                    posts_payload = (
+                        data.get("data", {}).get("posts") if isinstance(data, dict) else None
                     )
-                    return []
-                after = page_info["endCursor"]
+                    if (
+                        not isinstance(posts_payload, dict)
+                        or not isinstance(posts_payload.get("edges"), list)
+                        or not isinstance(posts_payload.get("pageInfo"), dict)
+                    ):
+                        raise ConnectorError(
+                            "producthunt_search_failed: invalid provider response: missing posts"
+                        )
+                    if requested_page == page:
+                        break
+                    page_info = data.get("data", {}).get("posts", {}).get("pageInfo", {})
+                    if not page_info.get("hasNextPage") or not page_info.get("endCursor"):
+                        logger.info(
+                            "producthunt_search_page_unavailable",
+                            requested_page=requested_page + 1,
+                        )
+                        return []
+                    after = page_info["endCursor"]
+        except ConnectorError:
+            raise
+        except Exception as exc:
+            raise normalize_connector_error(exc, context="producthunt_search_failed") from exc
 
         seeds: list[Seed] = []
         posts = data.get("data", {}).get("posts", {}).get("edges", [])

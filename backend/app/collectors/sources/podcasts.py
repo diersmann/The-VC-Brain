@@ -26,7 +26,7 @@ from app.collectors.base import (
     ConnectorError,
     Depth,
     Seed,
-    classify_connector_failure,
+    normalize_connector_error,
 )
 from app.collectors.registry import get_connector
 
@@ -67,11 +67,14 @@ class PodcastsConnector(Connector):
         Note: Tavily basic search does not support pagination.
         The page parameter is accepted for interface consistency.
         """
-        maybe_tavily = self._get_tavily()
-        tavily = await maybe_tavily if inspect.isawaitable(maybe_tavily) else maybe_tavily
+        try:
+            maybe_tavily = self._get_tavily()
+            tavily = await maybe_tavily if inspect.isawaitable(maybe_tavily) else maybe_tavily
+        except Exception as exc:
+            raise normalize_connector_error(exc, context="podcasts_search_failed") from exc
         if not tavily:
             logger.warning("podcasts_discover_skipped_no_tavily_key")
-            return []
+            raise ConnectorError("podcasts_search_not_configured")
 
         seeds: list[Seed] = []
         seen_urls: set[str] = set()
@@ -89,11 +92,22 @@ class PodcastsConnector(Connector):
                 )
             except Exception as exc:
                 logger.warning("tavily_search_failed", query=search_query, error=str(exc))
-                if classify_connector_failure(exc)[0] == "rate_limited":
-                    raise ConnectorError(f"podcasts_search_rate_limited: {exc}") from exc
-                continue
+                if isinstance(exc, ConnectorError):
+                    raise
+                raise normalize_connector_error(exc, context="podcasts_search_failed") from exc
 
-            results = response.get("results", [])
+            try:
+                results = response.get("results", [])
+                if (
+                    not isinstance(response, dict)
+                    or "results" not in response
+                    or not isinstance(results, list)
+                ):
+                    raise TypeError("missing results")
+            except Exception as exc:
+                raise normalize_connector_error(
+                    exc, context="podcasts_search_failed: invalid provider response"
+                ) from exc
             for result in results:
                 url = result.get("url", "")
                 if not url or url in seen_urls:

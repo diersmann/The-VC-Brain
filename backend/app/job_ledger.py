@@ -84,6 +84,6 @@ async def start_job(
         job.id,
         status="running",
         phase=phase,
-        attempt=max(1, job.attempt + 1),
+        attempt=max(1, (job.attempt or 0) + 1),
         clear_error=True,
     )

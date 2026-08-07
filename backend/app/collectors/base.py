@@ -137,8 +137,40 @@ class Connector(Protocol):
         ...
 
 
+FailureKind = Literal["transient", "rate_limited", "permanent"]
+
+
 class ConnectorError(Exception):
-    """Base exception for connector failures."""
+    """Base exception for connector failures.
+
+    Connector implementations may provide an explicit classification, but
+    provider-facing errors normally only need to include their HTTP status or
+    SDK message.  The shared classifier derives ``failure_kind`` and
+    ``retryable`` once so callers (including durable jobs) cannot accidentally
+    turn a provider failure into a successful empty discovery page.
+    """
+
+    failure_kind: FailureKind
+    retryable: bool
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_kind: FailureKind | None = None,
+        retryable: bool | None = None,
+    ) -> None:
+        super().__init__(message)
+        inferred_kind, inferred_retryable = _classify_connector_message(str(self))
+        self.failure_kind = failure_kind or inferred_kind
+        if retryable is None:
+            self.retryable = (
+                inferred_retryable
+                if failure_kind is None
+                else failure_kind in {"transient", "rate_limited"}
+            )
+        else:
+            self.retryable = retryable
 
 
 def validate_discovered(seeds: object) -> list[Seed]:
@@ -210,25 +242,103 @@ def validate_collected(collected: Collected) -> None:
             raise ConnectorError("connector observation has an invalid observed_at") from exc
 
 
-FailureKind = Literal["transient", "rate_limited", "permanent"]
-
-
 def classify_connector_failure(exc: BaseException) -> tuple[FailureKind, bool]:
     """Classify an upstream failure for retry and operator-facing state."""
-    message = str(exc).lower()
-    if any(token in message for token in ("429", "rate limit", "rate_limited", "throttl")):
+    if isinstance(exc, ConnectorError):
+        return exc.failure_kind, exc.retryable
+    exception_name = type(exc).__name__.lower()
+    if isinstance(exc, (TimeoutError, ConnectionError, BrokenPipeError)):
+        return "transient", True
+    if any(token in exception_name for token in ("ratelimit", "throttle")):
         return "rate_limited", True
+    if isinstance(exc, OSError) and any(
+        token in str(exc).lower()
+        for token in ("network", "connection", "unreachable", "broken pipe")
+    ):
+        return "transient", True
+    if any(
+        token in exception_name
+        for token in (
+            "timeout",
+            "connecterror",
+            "networkerror",
+            "readerror",
+            "writeerror",
+            "remoteprotocol",
+            "protocolerror",
+        )
+    ):
+        return "transient", True
+    return _classify_connector_message(str(exc))
+
+
+def _classify_connector_message(message: str) -> tuple[FailureKind, bool]:
+    """Classify a provider message without requiring a provider SDK type."""
+    message = message.lower()
+    import re
+
+    statuses = {
+        int(match)
+        for match in re.findall(
+            r"(?:\bhttp(?:\s+status)?|\bstatus(?:_code)?|\bstatus)\s*[:=]?\s*(\d{3})\b",
+            message,
+        )
+    }
+    if any(
+        (
+            re.search(r"\b429\b", message) is not None,
+            "rate limit" in message,
+            "rate_limited" in message,
+            "throttl" in message,
+            "too many requests" in message,
+        )
+    ):
+        return "rate_limited", True
+    statuses.update(
+        int(match)
+        for match in re.findall(r"(?:error|code|response)\D+([45]\d{2})\b", message)
+    )
+    if any(500 <= status <= 599 for status in statuses):
+        return "transient", True
+    if any(status in {408, 425} for status in statuses):
+        return "transient", True
+    if any(400 <= status <= 499 for status in statuses):
+        return "permanent", False
     if any(
         token in message
         for token in (
             "timeout",
             "timed out",
             "connection reset",
+            "connection refused",
+            "connection failed",
+            "network error",
+            "all connection attempts failed",
+            "server disconnected",
+            "disconnected without",
             "temporarily unavailable",
-            "502",
-            "503",
-            "504",
         )
     ):
         return "transient", True
     return "permanent", False
+
+
+def normalize_connector_error(
+    exc: BaseException,
+    *,
+    context: str = "connector_failure",
+) -> ConnectorError:
+    """Return a typed connector error while preserving an existing cause.
+
+    This is intentionally provider-neutral: SDKs and HTTP clients differ in
+    their exception classes, while jobs need one durable failure contract.
+    """
+    if isinstance(exc, ConnectorError):
+        return exc
+    failure_kind, retryable = classify_connector_failure(exc)
+    detail = str(exc) or type(exc).__name__
+    return ConnectorError(
+        f"{context}: {detail}",
+        failure_kind=failure_kind,
+        retryable=retryable,
+    )

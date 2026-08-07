@@ -189,6 +189,19 @@ and raw fetches. Tavily extraction is worker-thread offloaded with a bounded
 protection is not yet implemented. Provider-specific timeout/backoff matrices
 and future direct-fetch connector hardening remain follow-up work.
 
+Every registered connector discovery path now treats a non-success HTTP
+response, provider payload error, or provider exception as a typed
+`ConnectorError` with shared `failure_kind` (`transient`, `rate_limited`, or
+`permanent`) and `retryable` metadata. Discovery `JobRun` results therefore
+record terminal non-retryable failures without requeueing, while retryable
+failures are raised for Arq retry handling; a successful provider response with
+zero results remains a successful empty page. A reserved discovery page is
+rolled back when provider/validation or later discovery processing fails.
+Exceptions after discovery enters persistence/queue work, and the periodic
+`auto_discovery_job` queue fan-out (which does not own a `JobRun`), still need a
+broader transaction/ledger contract; complete partial-failure matrices and
+credentialed provider E2E remain blocked.
+
 Discovery activation uses `activation-priority-v1`: thesis fit, novelty, momentum, evidence confidence, identity confidence, contactability, deadline pressure, cost efficiency, and exploration quota are independently represented. Missing values are renormalized and shown as coverage gaps; the current collector path has only partial context, so lifecycle/SLA scheduling and thesis-specific floors remain policy work.
 
 ### 4. Processing Pipeline

@@ -31,15 +31,18 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from tavily import TavilyClient  # type: ignore[import-untyped]
 
 from app.artifact_provenance import build_artifact_metadata, fingerprint_payload
 from app.client_lifecycle import get_tavily_client
 from app.collectors.avatars import fetch_and_store_avatar
 from app.collectors.base import (
     Collected,
+    ConnectorError,
     Seed,
     canonical_json_bytes,
     classify_connector_failure,
+    normalize_connector_error,
     validate_collected,
     validate_discovered,
 )
@@ -622,6 +625,91 @@ async def _compute_and_store_signal(
 async def discover_job(
     ctx: dict[str, Any], query: str, source: str, job_id: str | None = None
 ) -> dict[str, Any]:
+    """Run discovery and finalize provider or persistence failures truthfully."""
+    reservation_key = uuid.uuid4().hex
+    reservations = ctx.setdefault("_discover_reservations", {})
+    try:
+        result = await _discover_job_impl(
+            ctx,
+            query,
+            source,
+            job_id=job_id,
+            _reservation_key=reservation_key,
+        )
+        reservations.pop(reservation_key, None)
+        return result
+    except Exception as exc:
+        reservation = reservations.pop(reservation_key, None)
+        # Provider/validation failures already roll back and write their
+        # ledger row inside the implementation.  The wrapper owns failures
+        # from persistence, scoring, and queue work after discovery succeeds.
+        if reservation and not reservation.get("handled"):
+            from app.collectors.queue import rollback_discovery_page
+
+            try:
+                await rollback_discovery_page(
+                    ctx["redis"], source, query, reservation["page"]
+                )
+            except Exception as rollback_exc:
+                logger.warning(
+                    "discover_page_rollback_failed",
+                    source=source,
+                    query=query,
+                    page=reservation["page"],
+                    error_type=type(rollback_exc).__name__,
+                )
+            failure = normalize_connector_error(exc, context=f"{source}_discover_failed")
+            if job_id:
+                try:
+                    async with _session_ctx(ctx) as status_session:
+                        await update_job(
+                            status_session,
+                            job_id,
+                            status="failed",
+                            phase="discover",
+                            attempt=reservation.get("attempt", 1),
+                            last_error=str(failure),
+                            result={
+                                "status": "failed",
+                                "error": str(failure),
+                                "failure_kind": failure.failure_kind,
+                                "retryable": failure.retryable,
+                            },
+                        )
+                        await status_session.commit()
+                except Exception as ledger_exc:
+                    logger.error(
+                        "discover_job_ledger_update_failed",
+                        job_id=job_id,
+                        error_type=type(ledger_exc).__name__,
+                    )
+            if failure is not exc:
+                if failure.retryable:
+                    raise failure from exc
+                return {
+                    "status": "failed",
+                    "error": str(failure),
+                    "failure_kind": failure.failure_kind,
+                    "retryable": failure.retryable,
+                }
+        if isinstance(exc, ConnectorError) and not exc.retryable:
+            return {
+                "status": "failed",
+                "error": str(exc),
+                "failure_kind": exc.failure_kind,
+                "retryable": exc.retryable,
+            }
+        raise
+
+
+async def _discover_job_impl(
+    ctx: dict[str, Any],
+    query: str,
+    source: str,
+    job_id: str | None = None,
+    *,
+    _reservation_key: str,
+) -> dict[str, Any]:
     """Run a connector's discover phase.
 
     Args:
@@ -640,10 +728,27 @@ async def discover_job(
 
     page = await get_discovery_page(ctx["redis"], source, query)
     logger.info("discover_job_page", source=source, query=query, page=page)
+    reservations = ctx.setdefault("_discover_reservations", {})
+    reservation = {"page": page, "handled": False, "attempt": 1}
+    reservations[_reservation_key] = reservation
+
+    if job_id:
+        async with _session_ctx(ctx) as status_session:
+            started_job = await start_job(status_session, job_id, phase="discover")
+            if started_job is not None:
+                reservation["attempt"] = max(1, started_job.attempt)
+                if started_job.status in {"succeeded", "cancelled"}:
+                    reservation["handled"] = True
+                    await rollback_discovery_page(ctx["redis"], source, query, page)
+                    await status_session.commit()
+                    return dict(started_job.result or {"status": started_job.status})
+            await status_session.commit()
 
     try:
         seeds = validate_discovered(await connector.discover(query, page=page))
     except Exception as exc:
+        reservations[_reservation_key]["handled"] = True
+        failure = normalize_connector_error(exc, context=f"{source}_discover_failed")
         try:
             await rollback_discovery_page(ctx["redis"], source, query, page)
         except Exception as rollback_exc:
@@ -654,10 +759,10 @@ async def discover_job(
                 page=page,
                 error_type=type(rollback_exc).__name__,
             )
-        failure_kind, retryable = classify_connector_failure(exc)
+        failure_kind, retryable = classify_connector_failure(failure)
         failure_result = {
             "status": "failed",
-            "error": str(exc),
+            "error": str(failure),
             "failure_kind": failure_kind,
             "retryable": retryable,
         }
@@ -667,7 +772,7 @@ async def discover_job(
             source=source,
             failure_kind=failure_kind,
             retryable=retryable,
-            error=str(exc),
+            error=str(failure),
         )
         if job_id:
             async with _session_ctx(ctx) as status_session:
@@ -676,12 +781,18 @@ async def discover_job(
                     job_id,
                     status="failed",
                     phase="discover",
-                    attempt=1,
-                    last_error=str(exc),
+                    attempt=reservation["attempt"],
+                    last_error=str(failure),
                     result=failure_result,
                 )
                 await status_session.commit()
-        raise
+        if failure is not exc:
+            if retryable:
+                raise failure from exc
+            return failure_result
+        if retryable:
+            raise
+        return failure_result
     logger.info("discover_job_seeds", source=source, seed_count=len(seeds))
 
     above_count = 0
@@ -693,7 +804,13 @@ async def discover_job(
 
     async with _session_ctx(ctx) as session:
         if job_id:
-            await update_job(session, job_id, status="running", phase="collect", attempt=1)
+            await update_job(
+                session,
+                job_id,
+                status="running",
+                phase="collect",
+                attempt=reservation["attempt"],
+            )
         for seed in seeds:
             entity_type, entity_confidence = classify_seed_entity(source, seed)
             entity_counts[entity_type] = entity_counts.get(entity_type, 0) + 1
@@ -1512,7 +1629,10 @@ async def research_candidate_job(
         previous_components = previous_snapshot.components if previous_snapshot else {}
 
         try:
-            client = await get_tavily_client(settings.tavily_api_key)
+            client = await get_tavily_client(
+                settings.tavily_api_key,
+                factory=TavilyClient,
+            )
         except Exception as exc:
             # A provider constructor/configuration failure must not leave a
             # started JobRun in ``running`` when no search call occurred.

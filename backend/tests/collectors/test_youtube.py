@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 import respx
 
-from app.collectors.base import Seed
+from app.collectors.base import ConnectorError, Seed
 from app.collectors.sources.youtube import YouTubeConnector
 
 
@@ -57,11 +57,11 @@ async def test_discover_returns_seeds(connector: YouTubeConnector) -> None:
 
 
 @pytest.mark.asyncio
-async def test_discover_no_key_returns_empty(connector: YouTubeConnector) -> None:
-    """No API key should return an empty list gracefully."""
+async def test_discover_no_key_fails_truthfully(connector: YouTubeConnector) -> None:
+    """Missing API credentials must not look like a successful empty page."""
     connector._api_key = ""
-    seeds = await connector.discover("machine learning")
-    assert seeds == []
+    with pytest.raises(ConnectorError, match="api_key_not_configured"):
+        await connector.discover("machine learning")
 
 
 @pytest.mark.asyncio

@@ -21,7 +21,7 @@ from app.collectors.base import (
     ConnectorError,
     Depth,
     Seed,
-    classify_connector_failure,
+    normalize_connector_error,
 )
 
 logger = structlog.get_logger(__name__)
@@ -39,6 +39,7 @@ class TavilySearchConnector(Connector):
         settings = get_settings()
         if not settings.tavily_api_key:
             logger.warning("tavily_api_key_not_configured")
+            raise ConnectorError("tavily_search_not_configured")
         return await get_tavily_client(
             settings.tavily_api_key,
             factory=TavilyClient,
@@ -54,9 +55,11 @@ class TavilySearchConnector(Connector):
         Note: Tavily basic search does not support pagination.
         The page parameter is accepted for interface consistency.
         """
-        maybe_client = self._get_client()
-        client = await maybe_client if inspect.isawaitable(maybe_client) else maybe_client
         try:
+            maybe_client = self._get_client()
+            client = await maybe_client if inspect.isawaitable(maybe_client) else maybe_client
+            if client is None:
+                raise ConnectorError("tavily_search_not_configured")
             response = await asyncio.to_thread(
                 client.search,
                 query=query,
@@ -67,14 +70,25 @@ class TavilySearchConnector(Connector):
             )
         except Exception as exc:
             logger.error("tavily_search_failed", query=query, error=str(exc))
-            if classify_connector_failure(exc)[0] == "rate_limited":
-                raise ConnectorError(f"tavily_search_rate_limited: {exc}") from exc
-            return []
+            if isinstance(exc, ConnectorError):
+                raise
+            raise normalize_connector_error(exc, context="tavily_search_failed") from exc
 
         seeds: list[Seed] = []
         seen_urls: set[str] = set()
 
-        results = response.get("results", [])
+        try:
+            results = response.get("results", [])
+            if (
+                not isinstance(response, dict)
+                or "results" not in response
+                or not isinstance(results, list)
+            ):
+                raise TypeError("missing results")
+        except Exception as exc:
+            raise normalize_connector_error(
+                exc, context="tavily_search_failed: invalid provider response"
+            ) from exc
         for result in results:
             url = result.get("url", "")
             if not url or url in seen_urls:

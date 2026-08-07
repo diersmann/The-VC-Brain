@@ -22,6 +22,7 @@ from app.collectors.base import (
     Depth,
     Seed,
     canonical_json_bytes,
+    normalize_connector_error,
 )
 
 logger = structlog.get_logger(__name__)
@@ -71,7 +72,7 @@ class YouTubeConnector(Connector):
         api_key = self._get_api_key()
         if not api_key:
             logger.warning("youtube_discover_skipped_no_key")
-            return []
+            raise ConnectorError("youtube_api_key_not_configured")
 
         seeds: list[Seed] = []
         seen_channels: set[str] = set()
@@ -87,16 +88,26 @@ class YouTubeConnector(Connector):
         # For MVP, we skip pagination and just use the first page.
         # Phase 2: track pageToken in Redis.
 
-        async with await self._client() as client:
-            resp = await client.get(f"{_API_BASE}/search", params=params)
+        try:
+            async with await self._client() as client:
+                resp = await client.get(f"{_API_BASE}/search", params=params)
+        except Exception as exc:
+            raise normalize_connector_error(exc, context="youtube_search_failed") from exc
 
         if resp.status_code == 429:
             raise ConnectorError("youtube_rate_limited: HTTP 429")
         if resp.status_code != 200:
             logger.error("youtube_search_failed", status=resp.status_code)
-            return []
+            raise ConnectorError(f"youtube_search_failed: HTTP {resp.status_code}")
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception as exc:
+            raise normalize_connector_error(
+                exc, context="youtube_search_failed: invalid provider response"
+            ) from exc
+        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+            raise ConnectorError("youtube_search_failed: invalid provider response: missing items")
         for item in data.get("items", []):
             snippet = item.get("snippet", {})
             channel_id = snippet.get("channelId", "")

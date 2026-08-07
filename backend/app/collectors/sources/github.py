@@ -20,6 +20,7 @@ from app.collectors.base import (
     Depth,
     Seed,
     canonical_json_bytes,
+    normalize_connector_error,
 )
 
 logger = structlog.get_logger(__name__)
@@ -71,17 +72,27 @@ class GitHubConnector(Connector):
         search_q = f"location:{query} type:user repos:>0"
         params: dict[str, str | int] = {"q": search_q, "per_page": _DEFAULT_PER_PAGE, "page": page}
 
-        async with await self._client() as client:
-            resp = await client.get(f"{_API_BASE}/search/users", params=params)
+        try:
+            async with await self._client() as client:
+                resp = await client.get(f"{_API_BASE}/search/users", params=params)
+        except Exception as exc:
+            raise normalize_connector_error(exc, context="github_search_failed") from exc
 
         if resp.status_code == 403:
             logger.warning("github_rate_limited", reset=resp.headers.get("X-RateLimit-Reset"))
             raise ConnectorError("github_rate_limited: HTTP 403")
         if resp.status_code != 200:
             logger.error("github_search_failed", status=resp.status_code, body=resp.text[:500])
-            return []
+            raise ConnectorError(f"github_search_failed: HTTP {resp.status_code}")
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception as exc:
+            raise normalize_connector_error(
+                exc, context="github_search_failed: invalid provider response"
+            ) from exc
+        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+            raise ConnectorError("github_search_failed: invalid provider response: missing items")
         seeds: list[Seed] = []
         for item in data.get("items", []):
             login = item.get("login", "")
