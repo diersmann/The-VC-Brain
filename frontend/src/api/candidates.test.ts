@@ -5,7 +5,10 @@ import {
   fetchCandidateMemo,
   fetchCandidateListPage,
   fetchCandidates,
+  generateCandidateMemo,
+  researchCandidate,
   recordCandidateDecision,
+  triggerDiscovery,
 } from "./candidates";
 
 afterEach(() => {
@@ -138,4 +141,16 @@ test("persists a human decision", async () => {
     "/api/v1/candidates/candidate-1/decision",
     expect.objectContaining({ method: "POST", body: JSON.stringify({ opportunity_id: "opportunity-1", action: "hold", reason: "Verify retention" }) }),
   );
+});
+
+test("returns durable ids from queued collection actions", async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ job_id: "discover-job", message: "queued" }), { status: 200 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ queued: 1, candidate_ids: ["candidate-1"], job_ids: ["research-job"], message: "queued" }), { status: 200 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ job_id: "memo-job", message: "queued" }), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(triggerDiscovery("Berlin founders", "github")).resolves.toEqual({ job_id: "discover-job", message: "queued" });
+  await expect(researchCandidate("candidate-1")).resolves.toMatchObject({ job_ids: ["research-job"] });
+  await expect(generateCandidateMemo("candidate-1", "opportunity-1")).resolves.toEqual({ job_id: "memo-job", message: "queued" });
 });

@@ -158,7 +158,16 @@ export function useCandidateMemo(candidateId?: string, opportunityId?: string) {
   });
 }
 
-export async function triggerDiscovery(query: string, source = "hackernews"): Promise<void> {
+export type QueueJobResponse = { job_id: string | null; message: string };
+
+export type ResearchQueueResponse = {
+  queued: number;
+  candidate_ids: string[];
+  job_ids: string[];
+  message: string;
+};
+
+export async function triggerDiscovery(query: string, source = "hackernews"): Promise<QueueJobResponse> {
   const response = await fetch("/api/v1/collection/discover", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -167,13 +176,15 @@ export async function triggerDiscovery(query: string, source = "hackernews"): Pr
   if (!response.ok) {
     throw new Error(`Discovery request failed with status ${response.status}`);
   }
+  return (await response.json()) as QueueJobResponse;
 }
 
-export async function researchCandidate(candidateId: string): Promise<void> {
+export async function researchCandidate(candidateId: string): Promise<ResearchQueueResponse> {
   const response = await fetch(`/api/v1/collection/research/${candidateId}`, { method: "POST" });
   if (!response.ok) {
     throw new Error(`Research request failed with status ${response.status}`);
   }
+  return (await response.json()) as ResearchQueueResponse;
 }
 
 export type ResearchStatus = {
@@ -251,11 +262,12 @@ export async function fetchCandidateMemo(candidateId: string, opportunityId: str
   return (await response.json()) as CandidateMemo;
 }
 
-export async function generateCandidateMemo(candidateId: string, opportunityId: string): Promise<void> {
+export async function generateCandidateMemo(candidateId: string, opportunityId: string): Promise<QueueJobResponse> {
   const response = await fetch(`/api/v1/candidates/${candidateId}/memo/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ opportunity_id: opportunityId }),
   });
   if (!response.ok) throw new Error(`Memo generation failed with status ${response.status}`);
+  return (await response.json()) as QueueJobResponse;
 }
