@@ -18,7 +18,13 @@ async def test_inbound_processing_does_not_bypass_triage_with_memo() -> None:
     opportunity_id = uuid.uuid4()
     snapshot = SimpleNamespace(id=snapshot_id, storage_path="snapshots/deck.pdf")
     session = AsyncMock()
-    session.get = AsyncMock(return_value=snapshot)
+    session.add = MagicMock()
+    async def get(model: object, _identifier: object) -> object | None:
+        from app.db.models import SourceSnapshot
+
+        return snapshot if model is SourceSnapshot else None
+
+    session.get.side_effect = get
     session.add_all = MagicMock()
     session.commit = AsyncMock()
     settings = SimpleNamespace(upload_max_pages=10, upload_max_text_chars=1000)

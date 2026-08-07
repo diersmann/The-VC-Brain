@@ -2,13 +2,15 @@
 
 These fingerprints are deduplication keys, not security hashes. Values use a
 length-prefixed UTF-8 encoding so arbitrary predicate/object/URI text cannot
-create delimiter collisions; the content hash and extractor version remain
-part of the key so a changed source or extractor can append a new observation.
+create delimiter collisions; the content hash, extractor version, and optional
+source locator remain part of the key so a changed source, extractor, or page
+coordinate can append a new observation.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import Any
 
 
@@ -36,8 +38,14 @@ def observation_persistence_fingerprint(
     predicate: str,
     object_value: str,
     extractor_version: str,
+    source_locator: object | None = None,
 ) -> str:
     """Return the stable key for one observation extraction output."""
+    normalized_locator = (
+        json.dumps(source_locator, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if source_locator is not None
+        else ""
+    )
     return _fingerprint(
         (
             snapshot_id,
@@ -46,5 +54,6 @@ def observation_persistence_fingerprint(
             predicate,
             object_value,
             extractor_version,
+            normalized_locator,
         )
     )

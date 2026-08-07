@@ -12,12 +12,14 @@ import pypdf
 import pytest
 from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from starlette.datastructures import Headers
 
 from app.api.routes import inbound
 from app.config import Settings
 from app.db.models import (
     InboundSubmission,
+    JobRun,
     Opportunity,
     OpportunityChannelTouch,
     OutboxEvent,
@@ -39,16 +41,20 @@ class _FakeSession:
         self.person = person
         self.added: list[object] = []
         self.committed = False
+        self.commit_fail_once = False
         self.submission: InboundSubmission | None = None
 
     async def execute(self, _statement: object) -> SimpleNamespace:
         if "inbound_submissions" in str(_statement):
             return SimpleNamespace(scalar_one_or_none=lambda: self.submission)
+        if "outbox_events" in str(_statement):
+            outbox = next((item for item in self.added if isinstance(item, OutboxEvent)), None)
+            return SimpleNamespace(scalar_one_or_none=lambda: outbox)
         return SimpleNamespace(scalar_one_or_none=lambda: self.person)
 
     def add(self, instance: object) -> None:
         if (
-            isinstance(instance, (SourceSnapshot, InboundSubmission, OutboxEvent))
+            isinstance(instance, (SourceSnapshot, InboundSubmission, OutboxEvent, JobRun))
             and instance.id is None
         ):
             instance.id = uuid.uuid4()
@@ -60,7 +66,13 @@ class _FakeSession:
         return None
 
     async def commit(self) -> None:
+        if self.commit_fail_once:
+            self.commit_fail_once = False
+            raise IntegrityError("duplicate", {}, Exception())
         self.committed = True
+
+    async def rollback(self) -> None:
+        return None
 
 
 def _pdf_bytes(*, pages: int = 1, password: str | None = None) -> bytes:
@@ -260,3 +272,50 @@ def test_submission_persists_uploaded_deck_and_returns_opportunity_id(monkeypatc
     assert outbox.dedupe_key == "inbound-submission:submission-1"
     assert outbox.payload["job_name"] == "process_inbound_pitch_job"
     assert outbox.payload["kwargs"]["founder_evidence"] == submission.founder_evidence
+    assert outbox.payload["kwargs"]["job_id"] == response.json()["job_id"]
+
+
+def test_submission_idempotency_race_returns_existing_job_id(monkeypatch) -> None:
+    person = Person(
+        id=uuid.uuid4(),
+        stable_id="email:race@example.com",
+        display_name="Race Example",
+        email="race@example.com",
+        handles={"email": "race@example.com"},
+        consent_state="pending",
+    )
+    opportunity = Opportunity(
+        id=uuid.uuid4(),
+        company_name="Race AI",
+        source_kind="inbound",
+        lifecycle_state="received",
+    )
+    session = _FakeSession(person)
+    session.commit_fail_once = True
+
+    async def fake_opportunity(*_args, **_kwargs) -> Opportunity:
+        return opportunity
+
+    async def override_session():
+        return session
+
+    monkeypatch.setattr(inbound, "put_snapshot", AsyncMock(return_value=("hash-race", "race.pdf")))
+    monkeypatch.setattr(inbound, "create_inbound_opportunity", fake_opportunity)
+    app.dependency_overrides[get_session] = override_session
+
+    try:
+        response = TestClient(app).post(
+            "/api/v1/inbound/pitch",
+            data={
+                "founder_name": "Race Example",
+                "founder_email": "race@example.com",
+                "company_name": "Race AI",
+            },
+            files={"file": ("pitch.pdf", _pdf_bytes(), "application/pdf")},
+            headers={"Idempotency-Key": "race-key"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["job_id"]

@@ -1,4 +1,6 @@
+import uuid
 from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import urlparse
 
 import structlog
@@ -11,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db.models import InboundSubmission, Person, SourceSnapshot
+from app.db.models import InboundSubmission, JobRun, OutboxEvent, Person, SourceSnapshot
 from app.db.session import get_session
 from app.opportunity_service import create_inbound_opportunity, record_channel_touch
 from app.outbox import inbound_outbox_event
@@ -27,6 +29,7 @@ class InboundPitchResponse(BaseModel):
     status: str
     person_id: str
     opportunity_id: str
+    job_id: str | None = None
 
 
 _FOUNDER_EVIDENCE_LIMITS = {
@@ -71,17 +74,22 @@ async def _enqueue_inbound_pitch(
     snapshot_id: str,
     opportunity_id: str,
     company_name: str,
+    founder_evidence: dict[str, str] | None = None,
+    job_id: str | None = None,
 ) -> None:
     """Enqueue inbound processing and always release the temporary Redis pool."""
     try:
-        await redis.enqueue_job(
-            "process_inbound_pitch_job",
-            person_id=person_id,
-            snapshot_id=snapshot_id,
-            opportunity_id=opportunity_id,
-            company_name=company_name,
-            _queue_name="arq:queue",
-        )
+        kwargs: dict[str, Any] = {
+            "person_id": person_id,
+            "snapshot_id": snapshot_id,
+            "opportunity_id": opportunity_id,
+            "company_name": company_name,
+        }
+        if founder_evidence is not None:
+            kwargs["founder_evidence"] = founder_evidence
+        if job_id is not None:
+            kwargs["job_id"] = job_id
+        await redis.enqueue_job("process_inbound_pitch_job", **kwargs, _queue_name="arq:queue")
     finally:
         await redis.aclose()
 
@@ -120,10 +128,24 @@ async def submit_pitch(
     )
     existing = existing_result.scalar_one_or_none()
     if existing is not None:
+        existing_job_id: str | None = None
+        event_result = await db.execute(
+            select(OutboxEvent).where(
+                OutboxEvent.dedupe_key == f"inbound-submission:{idempotency_key}"
+            )
+        )
+        event = event_result.scalar_one_or_none()
+        if event is not None:
+            raw_payload = getattr(event, "payload", None)
+            payload = raw_payload if isinstance(raw_payload, dict) else {}
+            kwargs = payload.get("kwargs", {})
+            if isinstance(kwargs, dict) and kwargs.get("job_id") is not None:
+                existing_job_id = str(kwargs["job_id"])
         return InboundPitchResponse(
             status=existing.status,
             person_id=str(existing.person_id),
             opportunity_id=str(existing.opportunity_id),
+            job_id=existing_job_id,
         )
 
     try:
@@ -186,9 +208,19 @@ async def submit_pitch(
         founder_evidence=founder_evidence,
     )
     db.add(submission)
+    # Generate and add the ID before the one submission transaction commits.
+    # Avoid an intermediate flush: a concurrent idempotency race must be
+    # handled by the IntegrityError re-read below rather than escaping here.
+    processing_job = JobRun(
+        id=uuid.uuid4(),
+        job_type="process_inbound_pitch",
+        status="queued",
+        phase="queued",
+    )
+    db.add(processing_job)
     # Dispatch is durable through the outbox after commit; do not enqueue the
     # same job directly here, which would duplicate processing.
-    db.add(inbound_outbox_event(submission, company_name))
+    db.add(inbound_outbox_event(submission, company_name, job_id=str(processing_job.id)))
 
     try:
         await db.commit()
@@ -200,14 +232,29 @@ async def submit_pitch(
         existing = existing_result.scalar_one_or_none()
         if existing is None:
             raise
+        race_job_id: str | None = None
+        event_result = await db.execute(
+            select(OutboxEvent).where(
+                OutboxEvent.dedupe_key == f"inbound-submission:{idempotency_key}"
+            )
+        )
+        event = event_result.scalar_one_or_none()
+        if event is not None:
+            raw_payload = getattr(event, "payload", None)
+            payload = raw_payload if isinstance(raw_payload, dict) else {}
+            kwargs = payload.get("kwargs", {})
+            if isinstance(kwargs, dict) and kwargs.get("job_id") is not None:
+                race_job_id = str(kwargs["job_id"])
         return InboundPitchResponse(
             status=existing.status,
             person_id=str(existing.person_id),
             opportunity_id=str(existing.opportunity_id),
+            job_id=race_job_id,
         )
 
     return InboundPitchResponse(
         status=submission.status,
         person_id=str(submission.person_id),
         opportunity_id=str(submission.opportunity_id),
+        job_id=str(processing_job.id),
     )

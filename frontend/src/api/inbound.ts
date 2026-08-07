@@ -4,6 +4,7 @@ export interface PitchSubmissionResponse {
   status: string;
   person_id: string;
   opportunity_id: string;
+  job_id?: string | null;
 }
 
 export async function submitPitch(

@@ -125,6 +125,34 @@ async def test_processing_job_dispatch_forwards_optional_job_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_inbound_processing_dispatch_forwards_optional_job_id() -> None:
+    pool = AsyncMock()
+
+    await enqueue_arq_job(
+        {"redis": pool},
+        {
+            "job_type": "process_inbound_pitch",
+            "person_id": "person-1",
+            "snapshot_id": "snapshot-1",
+            "opportunity_id": "opportunity-1",
+            "company_name": "Acme",
+            "founder_evidence": {"learning_velocity": "Built a prototype"},
+            "job_id": "job-1",
+        },
+    )
+
+    pool.enqueue_job.assert_awaited_once_with(
+        "process_inbound_pitch_job",
+        "person-1",
+        "snapshot-1",
+        "opportunity-1",
+        "Acme",
+        {"learning_velocity": "Built a prototype"},
+        "job-1",
+    )
+
+
+@pytest.mark.asyncio
 async def test_identity_job_dispatch_forwards_optional_job_id() -> None:
     pool = AsyncMock()
 

@@ -1934,6 +1934,16 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
             task.get("person_id", ""),
             task.get("job_id"),
         )
+    elif job_type == "process_inbound_pitch":
+        await pool.enqueue_job(
+            "process_inbound_pitch_job",
+            task.get("person_id", ""),
+            task.get("snapshot_id", ""),
+            task.get("opportunity_id", ""),
+            task.get("company_name", ""),
+            task.get("founder_evidence"),
+            task.get("job_id"),
+        )
     elif job_type == "contact_outbound":
         await pool.enqueue_job(
             "contact_outbound_job",

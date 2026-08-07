@@ -11,21 +11,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import InboundSubmission, OutboxEvent
 
 
-def inbound_outbox_event(submission: InboundSubmission, company_name: str) -> OutboxEvent:
+def inbound_outbox_event(
+    submission: InboundSubmission,
+    company_name: str,
+    *,
+    job_id: str | None = None,
+) -> OutboxEvent:
     """Build the one dispatch event associated with an inbound submission."""
+    kwargs: dict[str, object] = {
+        "person_id": str(submission.person_id),
+        "snapshot_id": str(submission.snapshot_id),
+        "opportunity_id": str(submission.opportunity_id),
+        "company_name": company_name,
+        "founder_evidence": submission.founder_evidence,
+    }
+    if job_id is not None:
+        kwargs["job_id"] = str(job_id)
     return OutboxEvent(
         dedupe_key=f"inbound-submission:{submission.idempotency_key}",
         event_type="inbound_pitch.accepted",
         aggregate_id=submission.opportunity_id,
         payload={
             "job_name": "process_inbound_pitch_job",
-            "kwargs": {
-                "person_id": str(submission.person_id),
-                "snapshot_id": str(submission.snapshot_id),
-                "opportunity_id": str(submission.opportunity_id),
-                "company_name": company_name,
-                "founder_evidence": submission.founder_evidence,
-            },
+            "kwargs": kwargs,
         },
     )
 
