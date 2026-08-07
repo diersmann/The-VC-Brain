@@ -1059,35 +1059,139 @@ async def collect_job(
     return success_result
 
 
-async def fetch_candidate_avatar_job(ctx: dict[str, Any], person_id: str) -> dict[str, Any]:
+async def fetch_candidate_avatar_job(
+    ctx: dict[str, Any], person_id: str, job_id: str | None = None
+) -> dict[str, Any]:
     """Cache one candidate avatar, preferring verified public LinkedIn imagery."""
-    settings = ctx["settings"]
     async with _session_ctx(ctx) as session:
-        person = await session.get(Person, uuid.UUID(person_id))
-        if person is None or not person.canonical:
-            return {"person_id": person_id, "status": "not_found"}
+        ledger_job_id = job_id
+        job_attempt = 1
+        result: dict[str, Any]
+        try:
+            if ledger_job_id is None:
+                created_job = await create_job(session, "fetch_candidate_avatar")
+                ledger_job_id = str(created_job.id)
+            started_job = await start_job(session, ledger_job_id, phase="avatar")
+            if started_job is not None:
+                job_attempt = started_job.attempt
+                if started_job.status in {"succeeded", "cancelled"}:
+                    await session.commit()
+                    return dict(started_job.result or {"status": started_job.status})
+            await session.commit()
+            logger.info(
+                "candidate_avatar_running",
+                person_id=person_id,
+                job_id=ledger_job_id,
+                attempt=job_attempt,
+            )
 
-        avatar = await fetch_and_store_avatar(
-            session,
-            person,
-            github_token=settings.github_token,
-        )
-        if avatar is None:
-            return {"person_id": person_id, "status": "unavailable"}
-        await session.commit()
+            settings = ctx["settings"]
+            person = await session.get(Person, uuid.UUID(person_id))
+            if person is None or not person.canonical:
+                result = {"person_id": person_id, "status": "not_found"}
+                if ledger_job_id:
+                    await update_job(
+                        session,
+                        ledger_job_id,
+                        status="failed",
+                        phase="avatar",
+                        attempt=job_attempt,
+                        last_error="person_not_found",
+                        result={
+                            "status": "failed",
+                            "error": "person_not_found",
+                            "failure_kind": "permanent",
+                            "retryable": False,
+                        },
+                    )
+                await session.commit()
+                return result
+
+            avatar = await fetch_and_store_avatar(
+                session,
+                person,
+                github_token=settings.github_token,
+            )
+            if avatar is None:
+                result = {"person_id": person_id, "status": "unavailable"}
+                if ledger_job_id:
+                    await update_job(
+                        session,
+                        ledger_job_id,
+                        status="failed",
+                        phase="avatar",
+                        attempt=job_attempt,
+                        last_error="avatar_unavailable",
+                        result={
+                            "status": "failed",
+                            "error": "avatar_unavailable",
+                            "failure_kind": "permanent",
+                            "retryable": False,
+                        },
+                    )
+                await session.commit()
+                return result
+
+            result = {
+                "person_id": person_id,
+                "status": "completed",
+                "source": avatar.source_type,
+                "bytes": len(avatar.data),
+            }
+            if ledger_job_id:
+                await update_job(
+                    session,
+                    ledger_job_id,
+                    status="succeeded",
+                    phase="complete",
+                    attempt=job_attempt,
+                    clear_error=True,
+                    result=result,
+                )
+            await session.commit()
+
+        except Exception as exc:
+            failure_kind, retryable = classify_connector_failure(exc)
+            logger.error(
+                "candidate_avatar_failed",
+                person_id=person_id,
+                failure_kind=failure_kind,
+                retryable=retryable,
+                error_type=type(exc).__name__,
+            )
+            if ledger_job_id:
+                try:
+                    await session.rollback()
+                    await update_job(
+                        session,
+                        ledger_job_id,
+                        status="failed",
+                        phase="avatar",
+                        attempt=job_attempt,
+                        last_error=str(exc),
+                        result={
+                            "status": "failed",
+                            "error": str(exc),
+                            "failure_kind": failure_kind,
+                            "retryable": retryable,
+                        },
+                    )
+                    await session.commit()
+                except Exception as ledger_exc:
+                    logger.error(
+                        "candidate_avatar_ledger_update_failed",
+                        job_id=ledger_job_id,
+                        error_type=type(ledger_exc).__name__,
+                    )
+            raise
 
     logger.info(
         "candidate_avatar_completed",
         person_id=person_id,
-        source=avatar.source_type,
-        bytes=len(avatar.data),
+        source=result.get("source"),
+        bytes=result.get("bytes"),
     )
-    return {
-        "person_id": person_id,
-        "status": "completed",
-        "source": avatar.source_type,
-        "bytes": len(avatar.data),
-    }
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1655,6 +1759,7 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
         await pool.enqueue_job(
             "fetch_candidate_avatar_job",
             task.get("person_id", ""),
+            task.get("job_id"),
         )
     elif job_type == "score_candidate":
         await pool.enqueue_job(

@@ -77,3 +77,17 @@ async def test_collect_job_dispatch_forwards_optional_job_id() -> None:
     pool.enqueue_job.assert_awaited_once_with(
         "collect_job", "person-1", "github", "deep", "founder", "job-1"
     )
+
+
+@pytest.mark.asyncio
+async def test_avatar_job_dispatch_forwards_optional_job_id() -> None:
+    pool = AsyncMock()
+
+    await enqueue_arq_job(
+        {"redis": pool},
+        {"job_type": "fetch_candidate_avatar", "person_id": "person-1", "job_id": "job-1"},
+    )
+
+    pool.enqueue_job.assert_awaited_once_with(
+        "fetch_candidate_avatar_job", "person-1", "job-1"
+    )
