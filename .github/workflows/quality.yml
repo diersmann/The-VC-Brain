@@ -2,7 +2,7 @@ name: Quality gate
 
 on:
   push:
-    branches: [post-hackathon-polish]
+    branches: [main, post-hackathon-polish]
   pull_request:
 
 permissions:
@@ -15,5 +15,21 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.8.3
+      - name: Validate Alembic migration graph
+        working-directory: backend
+        run: |
+          set -euo pipefail
+
+          head_count="$(uv run --locked alembic heads | awk '/\(head\)$/ { count += 1 } END { print count + 0 }')"
+          if [ "$head_count" -ne 1 ]; then
+            echo "Expected exactly one Alembic head, found $head_count" >&2
+            exit 1
+          fi
+          uv run --locked alembic upgrade head --sql > /tmp/alembic-upgrade.sql
+          test -s /tmp/alembic-upgrade.sql
       - name: Run Docker-backed validation
         run: make check

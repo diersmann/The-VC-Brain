@@ -2,7 +2,7 @@ name: Security scans
 
 on:
   push:
-    branches: [post-hackathon-polish]
+    branches: [main, post-hackathon-polish]
   pull_request:
 
 permissions:
