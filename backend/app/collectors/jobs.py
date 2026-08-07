@@ -77,7 +77,7 @@ from app.db.models import (
     ScoreSnapshot,
     SourceSnapshot,
 )
-from app.job_ledger import start_job, update_job
+from app.job_ledger import create_job, start_job, update_job
 from app.privacy import external_ai_use_decision
 from app.source_policy import build_source_use_policy, source_allows_model_use
 from app.storage import put_snapshot
@@ -874,6 +874,7 @@ async def collect_job(
     source: str,
     depth: str = "deep",
     handle: str = "",
+    job_id: str | None = None,
 ) -> dict[str, Any]:
     """Run a connector's collect phase for a specific person.
 
@@ -883,6 +884,7 @@ async def collect_job(
         source: Connector source_type.
         depth: "light" or "deep".
         handle: The handle/identifier within the source.
+        job_id: Optional durable JobRun ID supplied by the dispatcher.
 
     Returns:
         Summary dict.
@@ -890,66 +892,171 @@ async def collect_job(
     logger.info("collect_job_started", person_id=person_id, source=source, depth=depth)
 
     async with _session_ctx(ctx) as session:
-        # Resolve person
-        result = await session.execute(select(Person).where(Person.id == person_id))
-        person = result.scalar_one_or_none()
-        if person is None:
-            logger.error("collect_job_person_not_found", person_id=person_id)
-            return {"error": "person_not_found"}
-
-        # Resolve handle from person.handles if not provided
-        if not handle and person.handles:
-            handle = person.handles.get(source, "")
-
-        connector = get_connector(source)
-        seed = Seed(
-            source_type=source,
-            handle=handle,
-            display_hint=person.display_name or handle,
-        )
-
+        ledger_job_id = job_id
+        job_attempt = 1
         try:
-            collected = await connector.collect(seed, depth=depth)  # type: ignore[arg-type]
-            validate_collected(collected)
+            if ledger_job_id is None:
+                created_job = await create_job(session, "collect")
+                ledger_job_id = str(created_job.id)
+            started_job = await start_job(session, ledger_job_id, phase="collect")
+            if started_job is not None:
+                job_attempt = started_job.attempt
+                if started_job.status in {"succeeded", "cancelled"}:
+                    await session.commit()
+                    return dict(started_job.result or {"status": started_job.status})
+            await session.commit()
+            logger.info(
+                "collect_job_running",
+                person_id=person_id,
+                source=source,
+                job_id=ledger_job_id,
+                attempt=job_attempt,
+            )
+
+            # Resolve person
+            result = await session.execute(select(Person).where(Person.id == person_id))
+            person = result.scalar_one_or_none()
+            if person is None:
+                logger.error("collect_job_person_not_found", person_id=person_id)
+                if ledger_job_id:
+                    await update_job(
+                        session,
+                        ledger_job_id,
+                        status="failed",
+                        phase="collect",
+                        attempt=job_attempt,
+                        last_error="person_not_found",
+                        result={
+                            "status": "failed",
+                            "error": "person_not_found",
+                            "failure_kind": "permanent",
+                            "retryable": False,
+                        },
+                    )
+                    await session.commit()
+                return {
+                    "status": "failed",
+                    "error": "person_not_found",
+                    "failure_kind": "permanent",
+                    "retryable": False,
+                }
+
+            # Resolve handle from person.handles if not provided
+            if not handle and person.handles:
+                handle = person.handles.get(source, "")
+
+            connector = get_connector(source)
+            seed = Seed(
+                source_type=source,
+                handle=handle,
+                display_hint=person.display_name or handle,
+            )
+
+            try:
+                collected = await connector.collect(seed, depth=depth)  # type: ignore[arg-type]
+                validate_collected(collected)
+            except Exception as exc:
+                failure_kind, retryable = classify_connector_failure(exc)
+                logger.error(
+                    "collect_deep_failed",
+                    person_id=person_id,
+                    source=source,
+                    failure_kind=failure_kind,
+                    retryable=retryable,
+                    error=str(exc),
+                )
+                failure_result = {
+                    "status": "failed",
+                    "error": str(exc),
+                    "failure_kind": failure_kind,
+                    "retryable": retryable,
+                }
+                if ledger_job_id:
+                    await update_job(
+                        session,
+                        ledger_job_id,
+                        status="failed",
+                        phase="collect",
+                        attempt=job_attempt,
+                        last_error=str(exc),
+                        result=failure_result,
+                    )
+                    await session.commit()
+                return failure_result
+
+            snapshot = await _write_snapshot(session, collected)
+            await _write_observations(session, snapshot, collected.observations, person.id)
+
+            # Collection can start from a handle-only seed. Promote a verified
+            # public display name from the source profile so Discover does not
+            # keep showing or hiding the raw handle after enrichment.
+            for observation in collected.observations:
+                if observation.get("predicate") != "display_name":
+                    continue
+                display_name = str(observation.get("object_value", "")).strip()
+                if display_name and display_name.lower() != handle.lower():
+                    person.display_name = display_name
+                break
+
+            # Recompute signal score after deep collect
+            await _compute_and_store_signal(session, person, source)
+
+            obs_count = len(collected.observations)
+            success_result = {
+                "person_id": person_id,
+                "source": source,
+                "depth": depth,
+                "observations": obs_count,
+            }
+            if ledger_job_id:
+                await update_job(
+                    session,
+                    ledger_job_id,
+                    status="succeeded",
+                    phase="complete",
+                    attempt=job_attempt,
+                    clear_error=True,
+                    result=success_result,
+                )
+            await session.commit()
         except Exception as exc:
             failure_kind, retryable = classify_connector_failure(exc)
             logger.error(
-                "collect_deep_failed",
+                "collect_job_failed",
                 person_id=person_id,
                 source=source,
                 failure_kind=failure_kind,
                 retryable=retryable,
-                error=str(exc),
+                error_type=type(exc).__name__,
             )
-            return {
-                "status": "failed",
-                "error": str(exc),
-                "failure_kind": failure_kind,
-                "retryable": retryable,
-            }
+            if ledger_job_id:
+                try:
+                    await session.rollback()
+                    await update_job(
+                        session,
+                        ledger_job_id,
+                        status="failed",
+                        phase="collect",
+                        attempt=job_attempt,
+                        last_error=str(exc),
+                        result={
+                            "status": "failed",
+                            "error": str(exc),
+                            "failure_kind": failure_kind,
+                            "retryable": retryable,
+                        },
+                    )
+                    await session.commit()
+                except Exception as ledger_exc:
+                    logger.error(
+                        "collect_job_ledger_update_failed",
+                        job_id=ledger_job_id,
+                        error_type=type(ledger_exc).__name__,
+                    )
+            raise
 
-        snapshot = await _write_snapshot(session, collected)
-        await _write_observations(session, snapshot, collected.observations, person.id)
-
-        # Collection can start from a handle-only seed. Promote a verified
-        # public display name from the source profile so Discover does not
-        # keep showing or hiding the raw handle after enrichment.
-        for observation in collected.observations:
-            if observation.get("predicate") != "display_name":
-                continue
-            display_name = str(observation.get("object_value", "")).strip()
-            if display_name and display_name.lower() != handle.lower():
-                person.display_name = display_name
-            break
-
-        # Recompute signal score after deep collect
-        await _compute_and_store_signal(session, person, source)
-
-        await session.commit()
-
-    obs_count = len(collected.observations)
     logger.info("collect_job_completed", person_id=person_id, source=source, depth=depth)
-    return {"person_id": person_id, "source": source, "depth": depth, "observations": obs_count}
+    return success_result
 
 
 async def fetch_candidate_avatar_job(ctx: dict[str, Any], person_id: str) -> dict[str, Any]:
@@ -1579,6 +1686,7 @@ async def enqueue_arq_job(ctx: dict[str, Any], task: dict[str, Any]) -> None:
             task.get("source", ""),
             task.get("depth", "deep"),
             task.get("handle", ""),
+            task.get("job_id"),
         )
 
 
