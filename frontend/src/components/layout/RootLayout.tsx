@@ -1,4 +1,6 @@
 import { Outlet } from "react-router";
+import { RouteErrorBoundary } from "../common/RouteErrorBoundary";
+import { retryRoute } from "../common/routeRetry";
 import { LeftNav, MobileNav } from "./LeftNav";
 
 export function RootLayout() {
@@ -9,7 +11,9 @@ export function RootLayout() {
       <div className="flex min-h-screen w-full bg-white/20">
         <LeftNav />
         <div className="min-w-0 flex-1">
-          <main id="main-content" className="px-4 pb-8 pt-5 md:px-7 lg:px-9"><Outlet /></main>
+          <main id="main-content" className="px-4 pb-8 pt-5 md:px-7 lg:px-9">
+            <RouteErrorBoundary embedded onRetry={retryRoute}><Outlet /></RouteErrorBoundary>
+          </main>
         </div>
       </div>
     </div>

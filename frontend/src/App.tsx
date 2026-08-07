@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { RootLayout } from "./components/layout/RootLayout";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { RouteErrorBoundary } from "./components/common/RouteErrorBoundary";
+import { retryRoute } from "./components/common/routeRetry";
 
 const SourcingPage = lazy(() => import("./components/sourcing/SourcingPage").then((module) => ({ default: module.SourcingPage })));
 const FounderProfilePage = lazy(() => import("./pages/FounderProfilePage").then((module) => ({ default: module.FounderProfilePage })));
@@ -22,27 +24,29 @@ function RouteLoading() {
 export default function App() {
   return (
     <BrowserRouter>
-      <Suspense fallback={<RouteLoading />}>
-        <Routes>
-          <Route path="apply" element={<Navigate to="/submit" replace />} />
-          <Route path="submit" element={<PitchSubmissionPage />} />
-          <Route element={<RootLayout />}>
-            <Route index element={<HomePage />} />
-            <Route path="sourcing" element={<SourcingPage />} />
-            <Route path="investigated" element={<InvestigatedPage />} />
-            <Route path="inbound" element={<InboundInboxPage />} />
-            <Route path="inbox" element={<OpportunityInboxPage />} />
-            <Route path="decisions" element={<DecisionQueuePage />} />
-            <Route path="decisions/:founderId" element={<DecisionDetailPage />} />
-            <Route path="founders/:founderId" element={<FounderProfilePage />} />
-            <Route path="onboarding" element={<OnboardingPage />} />
-            <Route path="memos" element={<PlaceholderPage label="Memos" />} />
-            <Route path="thesis" element={<OnboardingPage />} />
-            <Route path="settings" element={<PlaceholderPage label="Settings" />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Route>
-        </Routes>
-      </Suspense>
+      <RouteErrorBoundary onRetry={retryRoute}>
+        <Suspense fallback={<RouteLoading />}>
+          <Routes>
+            <Route path="apply" element={<Navigate to="/submit" replace />} />
+            <Route path="submit" element={<RouteErrorBoundary onRetry={retryRoute}><PitchSubmissionPage /></RouteErrorBoundary>} />
+            <Route element={<RootLayout />}>
+              <Route index element={<HomePage />} />
+              <Route path="sourcing" element={<SourcingPage />} />
+              <Route path="investigated" element={<InvestigatedPage />} />
+              <Route path="inbound" element={<InboundInboxPage />} />
+              <Route path="inbox" element={<OpportunityInboxPage />} />
+              <Route path="decisions" element={<DecisionQueuePage />} />
+              <Route path="decisions/:founderId" element={<DecisionDetailPage />} />
+              <Route path="founders/:founderId" element={<FounderProfilePage />} />
+              <Route path="onboarding" element={<OnboardingPage />} />
+              <Route path="memos" element={<PlaceholderPage label="Memos" />} />
+              <Route path="thesis" element={<OnboardingPage />} />
+              <Route path="settings" element={<PlaceholderPage label="Settings" />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </RouteErrorBoundary>
     </BrowserRouter>
   );
 }

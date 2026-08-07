@@ -191,7 +191,7 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - [blocked] **VCB-079 - Sanitize every external link through one utility.** Observed: several components anchored raw backend URLs despite candidateLinks.ts having a safe URL helper. **Partial completion:** `candidateLinks.ts` now exports strict HTTP(S) validators, rejects unsafe schemes, and CandidateCard, FounderProfile claims, DecisionDetail decks, and the inbound deck link use the shared policy with focused tests. The reviewed outreach composer now uses a shared `safeMailto` builder that rejects blank, control/newline, and malformed recipients while encoding subject/body; HTTP sanitizer semantics remain unchanged. **Blocked:** a complete audit still needs a shared non-HTTP action policy and rendered tests for every route-level link.
 
-- [blocked] **VCB-080 - Add route-level error boundaries and a real 404.** Observed: malformed dates could produce invalid localized output; catch-all rendered Coming soon for Not Found. **Partial completion:** date formatting now returns `Unknown date` for malformed timestamps, and the catch-all route has a useful 404 recovery page with a workspace link and tests. **Blocked:** root/route error boundaries and redacted diagnostics still require an agreed client-side error-reporting contract; no telemetry or redaction sink exists yet.
+- [blocked] **VCB-080 - Add route-level error boundaries and a real 404.** Observed: malformed dates could produce invalid localized output; catch-all rendered Coming soon for Not Found. **Partial completion:** date formatting now returns `Unknown date` for malformed timestamps, the catch-all route has a useful 404 recovery page with a workspace link and tests, and all public/workspace routes are wrapped in a generic render/lazy-load boundary with retry and a safe workspace fallback; focused coverage confirms secret-bearing errors are never rendered. **Blocked:** approved client-side error-reporting and redacted diagnostics still require an explicit contract; no telemetry or redaction sink exists yet.
 
 - [blocked] **VCB-081 - Meet contrast, text-size, touch, and mobile information-density standards.** Observed: several muted colors were below AA at 9-12px; mobile lifecycle consumed roughly 2,300px before candidate content; metric detail truncated with a mouse-only title. **Partial completion:** shared muted/eyebrow/data-label colors now have stronger contrast, metric detail wraps, and global reduced-motion preferences are honored. **Blocked:** touch-target, mobile density, and full WCAG AA compliance require rendered-device/manual accessibility QA and a product-approved compact information hierarchy.
 
@@ -259,8 +259,8 @@ The main conclusion is simple: make the product truthful before making it broade
 
 - Frontend ESLint: passed.
 - Frontend TypeScript: passed.
-- Frontend Vitest: 94 tests passed.
-- Frontend production build: passed; current bundle is 408.21 kB JavaScript raw / 137.70 kB gzip and 69.73 kB CSS raw (entry JavaScript 218.51 kB raw / 71.41 kB gzip).
+- Frontend Vitest: 98 tests passed.
+- Frontend production build: passed; current bundle is 410.02 kB JavaScript raw / 138.00 kB gzip and 70.09 kB CSS raw (entry JavaScript 221.19 kB raw / 72.16 kB gzip).
 - Frontend bundle budget: passed.
 - Backend pytest: 298 tests passed with one Starlette/httpx deprecation warning.
 - Backend Ruff and configured mypy: passed.
@@ -352,6 +352,7 @@ The main conclusion is simple: make the product truthful before making it broade
 - 2026-08-07: VCB-049 website guardrail slice added local/internal hostname rejection, DNS validation before Tavily Extract, and `trust_env=False` for raw HTTP clients, with regressions for private-DNS rejection and ambient proxy isolation. DNS pinning/TOCTOU protection remains explicitly blocked.
 - 2026-08-07: VCB-049 website size/timeout follow-up now caps Tavily Extract content at `APP_WEBSITE_MAX_BYTES` and bounds the SDK wait to 15 seconds before falling back to the same bounded raw fetch; oversized-provider regression coverage passes. DNS pinning/TOCTOU and provider-specific retry policy remain blocked.
 - 2026-08-07: VCB-091 request-correlation slice adds fresh opaque `X-Request-ID` response headers and structlog context binding via API middleware, with health endpoint coverage. Job/source/model correlation, operational metrics/dashboards, and broader PII-redaction audit remain blocked.
+- 2026-08-07: VCB-080 route-resilience slice wraps public and workspace routes in a generic render/lazy-load error boundary with a retry action and navigation-safe workspace fallback; focused tests verify secret-bearing errors stay out of the UI. Approved client-side telemetry/redaction remains blocked.
 
 ## First practical milestone
 
